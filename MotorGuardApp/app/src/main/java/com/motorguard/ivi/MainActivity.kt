@@ -1,6 +1,7 @@
 package com.motorguard.ivi
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +17,7 @@ import com.motorguard.ivi.ui.components.StatusBar
 import com.motorguard.ivi.ui.diagnostics.DiagnosticsFragment
 import com.motorguard.ivi.ui.home.HomeFragment
 import com.motorguard.ivi.ui.media.MediaFragment
+import com.motorguard.ivi.ui.nav.NavFragment
 import com.motorguard.ivi.ui.settings.SettingsFragment
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
 
@@ -28,7 +30,7 @@ import com.motorguard.ivi.ui.theme.MotorGuardTheme
  */
 class MainActivity : AppCompatActivity() {
 
-    enum class Tab { HOME, MEDIA, DIAGNOSTICS, SETTINGS }
+    enum class Tab { HOME, MEDIA, NAV, DIAGNOSTICS, SETTINGS }
 
     private var selected by mutableStateOf(Tab.HOME)
 
@@ -43,7 +45,14 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<ComposeView>(R.id.nav_rail).setContent {
             MotorGuardTheme {
-                NavRail(selected = selected, onSelect = ::show)
+                NavRail(
+                    selected = selected,
+                    onSelect = ::show,
+                    onVoice = {
+                        // TODO: launch VoiceOverlayService (Hey Motor Guard). Not a tab.
+                        Toast.makeText(this, "Voice assistant coming soon", Toast.LENGTH_SHORT).show()
+                    },
+                )
             }
         }
 
@@ -75,6 +84,7 @@ class MainActivity : AppCompatActivity() {
         val fragment: Fragment = when (tab) {
             Tab.HOME -> HomeFragment()
             Tab.MEDIA -> MediaFragment()
+            Tab.NAV -> NavFragment()
             Tab.DIAGNOSTICS -> DiagnosticsFragment()
             Tab.SETTINGS -> SettingsFragment()
         }
