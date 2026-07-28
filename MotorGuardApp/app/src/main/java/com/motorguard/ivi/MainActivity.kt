@@ -6,6 +6,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
 import com.motorguard.ivi.ui.components.NavRail
@@ -31,6 +34,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        enableImmersiveMode()
 
         findViewById<ComposeView>(R.id.nav_rail).setContent {
             MotorGuardTheme {
@@ -39,6 +43,23 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (savedInstanceState == null) show(Tab.HOME)
+    }
+
+    /**
+     * Take over the full screen: draw edge-to-edge and hide the Automotive system bars
+     * (top status bar + bottom nav/climate bar). The bars stay swipe-revealable.
+     *
+     * NOTE: on stock AAOS the CarSystemBars are "persistent" and ignore this request.
+     * The device must have the immersive system-bar policy enabled:
+     *   adb shell cmd overlay enable com.android.car.systemui.systembar.persistency.immersive
+     * On a real build, bake that overlay (or config_enable*SystemBar=false) into the image.
+     */
+    private fun enableImmersiveMode() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
     }
 
     private fun show(tab: Tab) {
