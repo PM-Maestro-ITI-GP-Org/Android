@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DAY tokens. Same names as values-night/colors.xml — the DayNight theme swaps them. -->
+<resources>
+    <color name="base">#F4F6F8</color>       <!-- app background -->
+    <color name="panel">#FFFFFF</color>       <!-- card / glass surface -->
+    <color name="rail_bg">#E9EDF2</color>     <!-- nav rail -->
+    <color name="on_base">#121417</color>     <!-- primary text -->
+    <color name="on_base_dim">#5A6473</color> <!-- secondary text -->
+
+    <color name="accent">#0FA8D8</color>      <!-- electric blue -->
+    <color name="accent2">#3FC3EC</color>     <!-- icy cyan -->
+    <color name="success">#1FB56A</color>
+    <color name="caution">#D89A1E</color>
+    <color name="critical">#E24B43</color>
+</resources>
