@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300..600,0..1,-25..0" rel="stylesheet">
+<style>*{box-sizing:border-box}html,body{margin:0}::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px}.ms{font-family:'Material Symbols Rounded';line-height:1;-webkit-font-feature-settings:'liga';font-feature-settings:'liga';display:inline-block}</style>
+</helmet>
+<div style="width:100%;min-height:100vh;background:radial-gradient(120% 90% at 20% -10%,#141c2b,#080b11 60%);font-family:Manrope,system-ui,sans-serif;color:#e7edf7;display:flex;flex-direction:column">
+
+  <!-- TOOLBAR -->
+  <div style="flex:none;display:flex;align-items:center;gap:20px;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,.07);flex-wrap:wrap">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-right:6px">
+      <span style="font-family:Sora,sans-serif;font-size:19px;font-weight:600;letter-spacing:.01em">Motor Guard</span>
+      <span style="font-size:12px;color:rgba(255,255,255,.42);letter-spacing:.04em">AAOS System UI</span>
+    </div>
+
+    <div style="display:flex;gap:3px;padding:4px;background:rgba(255,255,255,.05);border-radius:14px;flex-wrap:wrap">
+      <sc-for list="{{surfaceTabs}}" as="t" hint-placeholder-count="8">
+        <div onClick="{{t.onClick}}" style="padding:9px 15px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;background:{{t.bg}};color:{{t.fg}};transition:background .15s">{{t.label}}</div>
+      </sc-for>
+    </div>
+
+    <div style="width:1px;height:26px;background:rgba(255,255,255,.1)"></div>
+
+    <div style="display:flex;gap:3px;padding:4px;background:rgba(255,255,255,.05);border-radius:14px">
+      <sc-for list="{{docTabs}}" as="t" hint-placeholder-count="3">
+        <div onClick="{{t.onClick}}" style="padding:9px 15px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;background:{{t.bg}};color:{{t.fg}}">{{t.label}}</div>
+      </sc-for>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <sc-if value="{{showRes}}" hint-placeholder-val="{{true}}">
+    <div style="display:flex;gap:3px;padding:4px;background:rgba(255,255,255,.05);border-radius:14px">
+      <sc-for list="{{resTabs}}" as="t" hint-placeholder-count="3">
+        <div onClick="{{t.onClick}}" style="padding:9px 13px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;background:{{t.bg}};color:{{t.fg}};font-family:Sora,sans-serif">{{t.label}}</div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <div onClick="{{toggleTheme}}" style="display:flex;align-items:center;gap:9px;padding:8px 14px;border-radius:14px;background:rgba(255,255,255,.05);cursor:pointer">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="{{themeIcon}}"></path></svg>
+      <span style="font-size:13px;font-weight:600;width:44px">{{themeLabel}}</span>
+    </div>
+  </div>
+
+  <!-- STAGE -->
+  <div ref="{{setStageRef}}" style="flex:1;position:relative;display:flex;align-items:center;justify-content:center;padding:22px;min-height:0;overflow:auto">
+
+    <!-- DEVICE -->
+    <sc-if value="{{isDevice}}" hint-placeholder-val="{{true}}">
+    <div style="width:{{devOutW}}px;height:{{devOutH}}px;border-radius:22px;overflow:hidden;box-shadow:0 40px 90px -30px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.05)">
+      <div style="width:{{devW}}px;height:{{devH}}px;transform:scale({{devScale}});transform-origin:top left">
+        <dc-import name="MeowScreen" surface="{{view}}" theme="{{theme}}" res="{{res}}" style="width:100%;height:100%" hint-size="100%,100%"></dc-import>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- REFLOW -->
+    <sc-if value="{{isReflow}}" hint-placeholder-val="{{false}}">
+    <div style="display:flex;gap:20px;align-items:flex-start;justify-content:center;flex-wrap:wrap">
+      <sc-for list="{{reflowItems}}" as="r" hint-placeholder-count="3">
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+          <div style="width:{{r.outW}}px;height:{{r.outH}}px;border-radius:16px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.05)">
+            <div style="width:{{r.w}}px;height:{{r.h}}px;transform:scale({{r.scale}});transform-origin:top left">
+              <dc-import name="MeowScreen" surface="launcher" theme="{{theme}}" res="{{r.res}}" style="width:100%;height:100%" hint-size="100%,100%"></dc-import>
+            </div>
+          </div>
+          <div style="font-size:12px;color:rgba(255,255,255,.55);font-weight:600;font-family:Sora,sans-serif">{{r.label}}</div>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- THEMES -->
+    <sc-if value="{{isThemes}}" hint-placeholder-val="{{false}}">
+    <div style="display:flex;gap:22px;align-items:flex-start;justify-content:center;flex-wrap:wrap">
+      <sc-for list="{{themeItems}}" as="t" hint-placeholder-count="2">
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+          <div style="width:{{t.outW}}px;height:{{t.outH}}px;border-radius:18px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.05)">
+            <div style="width:1920px;height:720px;transform:scale({{t.scale}});transform-origin:top left">
+              <dc-import name="MeowScreen" surface="launcher" theme="{{t.theme}}" res="1920" style="width:100%;height:100%" hint-size="100%,100%"></dc-import>
+            </div>
+          </div>
+          <div style="font-size:12px;color:rgba(255,255,255,.55);font-weight:600;font-family:Sora,sans-serif">{{t.label}}</div>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- TIPS -->
+    <sc-if value="{{isTips}}" hint-placeholder-val="{{false}}">
+    <div style="width:min(1040px,100%);max-height:100%;overflow:auto;padding:38px 42px;border-radius:22px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)">
+      <div style="font-family:Sora,sans-serif;font-size:27px;font-weight:600;margin:0 0 6px">Design & implementation guide</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.5);margin-bottom:26px">Building the Motor Guard AAOS system UI in Kotlin for a Raspberry Pi 5 dashboard</div>
+
+      <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:30px">
+        <div style="flex:1.5;min-width:320px;padding:22px 24px;border-radius:18px;background:linear-gradient(135deg,rgba(96,150,255,.16),rgba(64,206,190,.1));border:1px solid rgba(255,255,255,.12)">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span class="ms" style="font-size:22px;color:oklch(.78 .13 205)">code</span><span style="font-family:Sora,sans-serif;font-size:16px;font-weight:600">How hard is Kotlin for this?</span></div>
+          <div style="font-size:13px;line-height:1.6;color:rgba(231,237,247,.82)">{{kotlinNote}}</div>
+        </div>
+        <div style="flex:1;min-width:260px;padding:20px 22px;border-radius:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)">
+          <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.42);margin-bottom:12px">Component → Compose</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{compMap}}" as="m" hint-placeholder-count="8">
+              <div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;padding-bottom:7px;border-bottom:1px solid rgba(255,255,255,.07)"><span style="font-weight:600;color:#e7edf7">{{m.c}}</span><span style="color:rgba(255,255,255,.5);text-align:right">{{m.k}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:26px 34px">
+        <sc-for list="{{tips}}" as="s" hint-placeholder-count="4">
+          <div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="width:8px;height:8px;border-radius:50%;background:{{s.dot}}"></span><span style="font-family:Sora,sans-serif;font-size:16px;font-weight:600">{{s.title}}</span></div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <sc-for list="{{s.items}}" as="it" hint-placeholder-count="4">
+                <div style="display:flex;gap:9px;font-size:13px;line-height:1.5;color:rgba(231,237,247,.8)"><span style="color:rgba(255,255,255,.35)">—</span><span>{{it}}</span></div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { view: 'launcher', theme: 'day', res: '1920', sw: 1180, sh: 560 };
+
+  setStageRef = (el) => { if (el) { this.stageEl = el; this.measure(); } };
+  componentDidMount() {
+    this._onR = () => this.measure();
+    window.addEventListener('resize', this._onR);
+    this.measure();
+    requestAnimationFrame(() => this.measure());
+  }
+  componentWillUnmount() { window.removeEventListener('resize', this._onR); }
+  measure = () => {
+    let w, h;
+    if (this.stageEl) { const r = this.stageEl.getBoundingClientRect(); w = r.width; h = r.height; }
+    else { w = window.innerWidth - 44; h = window.innerHeight - 160; }
+    if (Math.abs(w - this.state.sw) > 1 || Math.abs(h - this.state.sh) > 1) this.setState({ sw: w, sh: h });
+  };
+
+  dims(res) { return { '1920': [1920, 720], '1280': [1280, 720], '1024': [1024, 600] }[res] || [1920, 720]; }
+
+  renderVals() {
+    const s = this.state;
+    const pon = 'rgba(255,255,255,.16)', poff = 'transparent', fon = '#ffffff', foff = 'rgba(255,255,255,.5)';
+    const surfaces = [
+      ['launcher', 'Home'], ['media', 'Media'], ['nav', 'Nav'], ['diagnostics', 'Diagnostics'],
+      ['voice', 'Voice'], ['weather', 'Weather'], ['settings', 'Settings'],
+    ];
+    const docs = [['reflow', 'Reflow'], ['themes', 'Day / Night'], ['tips', 'Tips']];
+    const surfaceKeys = surfaces.map(x => x[0]);
+    const tab = (key, label) => ({
+      key, label, active: s.view === key,
+      bg: s.view === key ? pon : poff, fg: s.view === key ? fon : foff,
+      onClick: () => this.setState({ view: key }),
+    });
+    const resTab = (key, label) => ({
+      key, label, bg: s.res === key ? pon : poff, fg: s.res === key ? fon : foff,
+      onClick: () => this.setState({ res: key }),
+    });
+
+    const docKeys = docs.map(x => x[0]);
+    if (!surfaceKeys.includes(s.view) && !docKeys.includes(s.view)) { s.view = 'launcher'; }
+    const isDevice = surfaceKeys.includes(s.view);
+    const [W, H] = this.dims(s.res);
+    const padW = s.sw - 48, padH = s.sh - 48;
+    const devScale = Math.max(0.1, Math.min(padW / W, padH / H));
+
+    // reflow
+    const gap = 20, colW = (s.sw - 48 - gap * 2) / 3;
+    const reflowItems = [
+      { res: '1920', label: '1920 × 720 · Widescreen' },
+      { res: '1280', label: '1280 × 720 · Standard' },
+      { res: '1024', label: '1024 × 600 · Compact' },
+    ].map(r => {
+      const [w, h] = this.dims(r.res);
+      const sc = Math.max(0.1, Math.min(colW / w, (s.sh - 90) / h));
+      return { ...r, w, h, scale: sc, outW: Math.round(w * sc), outH: Math.round(h * sc) };
+    });
+
+    // themes
+    const tcolW = (s.sw - 48 - 22) / 2;
+    const themeItems = [
+      { theme: 'day', label: 'Day theme' }, { theme: 'night', label: 'Night theme' },
+    ].map(t => {
+      const sc = Math.max(0.1, Math.min(tcolW / 1920, (s.sh - 90) / 720));
+      return { ...t, scale: sc, outW: Math.round(1920 * sc), outH: Math.round(720 * sc) };
+    });
+
+    const tips = [
+      { title: 'AAOS platform & build', dot: 'oklch(.7 .16 258)', items: [
+        'This is a system app + launcher on top of AOSP’s automotive target. On a Pi 5 you flash a community AAOS build (KonstaKANG / android-rpi) — an "userdebug" image so you can push your APK with adb.',
+        'Ship two apps: a home/launcher (Role HOME, a CarLauncher replacement) and the surfaces as activities/fragments the launcher hosts.',
+        'Read live vehicle data (battery %, range, tire PSI, temps) through CarPropertyManager over the Vehicle HAL (VHAL). On the Pi you back the VHAL with a mock/emulator that feeds fake values until real CAN hardware is wired in.',
+        'Voice runs as a foreground CarVoiceInteractionSession so the orb can float over any app; wire the wake word to a VoiceInteractionService.' ] },
+      { title: 'How to build it in Kotlin', dot: 'oklch(.66 .14 200)', items: [
+        'Use Jetpack Compose for everything here — it maps to this UI almost 1:1 and is far less code than XML Views.',
+        'GlassCard → Surface/Box with Modifier.graphicsLayer + a RenderEffect.createBlurEffect() backdrop, a thin border and 24.dp RoundedCornerShape.',
+        'GaugeRing → Canvas { drawArc(useCenter=false, strokeCap=Round) } animated with animateFloatAsState; StatCard is a Column of Text with a large numeral style.',
+        'NavRail → NavigationRail; StatusBar → your own Row (or hook the CarSystemBar); lists (playlist, alerts, forecast) → LazyColumn.',
+        'Icons here ARE Material Symbols, so in Compose use Icons.Rounded.* / the material-symbols set directly — no redraw needed.' ] },
+      { title: 'RPi 5 performance', dot: 'oklch(.72 .15 150)', items: [
+        'The Pi 5’s VideoCore VII is modest — real-time blur is the #1 cost. Use ONE blurred backdrop per screen, cap radius ~16dp, and never stack more than two translucent layers.',
+        'Prefer RenderEffect on a hardware layer over per-frame blur; where you can, pre-blur a static bitmap instead of blurring live.',
+        'Animate only translationX/Y, scale, alpha and rotation (compositor-only). Never animate blur, elevation/shadow, or layout — they trigger re-raster.',
+        'Enable GPU acceleration (GLES/Vulkan via mesa v3d), watch overdraw with the developer overlay, and keep continuous animations (orb, equalizer) tiny.',
+        'Target 60fps but design to stay usable at 30 — glanceable UI hides the odd dropped frame.' ] },
+      { title: 'Glanceability & driver distraction', dot: 'oklch(.72 .17 70)', items: [
+        'Observe CarUxRestrictionsManager: when the car reports "moving", disable text entry, cap list length, and lock out fiddly controls — the platform can reject non-compliant UI.',
+        'Minimum ~76dp touch targets (the whole rail meets this) and big gaps so a bumpy road doesn’t cause mis-taps.',
+        'Oversized numerals for temp / % / range / ETA — readable in under two seconds; anchor primary controls to the driver side.',
+        'High contrast in both themes; the night theme drops luminance and blue light to cut glare after dark. Drive it from UiModeManager NIGHT mode or a light sensor.' ] },
+      { title: 'Consistency & theming', dot: 'oklch(.7 .12 300)', items: [
+        'One source of truth: color, radius, elevation and type are CSS variables here → in Compose that’s a MaterialTheme with a custom ColorScheme + a small Tokens object.',
+        'Day/Night swaps a single attribute here; in Compose swap the ColorScheme (optionally Material You dynamic color) — every component re-themes for free.',
+        'Every surface is composed from the same primitives (GlassCard, GaugeRing, StatCard, NavRail, VoiceOrb). MeowScreen is ONE reusable component — the launcher in Reflow and Day/Night is literally the same code.',
+        'Keep the signature: 24dp radius, frosted glass, thin light borders, airy padding, Sora for numerals + Manrope for body.' ] },
+      { title: 'Responsive across the three screens', dot: 'oklch(.66 .16 255)', items: [
+        'Rail width is fixed; content is a fluid flex/grid that reflows — 1920×720 shows three columns, 1280×720 packs tighter, 1024×600 wraps to a compact stack (see the Reflow tab).',
+        'In Compose use BoxWithConstraints / WindowSizeClass to pick column counts; never hard-code pixel positions.',
+        'Design mobile-last: make the 1024×600 compact layout legible first, then let space open up on wider panels.' ] },
+    ];
+    const kotlinNote = 'Honestly? Kotlin itself is one of the friendlier languages to pick up — concise, null-safe, and Compose’s declarative style reads a lot like this HTML. The real learning curve is the AUTOMOTIVE platform around it: VHAL/CarPropertyManager, car permissions, UX-restriction rules, and building/flashing an AAOS image to the Pi. Plan for: ~1–2 weeks to get comfortable in Kotlin + Compose, then most of your time on the AAOS plumbing. Rebuild these screens as a normal Compose app first (mock data), get them pixel-right, THEN swap the mock repository for the real Car APIs.';
+    const compMap = [
+      { c: 'GlassCard', k: 'Surface + graphicsLayer blur' },
+      { c: 'GaugeRing', k: 'Canvas drawArc + animateFloat' },
+      { c: 'NavRail', k: 'NavigationRail' },
+      { c: 'StatusBar', k: 'CarSystemBar / Row' },
+      { c: 'PlaylistRow · Alert', k: 'LazyColumn items' },
+      { c: 'VoiceOrb', k: 'Canvas + infiniteTransition' },
+      { c: 'ClimateControl', k: 'CarPropertyManager HVAC' },
+      { c: 'Vehicle data', k: 'CarPropertyManager + VHAL' },
+    ];
+
+    return {
+      view: s.view, theme: s.theme, res: s.res,
+      surfaceTabs: surfaces.map(x => tab(x[0], x[1])),
+      docTabs: docs.map(x => tab(x[0], x[1])),
+      resTabs: [resTab('1920', '1920'), resTab('1280', '1280'), resTab('1024', '1024')],
+      showRes: isDevice,
+      toggleTheme: () => this.setState({ theme: s.theme === 'day' ? 'night' : 'day' }),
+      themeLabel: s.theme === 'day' ? 'Day' : 'Night',
+      themeIcon: s.theme === 'day'
+        ? 'M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z'
+        : 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
+      isDevice, isReflow: s.view === 'reflow', isThemes: s.view === 'themes', isTips: s.view === 'tips',
+      devW: W, devH: H, devScale, devOutW: Math.round(W * devScale), devOutH: Math.round(H * devScale),
+      reflowItems, themeItems, tips, kotlinNote, compMap,
+    };
+  }
+}
+</script>
+</body>
+</html>

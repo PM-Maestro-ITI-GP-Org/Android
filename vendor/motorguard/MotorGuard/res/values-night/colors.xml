@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Night theme tokens — auto-selected by UiMode NIGHT / light sensor. -->
+<resources>
+    <color name="screen">#FF151515</color>
+    <color name="panel">#0BFFFFFF</color>
+    <color name="glass">#0FFFFFFF</color>
+    <color name="glass_border">#1CFFFFFF</color>
+    <color name="line">#12FFFFFF</color>
+
+    <color name="rail_bg">#FF0B0B0C</color>
+    <color name="rail_fg">#70FFFFFF</color>
+    <color name="rail_on">#FF56C9EF</color>
+
+    <color name="fg">#FFEEF2F6</color>
+    <color name="fg2">#8FEEF2F6</color>
+    <color name="fg3">#52EEF2F6</color>
+
+    <color name="accent">#FF56C9EF</color>
+    <color name="accent2">#FF80DCF8</color>
+    <color name="cyan">#FF80DCF8</color>
+
+    <color name="ok">#FF38D17F</color>
+    <color name="warn">#FFF5B942</color>
+    <color name="crit">#FFF46C64</color>
+</resources>

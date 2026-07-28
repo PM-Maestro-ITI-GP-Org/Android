@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spacing / radius / elevation tokens — shared by every component. -->
+<resources>
+    <dimen name="rail_width">92dp</dimen>
+    <dimen name="touch_min">76dp</dimen>
+    <dimen name="card_radius">26dp</dimen>
+    <dimen name="chip_radius">16dp</dimen>
+    <dimen name="pad_screen">22dp</dimen>
+    <dimen name="pad_card">24dp</dimen>
+    <dimen name="gap">16dp</dimen>
+    <dimen name="blur">16dp</dimen>
+    <dimen name="elevation_card">14dp</dimen>
+</resources>

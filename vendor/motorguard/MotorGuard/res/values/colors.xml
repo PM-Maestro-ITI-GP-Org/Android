@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Day theme tokens — single source of truth for light mode. -->
+<resources>
+    <!-- Base -->
+    <color name="screen">#FFF4F7FB</color>
+    <color name="panel">#A6FFFFFF</color>
+    <color name="glass">#C2FFFFFF</color>
+    <color name="glass_border">#EBFFFFFF</color>
+    <color name="line">#14141A24</color>
+
+    <!-- Rail -->
+    <color name="rail_bg">#FF14171C</color>
+    <color name="rail_fg">#75FFFFFF</color>
+    <color name="rail_on">#FF56C9EF</color>
+
+    <!-- Text -->
+    <color name="fg">#FF141A24</color>
+    <color name="fg2">#8F141A24</color>
+    <color name="fg3">#57141A24</color>
+
+    <!-- Accent (Modern Tech / Sleek) -->
+    <color name="accent">#FF1888C4</color>
+    <color name="accent2">#FF56C9EF</color>
+    <color name="cyan">#FF3AA9D8</color>
+
+    <!-- Semantic -->
+    <color name="ok">#FF1F9D57</color>
+    <color name="warn">#FFE0921B</color>
+    <color name="crit">#FFE0483F</color>
+</resources>

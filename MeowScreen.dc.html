@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,200..600,0..1,-25..0" rel="stylesheet">
+<script src="./image-slot.js"></script>
+<style>
+*{box-sizing:border-box}
+.ms{font-family:'Material Symbols Rounded';line-height:1;-webkit-font-feature-settings:'liga';font-feature-settings:'liga';display:inline-block}
+/* Palette: Modern Tech / Sleek — Electric Blue #56C9EF, Icy Cyan #80DCF8, deep charcoal base */
+[data-theme="day"]{
+  --screen:linear-gradient(165deg,#f4f7fb 0%,#e7ecf2 100%);
+  --rail-bg:linear-gradient(180deg,#14171c,#0c0e12); --rail-fg:rgba(255,255,255,.46); --rail-on:#56C9EF; --rail-active:rgba(86,201,239,.16);
+  --panel:rgba(255,255,255,.64); --glass:rgba(255,255,255,.76); --glass2:rgba(255,255,255,.56); --glass-brd:rgba(255,255,255,.92);
+  --glass-shadow:0 14px 38px -16px rgba(22,40,66,.22); --hi:rgba(255,255,255,.9);
+  --fg:#141a24; --fg2:rgba(20,26,36,.56); --fg3:rgba(20,26,36,.34);
+  --line:rgba(20,26,36,.08); --accent:#1888c4; --accent2:#56C9EF; --cyan:#3aa9d8; --accent-soft:rgba(86,201,239,.14);
+  --track:rgba(20,26,36,.1); --chip:rgba(255,255,255,.7);
+  --batt-a:oklch(.62 .19 300); --batt-b:oklch(.64 .16 258); --fuel-a:oklch(.76 .13 195); --fuel-b:oklch(.72 .17 150);
+  --ok:#1f9d57; --warn:#e0921b; --crit:#e0483f;
+}
+[data-theme="night"]{
+  --screen:linear-gradient(165deg,#151515 0%,#0d0d0d 100%);
+  --rail-bg:linear-gradient(180deg,#0b0b0c,#050506); --rail-fg:rgba(255,255,255,.44); --rail-on:#56C9EF; --rail-active:rgba(86,201,239,.14);
+  --panel:rgba(255,255,255,.045); --glass:rgba(255,255,255,.06); --glass2:rgba(255,255,255,.035); --glass-brd:rgba(255,255,255,.11);
+  --glass-shadow:0 20px 44px -18px rgba(0,0,0,.7); --hi:rgba(255,255,255,.07);
+  --fg:#eef2f6; --fg2:rgba(238,242,246,.56); --fg3:rgba(238,242,246,.32);
+  --line:rgba(255,255,255,.07); --accent:#56C9EF; --accent2:#80DCF8; --cyan:#80DCF8; --accent-soft:rgba(86,201,239,.16);
+  --track:rgba(255,255,255,.1); --chip:rgba(255,255,255,.06);
+  --batt-a:oklch(.66 .19 300); --batt-b:oklch(.7 .15 250); --fuel-a:oklch(.8 .13 195); --fuel-b:oklch(.78 .16 155);
+  --ok:#38d17f; --warn:#f5b942; --crit:#F46C64;
+}
+@keyframes orbPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@keyframes orbRing{0%{transform:scale(.85);opacity:.6}100%{transform:scale(1.8);opacity:0}}
+@keyframes eq{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
+@keyframes draw{from{stroke-dashoffset:314.2}}
+@keyframes dashmove{to{stroke-dashoffset:-200}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes flow{0%{transform:translateX(-14%);opacity:0}25%{opacity:1}100%{transform:translateX(60%);opacity:0}}
+</style>
+</helmet>
+<div data-theme="{{theme}}" style="width:100%;height:100%;position:relative;overflow:hidden;background:var(--screen);font-family:Manrope,system-ui,sans-serif;color:var(--fg);display:flex;-webkit-font-smoothing:antialiased">
+
+  <!-- ================= NAV RAIL ================= -->
+  <nav style="width:92px;flex:none;background:var(--rail-bg);display:flex;flex-direction:column;align-items:center;padding:24px 0 20px;position:relative;z-index:5">
+    <div style="flex:1;display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;width:100%">
+      <sc-for list="{{nav}}" as="item" hint-placeholder-count="6">
+        <div style="position:relative;width:60px;height:60px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:18px" style-hover="background:rgba(255,255,255,.05)">
+          <sc-if value="{{item.active}}" hint-placeholder-val="{{false}}">
+            <div style="position:absolute;inset:0;background:var(--rail-active);border-radius:18px"></div>
+          </sc-if>
+          <span class="ms" style="position:relative;font-size:26px;color:{{item.color}};font-variation-settings:'FILL' {{item.fill}},'wght' 300,'opsz' 26">{{item.sym}}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="ms" style="font-size:20px;color:var(--accent2);font-variation-settings:'wght' 300">shield</span><span style="font-family:Sora,sans-serif;font-weight:600;font-size:9px;letter-spacing:.06em;color:rgba(255,255,255,.6);text-align:center;line-height:1.1">MOTOR<br>GUARD</span></div>
+  </nav>
+
+  <!-- ================= CONTENT COLUMN ================= -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;position:relative;z-index:1">
+
+    <!-- STATUS BAR -->
+    <div style="height:54px;flex:none;display:flex;align-items:center;justify-content:flex-end;padding:0 28px;gap:18px;z-index:4">
+      <span class="ms" style="font-size:19px;color:var(--fg2)">signal_cellular_alt</span>
+      <span class="ms" style="font-size:19px;color:var(--fg2)">wifi</span>
+      <span class="ms" style="font-size:18px;color:var(--fg2)">bluetooth</span>
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--glass2);border:1px solid var(--glass-brd);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:17px;color:var(--fg2)">person</span></div>
+      <div style="font-size:14px;font-weight:600;color:var(--fg2)">{{date}}</div>
+      <div style="font-family:Sora,sans-serif;font-size:16px;font-weight:600;letter-spacing:.01em">{{time}}</div>
+    </div>
+
+    <!-- SURFACE STAGE -->
+    <div style="flex:1;position:relative;overflow:hidden;min-height:0">
+
+      <!-- ===== LAUNCHER (also backdrop for VOICE) ===== -->
+      <sc-if value="{{isLauncherLike}}" hint-placeholder-val="{{true}}">
+      <div style="position:absolute;inset:0;padding:2px 22px 22px">
+        <div style="display:flex;gap:16px;height:100%">
+
+          <!-- Col 1: Map -->
+          <div style="flex:1 1 320px;min-width:280px;display:flex;flex-direction:column;padding:24px 24px 22px;background:var(--panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:26px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div><div style="font-family:Sora,sans-serif;font-size:30px;font-weight:600;line-height:1">600<span style="font-size:15px;font-weight:500;color:var(--fg2)"> m</span></div><div style="font-size:13px;color:var(--fg2);margin-top:3px">Turn right</div></div>
+              <span class="ms" style="font-size:38px;color:var(--fg);font-variation-settings:'wght' 300">turn_right</span>
+            </div>
+            <div style="flex:1;position:relative;margin:16px 0;border-radius:20px;overflow:hidden">
+              <image-slot id="home-map" shape="rect" src="assets/map.png" placeholder="Drop a map" style="position:absolute;inset:0"></image-slot>
+              <div style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px var(--glass-brd)"></div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:10px"><span style="font-family:Sora,sans-serif;font-size:18px;font-weight:600">62.3 km</span><span style="color:var(--fg3)">·</span><span style="font-family:Sora,sans-serif;font-size:18px;font-weight:600">1h 14m</span></div>
+            <div style="font-size:12px;color:var(--fg2);margin-top:3px">Arrival 1:40 PM</div>
+          </div>
+
+          <!-- Col 2: Vehicle -->
+          <div style="flex:1.2 1 360px;min-width:340px;display:flex;flex-direction:column;padding:24px 26px;background:var(--panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:26px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+            <div style="display:flex;gap:20px;justify-content:center">
+              <svg width="118" height="118" viewBox="0 0 120 120"><defs><linearGradient id="gBatt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--batt-a)"></stop><stop offset="1" stop-color="var(--batt-b)"></stop></linearGradient></defs><circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="8"></circle><circle cx="60" cy="60" r="52" fill="none" stroke="url(#gBatt)" stroke-width="8" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="81.7" transform="rotate(-90 60 60)" style="animation:draw 1.5s cubic-bezier(.2,.7,.2,1) both"></circle><text x="60" y="57" text-anchor="middle" font-family="Sora" font-size="26" font-weight="600" fill="var(--fg)">75%</text><text x="60" y="75" text-anchor="middle" font-family="Manrope" font-size="11" fill="var(--fg2)">Battery</text></svg>
+              <svg width="118" height="118" viewBox="0 0 120 120"><defs><linearGradient id="gRange" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--fuel-a)"></stop><stop offset="1" stop-color="var(--fuel-b)"></stop></linearGradient></defs><circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="8"></circle><circle cx="60" cy="60" r="52" fill="none" stroke="url(#gRange)" stroke-width="8" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="124.1" transform="rotate(-90 60 60)" style="animation:draw 1.7s cubic-bezier(.2,.7,.2,1) both"></circle><text x="60" y="55" text-anchor="middle" font-family="Sora" font-size="23" font-weight="600" fill="var(--fg)">312</text><text x="60" y="74" text-anchor="middle" font-family="Manrope" font-size="11" fill="var(--fg2)">mi range</text></svg>
+            </div>
+            <div style="flex:1;position:relative;margin:8px 0;min-height:70px;border-radius:18px;overflow:hidden">
+              <image-slot id="car-render" shape="rect" fit="contain" placeholder="Drop car render (transparent PNG)" style="position:absolute;inset:0"></image-slot>
+            </div>
+            <div style="display:flex">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">directions_car</span><span style="font-size:12px;font-weight:600;color:var(--fg2)">Vehicle Status</span></div>
+              <div style="width:1px;background:var(--line)"></div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">settings</span><span style="font-size:12px;font-weight:600;color:var(--fg2)">Service Schedule</span></div>
+            </div>
+          </div>
+
+          <!-- Col 3: Weather + Media -->
+          <div style="flex:1 1 320px;min-width:300px;display:flex;flex-direction:column;gap:16px">
+            <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:22px 26px;background:var(--panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:26px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div><div style="font-family:Sora,sans-serif;font-size:34px;font-weight:600;line-height:1">34°C</div><div style="font-size:13px;color:var(--fg2);margin-top:4px">Partly Cloudy</div></div>
+                <span class="ms" style="font-size:52px;color:var(--cyan);font-variation-settings:'FILL' 1">partly_cloudy_day</span>
+              </div>
+              <div style="display:flex;gap:26px;margin-top:18px">
+                <div style="display:flex;align-items:center;gap:9px"><span class="ms" style="font-size:22px;color:var(--fg3);font-variation-settings:'wght' 300">eco</span><div><div style="font-size:11px;color:var(--fg3)">AQI 42</div><div style="font-size:13px;font-weight:600">Good</div></div></div>
+                <div style="display:flex;align-items:center;gap:9px"><span class="ms" style="font-size:22px;color:var(--fg3);font-variation-settings:'wght' 300">air</span><div><div style="font-size:11px;color:var(--fg3)">Wind</div><div style="font-size:13px;font-weight:600">23 km/h</div></div></div>
+              </div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;padding:20px 26px;background:var(--panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:26px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+              <div style="display:flex;align-items:center;gap:14px">
+                <div style="width:56px;height:56px;flex:none;border-radius:15px;overflow:hidden;position:relative"><image-slot id="home-album" shape="rect" placeholder="art" style="width:56px;height:56px"></image-slot></div>
+                <div style="flex:1;min-width:0"><div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Shape of You</div><div style="font-size:13px;color:var(--fg2)">Ed Sheeran</div></div>
+                <span class="ms" style="font-size:24px;color:var(--fg3);font-variation-settings:'wght' 300;cursor:pointer">favorite</span>
+              </div>
+              <div style="flex:1"></div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+                <span style="font-size:11px;color:var(--fg3)">2:09</span>
+                <div style="flex:1;height:4px;border-radius:2px;background:var(--track);position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:41%;border-radius:2px;background:var(--fg)"></div></div>
+                <span style="font-size:11px;color:var(--fg3)">5:23</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:28px;margin-top:14px">
+                <span class="ms" style="font-size:28px;color:var(--fg);cursor:pointer">skip_previous</span>
+                <div style="width:54px;height:54px;border-radius:50%;background:var(--fg);display:flex;align-items:center;justify-content:center;cursor:pointer"><span class="ms" style="font-size:26px;color:var(--screen);font-variation-settings:'FILL' 1">pause</span></div>
+                <span class="ms" style="font-size:28px;color:var(--fg);cursor:pointer">skip_next</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== VOICE OVERLAY (Google-Assistant style) ===== -->
+      <sc-if value="{{isVoice}}" hint-placeholder-val="{{false}}">
+      <div style="position:absolute;inset:0;background:rgba(8,14,26,.3);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);display:flex;align-items:flex-end;justify-content:center;padding-bottom:26px">
+        <div style="width:min(80%,740px);display:flex;align-items:center;gap:22px;padding:20px 26px;border-radius:26px;background:var(--glass);backdrop-filter:blur(26px);-webkit-backdrop-filter:blur(26px);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi);animation:rise .35s ease both">
+          <div style="position:relative;width:56px;height:56px;flex:none;display:flex;align-items:center;justify-content:center">
+            <div style="position:absolute;inset:0;border-radius:50%;border:2px solid var(--accent);animation:orbRing 2.4s ease-out infinite"></div>
+            <div style="width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#e2ecff,var(--accent) 58%,var(--accent2));box-shadow:0 0 26px -4px var(--accent);animation:orbPulse 2.6s ease-in-out infinite"></div>
+          </div>
+          <div style="flex:1;min-width:0;font-family:Sora,sans-serif;font-size:22px;font-weight:600;line-height:1.25;color:var(--fg)">Navigate to Blue Bottle Coffee<span style="color:var(--accent);font-weight:400">|</span></div>
+          <div style="display:flex;gap:4px;align-items:center;height:34px;flex:none">
+            <sc-for list="{{bars}}" as="b" hint-placeholder-count="7"><div style="width:4px;height:34px;border-radius:3px;background:var(--accent);transform-origin:center;animation:eq .95s ease-in-out infinite;animation-delay:{{b.delay}}"></div></sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== MEDIA ===== -->
+      <sc-if value="{{isMedia}}" hint-placeholder-val="{{false}}">
+      <div style="position:absolute;inset:0;padding:2px 22px 22px;display:flex;gap:20px">
+        <div style="flex:1.05;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:28px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+          <div style="position:relative;width:min(54%,232px);aspect-ratio:1">
+            <div style="position:absolute;inset:0;transform:rotate(-9deg) translateX(-13%) scale(.86);border-radius:22px;background:var(--glass2);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow)"></div>
+            <div style="position:absolute;inset:0;transform:rotate(9deg) translateX(13%) scale(.86);border-radius:22px;background:var(--glass2);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow)"></div>
+            <div style="position:absolute;inset:0;border-radius:22px;background:var(--glass2);background-image:repeating-linear-gradient(45deg,var(--line) 0 1px,transparent 1px 13px);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px"><span class="ms" style="font-size:32px;color:var(--fg3)">album</span><span style="font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3)">album art</span></div>
+          </div>
+          <div style="font-family:Sora,sans-serif;font-size:27px;font-weight:600;margin-top:26px">Shape of You</div>
+          <div style="font-size:14px;color:var(--fg2);margin-top:3px">Ed Sheeran · ÷ (Divide)</div>
+          <div style="display:flex;align-items:center;gap:10px;width:min(82%,380px);margin-top:22px">
+            <span style="font-size:11px;color:var(--fg3)">2:09</span>
+            <div style="flex:1;height:5px;border-radius:3px;background:var(--track);position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:41%;border-radius:3px;background:var(--fg)"></div><div style="position:absolute;left:41%;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:var(--fg)"></div></div>
+            <span style="font-size:11px;color:var(--fg3)">5:23</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:26px;margin-top:22px">
+            <span class="ms" style="font-size:24px;color:var(--fg2);font-variation-settings:'wght' 300;cursor:pointer">shuffle</span>
+            <span class="ms" style="font-size:30px;color:var(--fg);cursor:pointer">skip_previous</span>
+            <div style="width:66px;height:66px;border-radius:50%;background:var(--fg);display:flex;align-items:center;justify-content:center;cursor:pointer"><span class="ms" style="font-size:32px;color:var(--screen);font-variation-settings:'FILL' 1">pause</span></div>
+            <span class="ms" style="font-size:30px;color:var(--fg);cursor:pointer">skip_next</span>
+            <span class="ms" style="font-size:24px;color:var(--fg2);font-variation-settings:'wght' 300;cursor:pointer">repeat</span>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:22px 8px 10px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:28px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+          <div style="display:flex;align-items:center;gap:12px;padding:0 18px 14px">
+            <div style="flex:1"><div style="font-family:Sora,sans-serif;font-size:19px;font-weight:600">Today's Top Hits</div><div style="font-size:12px;color:var(--fg2)">38 songs · 2h 21m</div></div>
+            <span class="ms" style="font-size:22px;color:var(--fg2);font-variation-settings:'wght' 300;cursor:pointer">ios_share</span>
+            <span class="ms" style="font-size:22px;color:var(--fg2);cursor:pointer">more_horiz</span>
+          </div>
+          <div style="flex:1;overflow:hidden">
+            <sc-for list="{{playlist}}" as="t" hint-placeholder-count="6">
+              <div style="display:flex;align-items:center;gap:15px;padding:12px 18px;border-radius:15px;background:{{t.rowbg}};cursor:pointer">
+                <sc-if value="{{t.playing}}" hint-placeholder-val="{{false}}"><div style="width:22px;display:flex;gap:2px;align-items:flex-end;height:15px;flex:none"><div style="width:3px;background:var(--accent);border-radius:2px;height:15px;transform-origin:bottom;animation:eq .8s ease-in-out infinite"></div><div style="width:3px;background:var(--accent);border-radius:2px;height:15px;transform-origin:bottom;animation:eq .8s ease-in-out infinite .25s"></div><div style="width:3px;background:var(--accent);border-radius:2px;height:15px;transform-origin:bottom;animation:eq .8s ease-in-out infinite .1s"></div></div></sc-if>
+                <sc-if value="{{t.notPlaying}}" hint-placeholder-val="{{true}}"><span style="width:22px;flex:none;text-align:center;font-family:Sora,sans-serif;font-size:15px;color:var(--fg3)">{{t.n}}</span></sc-if>
+                <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.title}}</div><div style="font-size:12px;color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.sub}}</div></div>
+                <span style="font-size:12px;color:var(--fg3)">{{t.dur}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== NAV / MAPS ===== -->
+      <sc-if value="{{isNav}}" hint-placeholder-val="{{false}}">
+      <div style="position:absolute;inset:0;padding:2px 22px 22px">
+        <div style="position:relative;width:100%;height:100%;border-radius:28px;overflow:hidden;border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow)">
+          <image-slot id="nav-map" shape="rect" src="assets/map.png" placeholder="Drop a map" style="position:absolute;inset:0"></image-slot>
+          <div style="position:absolute;left:22px;top:22px;display:flex;align-items:center;gap:18px;padding:18px 26px;border-radius:24px;background:var(--glass);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+            <span class="ms" style="font-size:46px;color:var(--accent);font-variation-settings:'wght' 400">turn_right</span>
+            <div><div style="font-family:Sora,sans-serif;font-size:34px;font-weight:600;line-height:1">600 m</div><div style="font-size:14px;color:var(--fg2);margin-top:3px">Turn right onto Market St</div></div>
+          </div>
+          <div style="position:absolute;right:22px;top:22px;display:flex;flex-direction:column;gap:12px">
+            <div style="width:70px;height:70px;border-radius:50%;background:var(--glass);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:2px solid #e2453f;box-shadow:var(--glass-shadow);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font-family:Sora,sans-serif;font-size:23px;font-weight:600;line-height:1">48</span><span style="font-size:9px;color:var(--fg2)">km/h</span></div>
+            <div style="width:70px;height:70px;border-radius:22px;background:var(--glass);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow);display:flex;align-items:center;justify-content:center;cursor:pointer"><span class="ms" style="font-size:28px;color:var(--fg);font-variation-settings:'wght' 300">my_location</span></div>
+          </div>
+          <div style="position:absolute;left:22px;right:22px;bottom:22px;display:flex;align-items:center;gap:24px;padding:18px 26px;border-radius:24px;background:var(--glass);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+            <div><div style="font-family:Sora,sans-serif;font-size:26px;font-weight:600;line-height:1">1:40 PM</div><div style="font-size:12px;color:var(--fg2)">Arrival</div></div>
+            <div style="width:1px;height:38px;background:var(--line)"></div>
+            <div><div style="font-family:Sora,sans-serif;font-size:26px;font-weight:600;line-height:1">1h 14m</div><div style="font-size:12px;color:var(--fg2)">62.3 km · fastest route</div></div>
+            <div style="margin-left:auto;display:flex;gap:12px">
+              <div style="width:52px;height:52px;border-radius:17px;background:var(--chip);border:1px solid var(--glass-brd);display:flex;align-items:center;justify-content:center;cursor:pointer"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">volume_up</span></div>
+              <div style="width:52px;height:52px;border-radius:17px;background:#e2453f;display:flex;align-items:center;justify-content:center;cursor:pointer"><span class="ms" style="font-size:24px;color:#fff">close</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== DIAGNOSTICS ===== -->
+      <sc-if value="{{isDiag}}" hint-placeholder-val="{{false}}">
+      <div style="position:absolute;inset:0;padding:2px 22px 22px;display:flex;gap:20px">
+        <div style="flex:1.35;min-width:0;position:relative;border-radius:28px;overflow:hidden;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+          <div style="position:absolute;left:6%;top:9%;right:6%;bottom:9%;border-radius:22px;background:var(--glass2);background-image:repeating-linear-gradient(45deg,var(--line) 0 1px,transparent 1px 13px);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:60px;color:var(--fg3);font-variation-settings:'wght' 200">directions_car</span></div>
+          <sc-for list="{{hotspots}}" as="h" hint-placeholder-count="7">
+            <div style="position:absolute;left:{{h.x}}%;top:{{h.y}}%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer">
+              <div style="width:26px;height:26px;border-radius:50%;background:{{h.dot}};border:{{h.ring}};display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.22)"><span class="ms" style="font-size:15px;color:#fff">{{h.sym}}</span></div>
+              <span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:9px;background:var(--glass);border:1px solid var(--glass-brd);white-space:nowrap">{{h.label}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px;overflow:hidden">
+          <div style="padding:18px 22px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:24px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+            <div style="display:flex;align-items:center;gap:12px"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">battery_charging_full</span><span style="font-family:Sora,sans-serif;font-size:18px;font-weight:600">HV Battery</span><span style="margin-left:auto;font-size:12px;color:oklch(.62 .13 150);font-weight:700">Healthy</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px">
+              <sc-for list="{{partStats}}" as="s" hint-placeholder-count="4"><div style="padding:12px 14px;border-radius:15px;background:var(--chip);border:1px solid var(--glass-brd)"><div style="font-family:Sora,sans-serif;font-size:22px;font-weight:600">{{s.val}}</div><div style="font-size:11px;color:var(--fg2);margin-top:2px">{{s.label}}</div></div></sc-for>
+            </div>
+          </div>
+          <div style="padding:16px 22px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:24px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi);display:flex;align-items:center;gap:18px">
+            <svg width="70" height="70" viewBox="0 0 120 120" style="flex:none"><circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="9"></circle><circle cx="60" cy="60" r="52" fill="none" stroke="oklch(.66 .13 150)" stroke-width="9" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="49" transform="rotate(-90 60 60)" style="animation:draw 1.6s cubic-bezier(.2,.7,.2,1) both"></circle><text x="60" y="68" text-anchor="middle" font-family="Sora" font-size="30" font-weight="600" fill="var(--fg)">85</text></svg>
+            <div style="flex:1"><div style="font-family:Sora,sans-serif;font-size:16px;font-weight:600">Overall health</div><div style="font-size:12px;color:var(--fg2);margin-top:3px">1 item needs attention · scan 2 Aug</div></div>
+          </div>
+          <div style="flex:1;overflow:hidden;padding:6px 12px;background:var(--glass2);border:1px solid var(--glass-brd);border-radius:24px">
+            <sc-for list="{{alerts}}" as="a" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:14px;padding:12px 10px">
+                <span class="ms" style="font-size:22px;color:{{a.color}};flex:none;font-variation-settings:'wght' 300">{{a.sym}}</span>
+                <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{a.title}}</div><div style="font-size:11px;color:var(--fg2)">{{a.sub}}</div></div>
+                <span class="ms" style="font-size:20px;color:var(--fg3);font-variation-settings:'wght' 300">chevron_right</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== CLIMATE ===== -->
+      <sc-if value="{{isClimate}}" hint-placeholder-val="{{false}}">
+      <div style="position:absolute;inset:0;padding:2px 22px 22px;display:flex;flex-direction:column;gap:16px">
+        <div style="flex:1;display:flex;gap:16px;min-height:0">
+          <div style="flex:none;width:92px;display:flex;flex-direction:column;gap:14px">
+            <div style="flex:1;border-radius:24px;background:var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;box-shadow:0 8px 22px -8px var(--accent);cursor:pointer"><span class="ms" style="font-size:26px;color:#fff;font-variation-settings:'wght' 300">power_settings_new</span><span style="font-size:10px;color:#fff;font-weight:600">ON</span></div>
+            <div style="flex:1;border-radius:24px;background:var(--glass);border:1px solid var(--glass-brd);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer" style-hover="background:var(--chip)"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">ac_unit</span><span style="font-size:10px;font-weight:600">A/C</span></div>
+            <div style="flex:1;border-radius:24px;background:var(--glass);border:1px solid var(--glass-brd);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer" style-hover="background:var(--chip)"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">mode_fan</span><span style="font-size:10px;font-weight:600">AUTO</span></div>
+          </div>
+          <div style="flex:1;min-width:0;position:relative;border-radius:26px;overflow:hidden;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi);display:flex;align-items:center;justify-content:center">
+            <div style="position:absolute;left:8%;top:26%;width:52%;height:48%;overflow:hidden;opacity:.5">
+              <div style="position:absolute;top:12%;left:0;width:70%;height:2px;border-radius:2px;background:var(--cyan);animation:flow 3s ease-in-out infinite"></div>
+              <div style="position:absolute;top:42%;left:0;width:78%;height:2px;border-radius:2px;background:var(--cyan);animation:flow 3s ease-in-out infinite .6s"></div>
+              <div style="position:absolute;top:72%;left:0;width:60%;height:2px;border-radius:2px;background:var(--cyan);animation:flow 3s ease-in-out infinite 1.2s"></div>
+            </div>
+            <div style="width:150px;height:200px;position:relative">
+              <div style="position:absolute;inset:0;border-radius:26px 26px 32px 32px;background:var(--glass2);background-image:repeating-linear-gradient(45deg,var(--line) 0 1px,transparent 1px 11px);border:1px solid var(--glass-brd)"></div>
+              <span class="ms" style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);font-size:44px;color:var(--fg3);font-variation-settings:'wght' 200">airline_seat_recline_normal</span>
+              <span style="position:absolute;left:50%;bottom:14px;transform:translateX(-50%);font-family:ui-monospace,monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg3)">driver seat</span>
+            </div>
+          </div>
+          <div style="flex:none;width:92px;display:flex;flex-direction:column;gap:14px">
+            <div style="flex:1;border-radius:24px;background:var(--glass);border:1px solid var(--glass-brd);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer" style-hover="background:var(--chip)"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">autorenew</span><span style="font-size:9px;font-weight:600">RECIRC</span></div>
+            <div style="flex:1;border-radius:24px;background:var(--glass);border:1px solid var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer"><span class="ms" style="font-size:24px;color:var(--accent);font-variation-settings:'wght' 300">airwave</span><span style="font-size:9px;font-weight:600;color:var(--accent)">FRONT</span></div>
+            <div style="flex:1;border-radius:24px;background:var(--glass);border:1px solid var(--glass-brd);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer;overflow:hidden" style-hover="background:var(--chip)"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">dehaze</span><span style="font-size:9px;font-weight:600">REAR</span></div>
+          </div>
+        </div>
+        <div style="flex:none;display:flex;align-items:center;gap:16px;padding:16px 20px;border-radius:26px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+          <div style="display:flex;align-items:center;gap:16px;flex:1;justify-content:center"><span class="ms" style="font-size:26px;color:var(--fg2);cursor:pointer;font-variation-settings:'wght' 300">remove</span><div style="text-align:center"><div style="font-family:Sora,sans-serif;font-size:34px;font-weight:600;line-height:1">22<span style="font-size:16px;color:var(--fg2)">°C</span></div><div style="font-size:11px;color:var(--fg3)">Driver</div></div><span class="ms" style="font-size:26px;color:var(--fg);cursor:pointer;font-variation-settings:'wght' 300">add</span></div>
+          <div style="padding:14px 22px;border-radius:18px;background:var(--chip);border:1px solid var(--glass-brd);font-size:13px;font-weight:700;letter-spacing:.06em;cursor:pointer">SYNC</div>
+          <div style="display:flex;align-items:center;gap:16px;flex:1;justify-content:center"><span class="ms" style="font-size:26px;color:var(--fg2);cursor:pointer;font-variation-settings:'wght' 300">remove</span><div style="text-align:center"><div style="font-family:Sora,sans-serif;font-size:34px;font-weight:600;line-height:1">22<span style="font-size:16px;color:var(--fg2)">°C</span></div><div style="font-size:11px;color:var(--fg3)">Passenger</div></div><span class="ms" style="font-size:26px;color:var(--fg);cursor:pointer;font-variation-settings:'wght' 300">add</span></div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== WEATHER ===== -->
+      <sc-if value="{{isWeather}}" hint-placeholder-val="{{false}}">
+      <div style="position:absolute;inset:0;padding:2px 22px 22px">
+        <div style="position:relative;width:100%;height:100%;border-radius:28px;overflow:hidden;border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow);background:linear-gradient(160deg,#8aa8cf,#bccbde 55%,#d6dfe9);background-image:repeating-linear-gradient(50deg,rgba(255,255,255,.12) 0 2px,transparent 2px 26px)">
+          <div style="position:absolute;inset:0;background:linear-gradient(100deg,rgba(12,26,48,.62) 0%,rgba(12,26,48,.22) 46%,transparent 66%)"></div>
+          <span style="position:absolute;right:24px;bottom:18px;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5)">weather photo — San Francisco</span>
+          <div style="position:absolute;left:36px;top:32px;color:#fff;text-shadow:0 2px 16px rgba(10,24,50,.5)">
+            <div style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600"><span class="ms" style="font-size:20px;font-variation-settings:'FILL' 1">location_on</span>San Francisco, CA</div>
+            <div style="font-size:13px;opacity:.85;margin-top:3px">Monday, 26 July</div>
+            <div style="font-family:Sora,sans-serif;font-size:118px;font-weight:600;line-height:.9;margin-top:20px">21°C</div>
+            <div style="font-size:22px;font-weight:500;margin-top:2px">Partly Cloudy</div>
+            <div style="display:flex;gap:22px;margin-top:24px;font-size:13px;opacity:.92">
+              <span>Feels like 22°C</span><span style="opacity:.5">·</span><span>Humidity 58%</span><span style="opacity:.5">·</span><span>AQI 42 Good</span>
+            </div>
+          </div>
+          <div style="position:absolute;right:24px;top:24px;bottom:24px;width:min(40%,350px);border-radius:24px;background:rgba(14,26,48,.34);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.22);padding:6px 22px;display:flex;flex-direction:column;justify-content:center">
+            <sc-for list="{{forecast}}" as="f" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;gap:14px;padding:13px 2px;border-bottom:1px solid rgba(255,255,255,.14);color:#fff">
+                <span style="font-size:15px;font-weight:600;width:44px">{{f.d}}</span>
+                <span class="ms" style="font-size:26px;font-variation-settings:'FILL' 1;color:rgba(255,255,255,.9)">{{f.sym}}</span>
+                <span style="flex:1;text-align:right;font-family:Sora,sans-serif;font-size:16px;font-weight:500">{{f.lo}}° <span style="opacity:.55">/</span> {{f.hi}}°</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== SETTINGS ===== -->
+      <sc-if value="{{isSettings}}" hint-placeholder-val="{{false}}">
+      <div style="position:absolute;inset:0;padding:2px 22px 22px;display:flex;gap:16px">
+        <!-- LEFT: tab list (30%) -->
+        <div style="flex:0 0 30%;min-width:0;display:flex;flex-direction:column;gap:8px;padding:16px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:26px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)">
+          <sc-for list="{{settingsTabs}}" as="t" hint-placeholder-count="4">
+            <div onClick="{{t.onClick}}" style="display:flex;align-items:center;gap:14px;padding:16px 16px;border-radius:18px;cursor:pointer;background:{{t.bg}};border:1px solid {{t.brd}}">
+              <span class="ms" style="font-size:24px;color:{{t.ic}};flex:none;font-variation-settings:'wght' 300">{{t.sym}}</span>
+              <div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:600;color:{{t.fg}}">{{t.label}}</div><div style="font-size:11px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.meta}}</div></div>
+              <sc-if value="{{t.active}}" hint-placeholder-val="{{false}}"><span class="ms" style="font-size:20px;color:var(--accent)">chevron_right</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- RIGHT: detail pane (70%) -->
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:24px 26px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-brd);border-radius:26px;box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi);overflow:hidden">
+
+          <!-- Wi-Fi -->
+          <sc-if value="{{setIsWifi}}" hint-placeholder-val="{{true}}">
+          <div style="display:flex;align-items:center;gap:14px"><span class="ms" style="font-size:28px;color:var(--accent);font-variation-settings:'wght' 300">wifi</span><div style="flex:1"><div style="font-family:Sora,sans-serif;font-size:22px;font-weight:600">Wi-Fi</div><div style="font-size:12px;color:var(--fg2)">Connected to GarageNet_5G</div></div><div style="width:56px;height:32px;border-radius:16px;background:var(--accent);position:relative"><div style="position:absolute;right:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff"></div></div></div>
+          <div style="height:1px;background:var(--line);margin:20px 0"></div>
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg3);margin-bottom:6px">Available networks</div>
+          <div style="flex:1;overflow:hidden">
+            <sc-for list="{{settings.wifi}}" as="n" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:16px;padding:16px 6px;border-bottom:1px solid var(--line);cursor:pointer">
+                <span class="ms" style="font-size:24px;color:{{n.iconc}};flex:none;font-variation-settings:'wght' 300">{{n.sym}}</span>
+                <div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:600">{{n.name}}</div><div style="font-size:12px;color:var(--fg3)">{{n.meta}}</div></div>
+                <sc-if value="{{n.on}}" hint-placeholder-val="{{false}}"><span class="ms" style="font-size:22px;color:var(--ok)">check_circle</span></sc-if>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+
+          <!-- Bluetooth -->
+          <sc-if value="{{setIsBt}}" hint-placeholder-val="{{false}}">
+          <div style="display:flex;align-items:center;gap:14px"><span class="ms" style="font-size:28px;color:var(--accent);font-variation-settings:'wght' 300">bluetooth</span><div style="flex:1"><div style="font-family:Sora,sans-serif;font-size:22px;font-weight:600">Bluetooth</div><div style="font-size:12px;color:var(--fg2)">Pixel 9 Pro connected</div></div><div style="width:56px;height:32px;border-radius:16px;background:var(--accent);position:relative"><div style="position:absolute;right:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff"></div></div></div>
+          <div style="height:1px;background:var(--line);margin:20px 0"></div>
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg3);margin-bottom:6px">Paired devices</div>
+          <div style="flex:1;overflow:hidden">
+            <sc-for list="{{settings.bt}}" as="n" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:16px;padding:16px 6px;border-bottom:1px solid var(--line);cursor:pointer">
+                <span class="ms" style="font-size:24px;color:{{n.iconc}};flex:none;font-variation-settings:'wght' 300">{{n.sym}}</span>
+                <div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:600">{{n.name}}</div><div style="font-size:12px;color:var(--fg3)">{{n.meta}}</div></div>
+                <sc-if value="{{n.on}}" hint-placeholder-val="{{false}}"><span class="ms" style="font-size:22px;color:var(--ok)">check_circle</span></sc-if>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+
+          <!-- Theme -->
+          <sc-if value="{{setIsTheme}}" hint-placeholder-val="{{false}}">
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px"><span class="ms" style="font-size:28px;color:var(--accent);font-variation-settings:'wght' 300">contrast</span><div style="font-family:Sora,sans-serif;font-size:22px;font-weight:600">Theme &amp; Display</div></div>
+          <div style="display:flex;gap:16px">
+            <div style="flex:1;padding:18px;border-radius:20px;background:var(--chip);border:2px solid {{dayBorder}};display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer">
+              <div style="width:100%;height:60px;border-radius:14px;background:linear-gradient(165deg,#f4f7fb,#e7ecf2);border:1px solid var(--line)"></div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="ms" style="font-size:20px;color:var(--fg)">light_mode</span><span style="font-size:14px;font-weight:600">Day</span></div>
+            </div>
+            <div style="flex:1;padding:18px;border-radius:20px;background:var(--chip);border:2px solid {{nightBorder}};display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer">
+              <div style="width:100%;height:60px;border-radius:14px;background:linear-gradient(165deg,#151515,#0d0d0d);border:1px solid rgba(255,255,255,.1)"></div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="ms" style="font-size:20px;color:var(--fg)">dark_mode</span><span style="font-size:14px;font-weight:600">Night</span></div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;margin-top:22px;padding-top:20px;border-top:1px solid var(--line)">
+            <span class="ms" style="font-size:24px;color:var(--fg2);font-variation-settings:'wght' 300">brightness_auto</span>
+            <div style="flex:1"><div style="font-size:15px;font-weight:600">Auto day / night</div><div style="font-size:12px;color:var(--fg3)">Follow ambient light sensor</div></div>
+            <div style="width:56px;height:32px;border-radius:16px;background:var(--accent);position:relative"><div style="position:absolute;right:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff"></div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;margin-top:20px">
+            <span class="ms" style="font-size:24px;color:var(--fg2);font-variation-settings:'wght' 300">palette</span>
+            <div style="flex:1"><div style="font-size:15px;font-weight:600">Accent color</div><div style="font-size:12px;color:var(--fg3)">Ambient LED sync</div></div>
+            <div style="display:flex;gap:10px">
+              <span style="width:28px;height:28px;border-radius:50%;background:#56C9EF;box-shadow:0 0 0 2px var(--glass-brd)"></span>
+              <span style="width:28px;height:28px;border-radius:50%;background:#38d17f"></span>
+              <span style="width:28px;height:28px;border-radius:50%;background:#f5b942"></span>
+              <span style="width:28px;height:28px;border-radius:50%;background:#c084fc"></span>
+            </div>
+          </div>
+          </sc-if>
+
+          <!-- System -->
+          <sc-if value="{{setIsSystem}}" hint-placeholder-val="{{false}}">
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px"><span class="ms" style="font-size:28px;color:var(--accent);font-variation-settings:'wght' 300">settings</span><div style="font-family:Sora,sans-serif;font-size:22px;font-weight:600">System</div></div>
+          <div style="display:flex;align-items:center;gap:16px;padding:16px 6px;border-bottom:1px solid var(--line)"><span class="ms" style="font-size:24px;color:var(--fg2);font-variation-settings:'wght' 300">system_update</span><div style="flex:1"><div style="font-size:15px;font-weight:600">MotorGuard OS</div><div style="font-size:12px;color:var(--fg3)">v4.2 · up to date</div></div><div style="padding:8px 14px;border-radius:12px;background:var(--chip);border:1px solid var(--glass-brd);font-size:12px;font-weight:600">Check</div></div>
+          <div style="display:flex;align-items:center;gap:16px;padding:16px 6px;border-bottom:1px solid var(--line);cursor:pointer"><span class="ms" style="font-size:24px;color:var(--fg2);font-variation-settings:'wght' 300">info</span><div style="flex:1"><div style="font-size:15px;font-weight:600">About vehicle</div><div style="font-size:12px;color:var(--fg3)">VIN · software · licenses</div></div><span class="ms" style="font-size:22px;color:var(--fg3)">chevron_right</span></div>
+          <div style="display:flex;align-items:center;gap:16px;padding:16px 6px;cursor:pointer"><span class="ms" style="font-size:24px;color:var(--fg2);font-variation-settings:'wght' 300">restart_alt</span><div style="flex:1"><div style="font-size:15px;font-weight:600">Reset options</div><div style="font-size:12px;color:var(--fg3)">Network, apps, or factory reset</div></div><span class="ms" style="font-size:22px;color:var(--fg3)">chevron_right</span></div>
+          </sc-if>
+
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== COMPONENT LIBRARY ===== -->
+      <sc-if value="{{isLibrary}}" hint-placeholder-val="{{false}}">
+      <div style="position:absolute;inset:0;padding:2px 22px 22px;display:grid;grid-template-columns:repeat(auto-fill,minmax(226px,1fr));grid-auto-rows:1fr;gap:14px;overflow:hidden">
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">Button · states</div><div style="display:flex;flex-direction:column;gap:9px"><div style="padding:11px;border-radius:14px;background:var(--accent);color:#fff;text-align:center;font-size:13px;font-weight:600">Primary</div><div style="padding:11px;border-radius:14px;background:var(--chip);border:1px solid var(--glass-brd);text-align:center;font-size:13px;font-weight:600">Secondary</div><div style="padding:11px;border-radius:14px;text-align:center;font-size:13px;font-weight:600;color:var(--fg3)">Disabled</div></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">Toggle · Chip</div><div style="display:flex;gap:12px;align-items:center;margin-bottom:14px"><div style="width:52px;height:30px;border-radius:16px;background:var(--accent);position:relative"><div style="position:absolute;right:3px;top:3px;width:24px;height:24px;border-radius:50%;background:#fff"></div></div><div style="width:52px;height:30px;border-radius:16px;background:var(--track);position:relative"><div style="position:absolute;left:3px;top:3px;width:24px;height:24px;border-radius:50%;background:var(--fg2)"></div></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><span style="padding:7px 12px;border-radius:12px;background:var(--chip);border:1px solid var(--accent);color:var(--accent);font-size:12px;font-weight:600">Active</span><span style="padding:7px 12px;border-radius:12px;background:var(--chip);border:1px solid var(--glass-brd);font-size:12px;font-weight:600">Chip</span></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi);display:flex;flex-direction:column"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:6px">GaugeRing</div><div style="flex:1;display:flex;align-items:center;justify-content:center"><svg width="92" height="92" viewBox="0 0 120 120"><defs><linearGradient id="gLib" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--batt-a)"></stop><stop offset="1" stop-color="var(--batt-b)"></stop></linearGradient></defs><circle cx="60" cy="60" r="52" fill="none" stroke="var(--track)" stroke-width="8"></circle><circle cx="60" cy="60" r="52" fill="none" stroke="url(#gLib)" stroke-width="8" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="98" transform="rotate(-90 60 60)"></circle><text x="60" y="66" text-anchor="middle" font-family="Sora" font-size="24" font-weight="600" fill="var(--fg)">70%</text></svg></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi);display:flex;flex-direction:column"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">StatCard</div><div style="flex:1;padding:14px;border-radius:14px;background:var(--chip);border:1px solid var(--glass-brd);display:flex;flex-direction:column;justify-content:center"><span class="ms" style="font-size:22px;color:var(--fg2);margin-bottom:4px;font-variation-settings:'wght' 300">bolt</span><div style="font-family:Sora,sans-serif;font-size:26px;font-weight:600">312<span style="font-size:13px;color:var(--fg2)"> mi</span></div><div style="font-size:12px;color:var(--fg2)">Range remaining</div></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">AppTile</div><div style="display:flex;gap:10px;flex-wrap:wrap"><div style="width:50px;height:50px;border-radius:16px;background:var(--accent);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:24px;color:#fff;font-variation-settings:'wght' 300">music_note</span></div><div style="width:50px;height:50px;border-radius:16px;background:var(--chip);border:1px solid var(--glass-brd);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">navigation</span></div><div style="width:50px;height:50px;border-radius:16px;background:var(--chip);border:1px solid var(--glass-brd);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:24px;color:var(--fg);font-variation-settings:'wght' 300">call</span></div></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">AlertBadge</div><div style="display:flex;flex-direction:column;gap:9px"><div style="display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600"><span class="ms" style="font-size:18px;color:oklch(.68 .15 70);font-variation-settings:'wght' 300">warning</span>Warning</div><div style="display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600"><span class="ms" style="font-size:18px;color:var(--accent);font-variation-settings:'wght' 300">info</span>Info</div><div style="display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600"><span class="ms" style="font-size:18px;color:oklch(.64 .13 150);font-variation-settings:'wght' 300">check_circle</span>Healthy</div></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi);display:flex;flex-direction:column"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:6px">VoiceOrb</div><div style="flex:1;display:flex;align-items:center;justify-content:center"><div style="width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#e2ecff,var(--accent) 58%,var(--accent2));box-shadow:0 0 24px -4px var(--accent);animation:orbPulse 2.6s ease-in-out infinite"></div></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">Type · Sora / Manrope</div><div style="line-height:1.15"><div style="font-family:Sora,sans-serif;font-size:26px;font-weight:600">34°</div><div style="font-family:Sora,sans-serif;font-size:16px;font-weight:600">Title</div><div style="font-size:13px;color:var(--fg2)">Body / label</div></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">Color tokens</div><div style="display:flex;gap:8px;flex-wrap:wrap"><div style="width:32px;height:32px;border-radius:10px;background:var(--accent)"></div><div style="width:32px;height:32px;border-radius:10px;background:linear-gradient(140deg,var(--batt-a),var(--batt-b))"></div><div style="width:32px;height:32px;border-radius:10px;background:linear-gradient(140deg,var(--fuel-a),var(--fuel-b))"></div><div style="width:32px;height:32px;border-radius:10px;background:#0f1828"></div><div style="width:32px;height:32px;border-radius:10px;background:var(--chip);border:1px solid var(--glass-brd)"></div></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">Stepper</div><div style="display:flex;align-items:center;justify-content:center;gap:16px"><span class="ms" style="font-size:22px;color:var(--fg2);font-variation-settings:'wght' 300">remove</span><span style="font-family:Sora,sans-serif;font-size:26px;font-weight:600">22°</span><span class="ms" style="font-size:22px;color:var(--fg);font-variation-settings:'wght' 300">add</span></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--glass);border:1px solid var(--glass-brd);box-shadow:var(--glass-shadow),inset 0 1px 0 var(--hi)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);margin-bottom:12px">Radius · Elevation</div><div style="display:flex;gap:10px;align-items:flex-end"><div style="width:40px;height:40px;border-radius:10px;background:var(--chip);border:1px solid var(--glass-brd)"></div><div style="width:44px;height:44px;border-radius:16px;background:var(--chip);border:1px solid var(--glass-brd);box-shadow:0 8px 18px -8px rgba(0,0,0,.35)"></div><div style="width:48px;height:48px;border-radius:24px;background:var(--chip);border:1px solid var(--glass-brd);box-shadow:0 16px 30px -12px rgba(0,0,0,.45)"></div></div></div>
+        <div style="padding:16px;border-radius:20px;background:var(--rail-bg);box-shadow:var(--glass-shadow)"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-bottom:12px">NavRail item</div><div style="display:flex;gap:10px"><div style="width:48px;height:48px;border-radius:16px;background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:24px;color:#fff;font-variation-settings:'FILL' 1,'wght' 300">home</span></div><div style="width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:24px;color:rgba(255,255,255,.46);font-variation-settings:'wght' 300">music_note</span></div></div></div>
+      </div>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:960,&quot;height&quot;:360},&quot;surface&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;launcher&quot;,&quot;media&quot;,&quot;nav&quot;,&quot;diagnostics&quot;,&quot;voice&quot;,&quot;climate&quot;,&quot;weather&quot;,&quot;library&quot;],&quot;default&quot;:&quot;launcher&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;day&quot;,&quot;night&quot;],&quot;default&quot;:&quot;day&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;res&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;1920&quot;,&quot;1280&quot;,&quot;1024&quot;],&quot;default&quot;:&quot;1920&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { setTab: 'wifi' };
+  renderVals() {
+    const p = this.props || {};
+    const surface = p.surface || 'launcher';
+    const theme = p.theme || 'day';
+    const res = p.res || '1920';
+    const on = '#ffffff', off = 'rgba(255,255,255,.46)';
+    const mk = (key, label, sym) => ({ key, label, sym, color: surface === key ? on : off, fill: surface === key ? 1 : 0, active: surface === key });
+    const nav = [
+      mk('launcher', 'Home', 'home'),
+      mk('media', 'Media', 'music_note'),
+      mk('nav', 'Maps', 'navigation'),
+      mk('diagnostics', 'Vehicle', 'electric_car'),
+      mk('settings', 'Settings', 'settings'),
+      mk('voice', 'Voice', 'mic'),
+    ];
+    const playlist = [
+      { n: 1, title: 'Goodnight (feat. lvl)', sub: 'Oshi, Givēon', dur: '3:32' },
+      { n: 2, title: 'Shape of You', sub: 'Ed Sheeran', dur: '3:53', playing: true },
+      { n: 3, title: 'The Way I Still Love You', sub: 'Reynard Silva', dur: '4:12' },
+      { n: 4, title: "Trouble I'm In", sub: 'Twocolors', dur: '2:57' },
+      { n: 5, title: 'Blue', sub: 'Yung Kai', dur: '3:18' },
+      { n: 6, title: 'Ivory', sub: 'Kina, Adam Melchor', dur: '3:05' },
+    ].map(t => ({ ...t, playing: !!t.playing, notPlaying: !t.playing, rowbg: t.playing ? 'var(--accent-soft)' : 'transparent' }));
+    const forecast = [
+      { d: 'Tue', lo: 17, hi: 21, sym: 'partly_cloudy_day' }, { d: 'Wed', lo: 20, hi: 21, sym: 'cloud' },
+      { d: 'Thu', lo: 19, hi: 21, sym: 'rainy' }, { d: 'Fri', lo: 18, hi: 19, sym: 'cloud' },
+      { d: 'Sat', lo: 22, hi: 24, sym: 'sunny' },
+    ];
+    const alerts = [
+      { level: 'warn', title: 'Front-left tire pressure low', sub: '29 PSI · recommended 34', color: 'oklch(.68 .15 70)', sym: 'tire_repair' },
+      { level: 'info', title: 'Software update available', sub: 'MotorGuard OS 4.2 · 320 MB', color: 'var(--accent)', sym: 'system_update' },
+      { level: 'ok', title: 'Service due in 1,200 mi', sub: 'Next check 2 Aug', color: 'oklch(.64 .13 150)', sym: 'build' },
+    ];
+    const hotspots = [
+      { key: 'motor', label: 'Motor', x: 32, y: 33, dot: 'var(--accent)', sym: 'bolt' },
+      { key: 'battery', label: 'Battery', x: 50, y: 60, dot: 'oklch(.64 .13 150)', active: true, sym: 'battery_charging_full' },
+      { key: 'tirefl', label: 'FL tire', x: 23, y: 20, dot: 'oklch(.68 .15 70)', sym: 'priority_high' },
+      { key: 'tirefr', label: 'FR tire', x: 77, y: 20, dot: 'var(--accent)', sym: 'check' },
+      { key: 'tirerl', label: 'RL tire', x: 23, y: 82, dot: 'var(--accent)', sym: 'check' },
+      { key: 'tirerr', label: 'RR tire', x: 77, y: 82, dot: 'var(--accent)', sym: 'check' },
+      { key: 'brakes', label: 'Brakes', x: 66, y: 73, dot: 'var(--accent)', sym: 'check' },
+    ].map(h => ({ ...h, ring: h.active ? '3px solid #fff' : '2px solid rgba(255,255,255,.55)' }));
+    const partStats = [
+      { label: 'Charge', val: '75%' }, { label: 'Cell temp', val: '28°C' },
+      { label: 'Health', val: '96%' }, { label: 'Cycles', val: '312' },
+    ];
+    const bars = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => ({ delay: (i * 0.08).toFixed(2) + 's' }));
+    const settings = {
+      wifi: [
+        { name: 'GarageNet_5G', meta: 'Connected · strong', on: true, sym: 'wifi' },
+        { name: 'MotorGuard_Hotspot', meta: 'Saved', on: false, sym: 'wifi' },
+        { name: 'Neighbor_2.4', meta: 'Secured', on: false, sym: 'wifi_lock' },
+      ].map(n => ({ ...n, iconc: n.on ? 'var(--accent)' : 'var(--fg3)' })),
+      bt: [
+        { name: 'Pixel 9 Pro', meta: 'Audio · Phone · Connected', on: true, sym: 'smartphone' },
+        { name: 'AirPods Pro', meta: 'Media audio', on: false, sym: 'headphones' },
+        { name: 'Garmin Watch', meta: 'Paired', on: false, sym: 'watch' },
+      ].map(n => ({ ...n, iconc: n.on ? 'var(--accent)' : 'var(--fg3)' })),
+    };
+    const voiceChips = [
+      { sym: 'play_arrow', label: 'Play music' }, { sym: 'navigation', label: 'Navigate' },
+      { sym: 'ac_unit', label: 'Climate 22°' }, { sym: 'call', label: 'Call' },
+    ];
+    const known = ['launcher', 'media', 'nav', 'diagnostics', 'voice', 'climate', 'weather', 'library', 'settings'];
+    return {
+      theme, res, surface, nav, playlist, forecast, alerts, bars, voiceChips, hotspots, partStats, settings,
+      settingsTabs: [
+        { key: 'wifi', label: 'Wi-Fi', sym: 'wifi', meta: 'GarageNet_5G' },
+        { key: 'bt', label: 'Bluetooth', sym: 'bluetooth', meta: 'Pixel 9 Pro' },
+        { key: 'theme', label: 'Theme & Display', sym: 'contrast', meta: 'Day · auto on' },
+        { key: 'system', label: 'System', sym: 'settings', meta: 'MotorGuard OS 4.2' },
+      ].map(t => ({ ...t, active: this.state.setTab === t.key,
+        bg: this.state.setTab === t.key ? 'var(--accent-soft)' : 'transparent',
+        brd: this.state.setTab === t.key ? 'var(--accent)' : 'transparent',
+        ic: this.state.setTab === t.key ? 'var(--accent)' : 'var(--fg2)',
+        fg: this.state.setTab === t.key ? 'var(--fg)' : 'var(--fg2)',
+        onClick: () => this.setState({ setTab: t.key }) })),
+      setIsWifi: this.state.setTab === 'wifi', setIsBt: this.state.setTab === 'bt',
+      setIsTheme: this.state.setTab === 'theme', setIsSystem: this.state.setTab === 'system',
+      themeIsNight: theme === 'night',
+      dayBorder: theme === 'night' ? 'transparent' : 'var(--accent)',
+      nightBorder: theme === 'night' ? 'var(--accent)' : 'transparent',
+      date: 'Mon, 26 Jul', time: '12:36',
+      isLauncherLike: surface === 'launcher' || surface === 'voice',
+      isVoice: surface === 'voice', isMedia: surface === 'media', isNav: surface === 'nav',
+      isDiag: surface === 'diagnostics', isClimate: surface === 'climate',
+      isWeather: surface === 'weather', isLibrary: surface === 'library',
+      isSettings: surface === 'settings',
+      isStub: !known.includes(surface),
+    };
+  }
+}
+</script>
+</body>
+</html>
