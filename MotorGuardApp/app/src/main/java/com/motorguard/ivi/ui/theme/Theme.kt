@@ -40,11 +40,10 @@ fun MotorGuardTheme(content: @Composable () -> Unit) {
         ThemeMode.NIGHT -> true
         ThemeMode.AUTO -> isSystemInDarkTheme()
     }
-    val accent = if (dark) ThemeState.accent.night else ThemeState.accent.day
     val base = if (dark) NightColors else DayColors
 
     MaterialTheme(
-        colorScheme = base.copy(primary = accent),
+        colorScheme = base.copy(primary = ThemeState.accent),
         content = content,
     )
 }

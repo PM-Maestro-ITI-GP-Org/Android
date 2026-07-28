@@ -2,6 +2,7 @@ package com.motorguard.ivi.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,8 @@ import com.motorguard.ivi.ui.settings.panes.BluetoothPane
 import com.motorguard.ivi.ui.settings.panes.SystemPane
 import com.motorguard.ivi.ui.settings.panes.ThemePane
 import com.motorguard.ivi.ui.settings.panes.WifiPane
+import com.motorguard.ivi.ui.theme.ThemeMode
+import com.motorguard.ivi.ui.theme.ThemeState
 
 private enum class SettingsTab(val label: String, val icon: ImageVector) {
     WIFI("Wi-Fi", Icons.Filled.Wifi),
@@ -50,34 +53,36 @@ private enum class SettingsTab(val label: String, val icon: ImageVector) {
 @Composable
 fun SettingsScreen() {
     var selected by rememberSaveable { mutableStateOf(SettingsTab.WIFI) }
+    val systemDark = isSystemInDarkTheme()
 
     Row(modifier = Modifier.fillMaxSize()) {
-        // Left ~30%: sub-tab list.
+        // Left ~32%: full-height sub-tab panel.
         Column(
             modifier = Modifier
                 .weight(0.32f)
                 .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.background)
+                .background(MaterialTheme.colorScheme.surface)
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 text = "Settings",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 14.dp),
             )
             SettingsTab.entries.forEach { tab ->
                 SubTabRow(
                     tab = tab,
+                    subtitle = subtitleFor(tab, systemDark),
                     selected = tab == selected,
                     onClick = { selected = tab },
                 )
             }
         }
 
-        // Right ~70%: detail pane.
+        // Right ~68%: detail pane.
         Box(
             modifier = Modifier
                 .weight(0.68f)
@@ -94,9 +99,24 @@ fun SettingsScreen() {
     }
 }
 
+private fun subtitleFor(tab: SettingsTab, systemDark: Boolean): String = when (tab) {
+    SettingsTab.WIFI -> if (WifiMock.enabled) (WifiMock.connectedSsid ?: "On") else "Off"
+    SettingsTab.BLUETOOTH -> if (BtMock.enabled) (BtMock.connectedName ?: "On") else "Off"
+    SettingsTab.THEME -> {
+        val mode = when (ThemeState.mode) {
+            ThemeMode.DAY -> "Day"
+            ThemeMode.NIGHT -> "Night"
+            ThemeMode.AUTO -> if (systemDark) "Night" else "Day"
+        }
+        if (ThemeState.mode == ThemeMode.AUTO) "$mode · auto on" else mode
+    }
+    SettingsTab.SYSTEM -> "MotorGuard OS 1.0"
+}
+
 @Composable
 private fun SubTabRow(
     tab: SettingsTab,
+    subtitle: String,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -108,7 +128,7 @@ private fun SubTabRow(
             .clip(RoundedCornerShape(18.dp))
             .background(bg)
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 18.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -118,13 +138,19 @@ private fun SubTabRow(
             modifier = Modifier.size(26.dp),
         )
         Spacer(Modifier.width(16.dp))
-        Text(
-            text = tab.label,
-            fontSize = 17.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = fg,
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = tab.label,
+                fontSize = 17.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = fg,
+            )
+            Text(
+                text = subtitle,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            )
+        }
         if (selected) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,

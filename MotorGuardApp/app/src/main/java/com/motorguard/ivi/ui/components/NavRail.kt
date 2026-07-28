@@ -48,7 +48,7 @@ private val RailActiveBg = Color.White.copy(alpha = 0.10f)
 private val RailDim = Tokens.Night.onBaseDim
 
 @Composable
-private fun railAccent(): Color = ThemeState.accent.night
+private fun railAccent(): Color = ThemeState.accent
 
 private data class RailItem(
     val tab: Tab,
