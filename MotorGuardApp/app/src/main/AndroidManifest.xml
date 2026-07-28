@@ -17,16 +17,19 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name">
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:resizeableActivity="true">
+            <!-- Boots as the dashboard HOME (replaces the stock CarLauncher) while
+                 still appearing in the app list. Set it as default home with:
+                 adb shell cmd package set-home-activity com.motorguard.ivi/.MainActivity -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- To boot as the actual dashboard HOME later, add:
-                 <category android:name="android.intent.category.HOME" />
-                 <category android:name="android.intent.category.DEFAULT" />
-                 (and platform-sign the app). Kept as LAUNCHER so it runs on a
-                 stock Automotive emulator without being the default launcher. -->
         </activity>
     </application>
 </manifest>
