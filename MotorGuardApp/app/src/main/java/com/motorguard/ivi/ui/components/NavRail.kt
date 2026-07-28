@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Navigation
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -38,6 +37,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.motorguard.ivi.MainActivity.Tab
+import com.motorguard.ivi.ui.theme.Tokens
+
+// The rail is always dark (independent of Day/Night), so it reads like the reference
+// even in light mode. Colors are pinned to the night palette.
+private val RailBg = Tokens.Night.railBg
+private val RailActiveBg = Color.White.copy(alpha = 0.10f)
+private val RailAccent = Tokens.Night.accent
+private val RailDim = Tokens.Night.onBaseDim
 
 private data class RailItem(
     val tab: Tab,
@@ -68,7 +75,7 @@ fun NavRail(
         modifier = Modifier
             .fillMaxHeight()
             .width(92.dp)
-            .background(MaterialTheme.colorScheme.surface),
+            .background(RailBg),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.weight(1f))
@@ -102,24 +109,19 @@ private fun RailButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val activeBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
     Box(
         modifier = Modifier
             .padding(vertical = 8.dp)
             .size(56.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(if (selected) activeBg else Color.Transparent)
+            .background(if (selected) RailActiveBg else Color.Transparent)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-            },
+            tint = if (selected) RailAccent else RailDim,
             modifier = Modifier.size(30.dp),
         )
     }
@@ -131,13 +133,13 @@ private fun BrandMark() {
         Icon(
             imageVector = Icons.Filled.Shield,
             contentDescription = "Motor Guard",
-            tint = MaterialTheme.colorScheme.primary,
+            tint = RailAccent,
             modifier = Modifier.size(26.dp),
         )
         Spacer(Modifier.height(6.dp))
         Text(
             text = "MOTOR\nGUARD",
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            color = RailDim,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.sp,
