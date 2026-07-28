@@ -3,6 +3,7 @@ package com.motorguard.ivi.ui.components
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ElectricCar
 import androidx.compose.material.icons.filled.Home
@@ -62,6 +63,7 @@ fun NavRail(
                     Icon(
                         imageVector = if (isSelected) item.on else item.off,
                         contentDescription = item.label,
+                        modifier = Modifier.size(34.dp),
                     )
                 },
                 label = { Text(item.label) },
@@ -77,7 +79,9 @@ fun NavRail(
             imageVector = Icons.Filled.Shield,
             contentDescription = "Motor Guard",
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 20.dp),
+            modifier = Modifier
+                .padding(bottom = 20.dp)
+                .size(30.dp),
         )
     }
 }

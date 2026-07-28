@@ -1,20 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Host layout: a fixed NavRail (Compose) on the left, one fragment container filling
-     the rest. MainActivity swaps the fragment when a rail item is tapped. -->
+<!-- Host layout: a full-width StatusBar (Compose) on top, then a row with the fixed
+     NavRail (Compose) on the left and the fragment container filling the rest. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
+    android:orientation="vertical"
     android:background="@color/base">
 
     <androidx.compose.ui.platform.ComposeView
-        android:id="@+id/nav_rail"
-        android:layout_width="92dp"
-        android:layout_height="match_parent" />
+        android:id="@+id/status_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
 
-    <androidx.fragment.app.FragmentContainerView
-        android:id="@+id/fragment_container"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <androidx.compose.ui.platform.ComposeView
+            android:id="@+id/nav_rail"
+            android:layout_width="92dp"
+            android:layout_height="match_parent" />
+
+        <androidx.fragment.app.FragmentContainerView
+            android:id="@+id/fragment_container"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+    </LinearLayout>
 </LinearLayout>

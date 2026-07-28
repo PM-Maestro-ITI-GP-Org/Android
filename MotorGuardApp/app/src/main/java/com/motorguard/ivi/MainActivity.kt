@@ -12,6 +12,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
 import com.motorguard.ivi.ui.components.NavRail
+import com.motorguard.ivi.ui.components.StatusBar
 import com.motorguard.ivi.ui.diagnostics.DiagnosticsFragment
 import com.motorguard.ivi.ui.home.HomeFragment
 import com.motorguard.ivi.ui.media.MediaFragment
@@ -35,6 +36,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         enableImmersiveMode()
+
+        findViewById<ComposeView>(R.id.status_bar).setContent {
+            MotorGuardTheme { StatusBar() }
+        }
 
         findViewById<ComposeView>(R.id.nav_rail).setContent {
             MotorGuardTheme {
