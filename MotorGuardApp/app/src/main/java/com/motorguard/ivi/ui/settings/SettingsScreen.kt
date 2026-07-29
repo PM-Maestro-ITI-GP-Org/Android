@@ -55,12 +55,18 @@ fun SettingsScreen() {
     var selected by rememberSaveable { mutableStateOf(SettingsTab.WIFI) }
     val systemDark = isSystemInDarkTheme()
 
-    Row(modifier = Modifier.fillMaxSize()) {
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
         // Left ~32%: full-height sub-tab panel.
         Column(
             modifier = Modifier
                 .weight(0.32f)
                 .fillMaxHeight()
+                .clip(RoundedCornerShape(28.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -82,11 +88,13 @@ fun SettingsScreen() {
             }
         }
 
-        // Right ~68%: detail pane.
+        // Right ~68%: detail panel.
         Box(
             modifier = Modifier
                 .weight(0.68f)
                 .fillMaxHeight()
+                .clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.surface)
                 .padding(horizontal = 28.dp, vertical = 24.dp),
         ) {
             when (selected) {

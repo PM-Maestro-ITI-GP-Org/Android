@@ -29,7 +29,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Rounded glass-ish surface card grouping related rows. */
+/**
+ * A titled section grouping related rows. Flat (transparent) so it sits cleanly inside
+ * the Settings detail panel; the panel itself provides the surface.
+ */
 @Composable
 fun SectionCard(
     modifier: Modifier = Modifier,
@@ -44,17 +47,10 @@ fun SectionCard(
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 1.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                modifier = Modifier.padding(start = 8.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
             )
         }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(vertical = 6.dp),
-            content = content,
-        )
+        Column(modifier = Modifier.fillMaxWidth(), content = content)
     }
 }
 
