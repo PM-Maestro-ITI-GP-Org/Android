@@ -18,8 +18,13 @@ your Trout / Raspberry Pi (KonstaKANG) tree, so the real Wi-Fi / Bluetooth APIs 
    `$(call inherit-product, vendor/motorguard/MotorGuard/aosp/motorguard.mk)`
 3. `source build/envsetup.sh && lunch <your_rpi5_car target>` then `m MotorGuard`
    (or a full `m` for the image).
-4. Flash / boot. Make it HOME (overlay or `scripts/set-as-home.sh`) and optionally hide
-   the system bars (`scripts/hide-system-bars.sh`).
+4. Flash / boot. It's already the launcher — `overrides: ["CarLauncher"]` in `Android.bp`
+   drops the stock launcher and makes Motor Guard HOME from first boot (no runtime step).
+   Optionally hide the system bars via the immersive overlay in the image.
+
+> The `scripts/set-as-home.sh` / `hide-system-bars.sh` helpers are only for the **emulator**,
+> where you can't rebuild the image. On the Pi build, `overrides` + the product `.mk`
+> handle it permanently.
 
 ## The app switches to real APIs automatically
 `Conn.init()` reads `bool/use_real_connectivity`. Emulator/Gradle build = `false` (mock);

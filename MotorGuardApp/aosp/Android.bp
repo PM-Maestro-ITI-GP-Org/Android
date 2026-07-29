@@ -28,6 +28,12 @@ android_app {
     certificate: "platform",
     privileged: true,
 
+    // Replace the stock Car launcher: CarLauncher is NOT installed, and Motor Guard
+    // (which declares the HOME intent-filter) becomes the default launcher from first
+    // boot — no runtime set-home-activity needed. Confirm the module name in your tree
+    // (usually "CarLauncher"; packages/apps/Car/Launcher).
+    overrides: ["CarLauncher"],
+
     static_libs: [
         "androidx.core_core-ktx",
         "androidx.appcompat_appcompat",
@@ -74,6 +80,7 @@ prebuilt_etc {
 //     apk: "app-release.apk",
 //     certificate: "platform",
 //     privileged: true,
+//     overrides: ["CarLauncher"],
 //     dex_preopt: { enabled: false },
 //     required: ["privapp_permissions_com.motorguard.ivi"],
 // }
