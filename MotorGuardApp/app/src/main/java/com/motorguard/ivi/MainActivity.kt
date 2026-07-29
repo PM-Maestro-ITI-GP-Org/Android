@@ -1,8 +1,11 @@
 package com.motorguard.ivi
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,6 +15,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
+import com.motorguard.ivi.data.Conn
 import com.motorguard.ivi.ui.components.NavRail
 import com.motorguard.ivi.ui.components.StatusBar
 import com.motorguard.ivi.ui.diagnostics.DiagnosticsFragment
@@ -36,6 +40,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Conn.init(this)
+        maybeRequestConnectivityPermissions()
         setContentView(R.layout.activity_main)
         enableImmersiveMode()
 
@@ -74,6 +80,26 @@ class MainActivity : AppCompatActivity() {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+
+    /**
+     * Request the runtime (dangerous) permissions the real Wi-Fi/BT path needs. Only on
+     * the real build (bool/use_real_connectivity); the emulator uses mock data and skips
+     * the prompts. Privileged/signature perms come from the privapp allow-list, not here.
+     */
+    private fun maybeRequestConnectivityPermissions() {
+        if (!resources.getBoolean(R.bool.use_real_connectivity)) return
+        val perms = buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+                add(Manifest.permission.BLUETOOTH_SCAN)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.NEARBY_WIFI_DEVICES)
+            }
+        }.toTypedArray()
+        ActivityCompat.requestPermissions(this, perms, 1001)
     }
 
     private fun show(tab: Tab) {

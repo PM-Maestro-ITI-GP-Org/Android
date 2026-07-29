@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.motorguard.ivi.data.Conn
 import com.motorguard.ivi.ui.settings.panes.BluetoothPane
 import com.motorguard.ivi.ui.settings.panes.SystemPane
 import com.motorguard.ivi.ui.settings.panes.ThemePane
@@ -109,8 +110,8 @@ fun SettingsScreen() {
 }
 
 private fun subtitleFor(tab: SettingsTab, systemDark: Boolean): String = when (tab) {
-    SettingsTab.WIFI -> if (WifiMock.enabled) (WifiMock.connectedSsid ?: "On") else "Off"
-    SettingsTab.BLUETOOTH -> if (BtMock.enabled) (BtMock.connectedName ?: "On") else "Off"
+    SettingsTab.WIFI -> if (Conn.wifi.enabled) (Conn.wifi.connectedSsid ?: "On") else "Off"
+    SettingsTab.BLUETOOTH -> if (Conn.bt.enabled) (Conn.bt.connectedName ?: "On") else "Off"
     SettingsTab.THEME -> {
         val mode = when (ThemeState.mode) {
             ThemeMode.DAY -> "Day"

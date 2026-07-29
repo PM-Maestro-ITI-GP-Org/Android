@@ -23,16 +23,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.motorguard.ivi.data.BtDevice
+import com.motorguard.ivi.data.BtKind
+import com.motorguard.ivi.data.Conn
 import com.motorguard.ivi.ui.components.MgSwitch
 import com.motorguard.ivi.ui.components.RowDivider
 import com.motorguard.ivi.ui.components.SectionCard
 import com.motorguard.ivi.ui.components.SettingRow
-import com.motorguard.ivi.ui.settings.BtDevice
-import com.motorguard.ivi.ui.settings.BtKind
-import com.motorguard.ivi.ui.settings.BtMock
 
 @Composable
 fun BluetoothPane() {
+    val bt = Conn.bt
     var menuFor by remember { mutableStateOf<BtDevice?>(null) }
     var renameFor by remember { mutableStateOf<BtDevice?>(null) }
 
@@ -45,22 +46,22 @@ fun BluetoothPane() {
         SectionCard {
             SettingRow(
                 title = "Bluetooth",
-                subtitle = if (BtMock.enabled) "On" else "Off",
+                subtitle = if (bt.enabled) "On" else "Off",
                 leading = Icons.Filled.Bluetooth,
-                onClick = { BtMock.enabled = !BtMock.enabled },
+                onClick = { bt.setEnabled(!bt.enabled) },
                 trailing = {
                     MgSwitch(
-                        checked = BtMock.enabled,
-                        onCheckedChange = { BtMock.enabled = it },
+                        checked = bt.enabled,
+                        onCheckedChange = { bt.setEnabled(it) },
                     )
                 },
             )
         }
 
-        if (BtMock.enabled) {
+        if (bt.enabled) {
             SectionCard(title = "Paired devices") {
-                BtMock.paired.forEachIndexed { i, device ->
-                    val connected = BtMock.connectedName == device.name
+                bt.paired.forEachIndexed { i, device ->
+                    val connected = bt.connectedName == device.name
                     SettingRow(
                         title = device.name,
                         subtitle = when {
@@ -68,7 +69,7 @@ fun BluetoothPane() {
                             else -> "Paired"
                         },
                         leading = device.kind.icon(),
-                        onClick = { BtMock.toggleConnect(device.name) },
+                        onClick = { bt.toggleConnect(device.name) },
                         onLongClick = { menuFor = device },
                         trailing = {
                             Text(
@@ -81,7 +82,7 @@ fun BluetoothPane() {
                             )
                         },
                     )
-                    if (i < BtMock.paired.lastIndex) RowDivider()
+                    if (i < bt.paired.lastIndex) RowDivider()
                 }
             }
         }
@@ -89,18 +90,18 @@ fun BluetoothPane() {
 
     // Long-press: connect/disconnect · rename · unpair.
     menuFor?.let { device ->
-        val connected = BtMock.connectedName == device.name
+        val connected = bt.connectedName == device.name
         AlertDialog(
             onDismissRequest = { menuFor = null },
             title = { Text(device.name) },
             text = { Text(if (connected) "Connected" else "Paired") },
             confirmButton = {
                 Column {
-                    TextButton(onClick = { BtMock.toggleConnect(device.name); menuFor = null }) {
+                    TextButton(onClick = { bt.toggleConnect(device.name); menuFor = null }) {
                         Text(if (connected) "Disconnect" else "Connect")
                     }
                     TextButton(onClick = { renameFor = device; menuFor = null }) { Text("Rename") }
-                    TextButton(onClick = { BtMock.unpair(device.name); menuFor = null }) {
+                    TextButton(onClick = { bt.unpair(device.name); menuFor = null }) {
                         Text("Unpair", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -129,11 +130,7 @@ fun BluetoothPane() {
                 TextButton(
                     enabled = name.isNotBlank(),
                     onClick = {
-                        val idx = BtMock.paired.indexOfFirst { it.name == device.name }
-                        if (idx >= 0) {
-                            if (BtMock.connectedName == device.name) BtMock.connectedName = name
-                            BtMock.paired[idx] = device.copy(name = name)
-                        }
+                        bt.rename(device.name, name)
                         renameFor = null
                     },
                 ) { Text("Save") }

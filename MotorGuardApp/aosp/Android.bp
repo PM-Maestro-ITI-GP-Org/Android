@@ -1,0 +1,79 @@
+// Motor Guard — AAOS launcher, built inside the AOSP / Raspberry Pi tree and
+// platform-signed. Copy this whole MotorGuardApp/ dir into your device/vendor tree
+// (e.g. vendor/motorguard/MotorGuard/) and adjust the relative paths below.
+//
+// Two ways to build it — pick ONE:
+//   (A) android_app  — compile from source in the tree (this file's default).
+//   (B) android_app_import — bundle a Gradle-built, platform-re-signed APK (bottom).
+//       Use (B) if your tree's AndroidX/Compose prebuilts don't match; it's the most
+//       reliable path for a Compose app.
+
+// ---------------------------------------------------------------------------
+// (A) Build from source.
+// ---------------------------------------------------------------------------
+android_app {
+    name: "MotorGuard",
+
+    srcs: ["app/src/main/java/**/*.kt"],
+    resource_dirs: [
+        "app/src/main/res",
+        // Overlay that flips bool/use_real_connectivity -> true for the real build.
+        "aosp/res-platform",
+    ],
+    manifest: "app/src/main/AndroidManifest.xml",
+
+    // System APIs (WifiManager/BluetoothAdapter control) + platform signing so the app
+    // can be HOME and hold privileged permissions.
+    platform_apis: true,
+    certificate: "platform",
+    privileged: true,
+
+    static_libs: [
+        "androidx.core_core-ktx",
+        "androidx.appcompat_appcompat",
+        "androidx.fragment_fragment-ktx",
+        "androidx.constraintlayout_constraintlayout",
+        "androidx.lifecycle_lifecycle-runtime-ktx",
+        "androidx.activity_activity-compose",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.foundation_foundation",
+        "androidx.compose.ui_ui",
+        "androidx.compose.ui_ui-tooling-preview",
+        "androidx.compose.material3_material3",
+        "androidx.compose.material_material-icons-extended",
+    ],
+
+    // Jetpack Compose compiler plugin. Module name can vary by tree/version — if Soong
+    // errors on this, check `prebuilts/sdk/current/androidx` for the exact name, or drop
+    // to path (B). Some trees enable Compose via `common_flags`/soong config instead.
+    plugins: ["androidx.compose.compiler_compiler-hosted-plugin"],
+
+    optimize: {
+        enabled: false,
+    },
+
+    // Ships in /system/priv-app so `privileged: true` + the allow-list below apply.
+    // required grants the privileged-permission allow-list file at build time.
+    required: ["privapp_permissions_com.motorguard.ivi"],
+}
+
+// The privileged-permission allow-list, installed to /system/etc/permissions.
+prebuilt_etc {
+    name: "privapp_permissions_com.motorguard.ivi",
+    sub_dir: "permissions",
+    src: "aosp/privapp_permissions_com.motorguard.ivi.xml",
+    filename_from_src: true,
+}
+
+// ---------------------------------------------------------------------------
+// (B) Prebuilt APK alternative (build the APK with Gradle first: ./gradlew assembleRelease
+//     then drop app-release.apk here). Comment out module (A) if you use this.
+// ---------------------------------------------------------------------------
+// android_app_import {
+//     name: "MotorGuard",
+//     apk: "app-release.apk",
+//     certificate: "platform",
+//     privileged: true,
+//     dex_preopt: { enabled: false },
+//     required: ["privapp_permissions_com.motorguard.ivi"],
+// }

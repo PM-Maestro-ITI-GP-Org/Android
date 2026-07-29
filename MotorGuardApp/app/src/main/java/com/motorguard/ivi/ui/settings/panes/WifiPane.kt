@@ -25,15 +25,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.motorguard.ivi.data.Conn
+import com.motorguard.ivi.data.WifiNetwork
 import com.motorguard.ivi.ui.components.MgSwitch
 import com.motorguard.ivi.ui.components.RowDivider
 import com.motorguard.ivi.ui.components.SectionCard
 import com.motorguard.ivi.ui.components.SettingRow
-import com.motorguard.ivi.ui.settings.WifiMock
-import com.motorguard.ivi.ui.settings.WifiNetwork
 
 @Composable
 fun WifiPane() {
+    val wifi = Conn.wifi
     var passwordFor by remember { mutableStateOf<WifiNetwork?>(null) }
     var menuFor by remember { mutableStateOf<WifiNetwork?>(null) }
 
@@ -46,23 +47,23 @@ fun WifiPane() {
         SectionCard {
             SettingRow(
                 title = "Wi-Fi",
-                subtitle = if (WifiMock.enabled) "On" else "Off",
+                subtitle = if (wifi.enabled) "On" else "Off",
                 leading = Icons.Filled.Wifi,
-                onClick = { WifiMock.enabled = !WifiMock.enabled },
+                onClick = { wifi.setEnabled(!wifi.enabled) },
                 trailing = {
                     MgSwitch(
-                        checked = WifiMock.enabled,
-                        onCheckedChange = { WifiMock.enabled = it },
+                        checked = wifi.enabled,
+                        onCheckedChange = { wifi.setEnabled(it) },
                     )
                 },
             )
         }
 
-        if (WifiMock.enabled) {
+        if (wifi.enabled) {
             SectionCard(title = "Networks") {
-                WifiMock.networks.forEachIndexed { i, net ->
-                    val connected = WifiMock.connectedSsid == net.ssid
-                    val known = net.ssid in WifiMock.known
+                wifi.networks.forEachIndexed { i, net ->
+                    val connected = wifi.connectedSsid == net.ssid
+                    val known = net.ssid in wifi.known
                     SettingRow(
                         title = net.ssid,
                         subtitle = when {
@@ -76,7 +77,7 @@ fun WifiPane() {
                             when {
                                 connected -> {}
                                 net.secured && !known -> passwordFor = net
-                                else -> WifiMock.connect(net.ssid)
+                                else -> wifi.connect(net.ssid)
                             }
                         },
                         onLongClick = { menuFor = net },
@@ -98,7 +99,7 @@ fun WifiPane() {
                             }
                         },
                     )
-                    if (i < WifiMock.networks.lastIndex) RowDivider()
+                    if (i < wifi.networks.lastIndex) RowDivider()
                 }
             }
         }
@@ -124,7 +125,7 @@ fun WifiPane() {
                 TextButton(
                     enabled = pw.isNotEmpty(),
                     onClick = {
-                        WifiMock.connect(net.ssid)
+                        wifi.connect(net.ssid, pw)
                         passwordFor = null
                     },
                 ) { Text("Connect") }
@@ -137,8 +138,8 @@ fun WifiPane() {
 
     // Long-press menu: connect/disconnect/forget.
     menuFor?.let { net ->
-        val connected = WifiMock.connectedSsid == net.ssid
-        val known = net.ssid in WifiMock.known
+        val connected = wifi.connectedSsid == net.ssid
+        val known = net.ssid in wifi.known
         AlertDialog(
             onDismissRequest = { menuFor = null },
             title = { Text(net.ssid) },
@@ -146,15 +147,15 @@ fun WifiPane() {
             confirmButton = {
                 Column {
                     if (connected) {
-                        TextButton(onClick = { WifiMock.disconnect(); menuFor = null }) { Text("Disconnect") }
+                        TextButton(onClick = { wifi.disconnect(); menuFor = null }) { Text("Disconnect") }
                     } else {
                         TextButton(onClick = {
-                            if (net.secured && !known) passwordFor = net else WifiMock.connect(net.ssid)
+                            if (net.secured && !known) passwordFor = net else wifi.connect(net.ssid)
                             menuFor = null
                         }) { Text("Connect") }
                     }
                     if (known) {
-                        TextButton(onClick = { WifiMock.forget(net.ssid); menuFor = null }) {
+                        TextButton(onClick = { wifi.forget(net.ssid); menuFor = null }) {
                             Text("Forget", color = MaterialTheme.colorScheme.error)
                         }
                     }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Platform-build overlay: use the REAL WifiManager / BluetoothAdapter path.
+     Overrides app/src/main/res/values/bools.xml (false) via resource_dirs order. -->
+<resources>
+    <bool name="use_real_connectivity">true</bool>
+</resources>
