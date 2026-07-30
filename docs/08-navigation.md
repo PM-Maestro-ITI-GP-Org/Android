@@ -24,6 +24,12 @@ runtime — no rebuild — and that is also the answer for a Pi with no receiver
 The three public instances are fair-use. Fine for development and the defence; point
 `NavConfig` at self-hosted Valhalla + Photon + tile server before this goes in a car.
 
+> **The Valhalla host is `valhalla1.openstreetmap.de`, not `valhalla.openstreetmap.de`.**
+> The bare host is the demo *web app*: it answers `/route` with an HTML page and HTTP 200, which
+> passes a status check and then fails deep in the JSON parser as "String cannot be converted to
+> JSONObject". `NavHttp` now rejects any non-JSON content type by name, and `NavConfigTest`
+> guards the constant.
+
 ## Fallbacks — both automatic
 
 1. **No internet** → the Canvas renderer (`CanvasMapSurface`): an abstract street grid with

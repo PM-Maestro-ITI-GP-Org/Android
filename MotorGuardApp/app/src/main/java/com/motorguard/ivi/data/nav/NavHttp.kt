@@ -32,11 +32,24 @@ internal object NavHttp {
             setRequestProperty("Accept", "application/json")
         }
         try {
+            val host = URL(url).host
             val code = connection.responseCode
             if (code !in 200..299) {
                 val detail = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                throw IOException("HTTP $code from ${URL(url).host}${detail.take(200).prefixedOrEmpty()}")
+                throw IOException("HTTP $code from $host${detail.take(200).prefixedOrEmpty()}")
             }
+
+            // A 200 is not enough. Point any of these endpoints at the wrong host and you get a
+            // perfectly successful HTML page, which then fails deep inside a JSON parser as
+            // "String cannot be converted to JSONObject" — an error that says nothing about the
+            // actual problem. Fail here instead, naming the host and what it really sent.
+            val contentType = connection.contentType.orEmpty()
+            if (!contentType.contains("json", ignoreCase = true)) {
+                throw IOException(
+                    "$host returned $contentType, not JSON — check the endpoint in NavConfig",
+                )
+            }
+
             connection.inputStream.bufferedReader().use { it.readText() }
         } finally {
             connection.disconnect()

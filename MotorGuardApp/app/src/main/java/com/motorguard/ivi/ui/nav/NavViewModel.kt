@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 /**
  * Owns the Nav tab's state machine and is the only thing that talks to [NavRepository].
@@ -348,10 +350,16 @@ class NavViewModel(application: Application) : AndroidViewModel(application) {
         if (progress?.arrived == true) endGuidance()
     }
 
-    /** Network failures are the common case here; say something a driver can act on. */
+    /**
+     * Say something actionable. Only genuine connectivity failures get "no connection" — a
+     * misconfigured endpoint is also an [IOException], and reporting that as a network problem
+     * sends you looking at the Wi-Fi instead of at [NavConfig].
+     */
     private fun Throwable.userMessage(fallback: String): String = when (this) {
-        is IOException -> "$fallback — no connection"
-        else -> message?.takeIf { it.isNotBlank() }?.let { "$fallback ($it)" } ?: fallback
+        is UnknownHostException, is SocketTimeoutException, is ConnectException ->
+            "$fallback — no connection"
+
+        else -> message?.takeIf { it.isNotBlank() }?.let { "$fallback: $it" } ?: fallback
     }
 
     override fun onCleared() {

@@ -68,8 +68,15 @@ object NavConfig {
     var tileJsonUrl: String = "https://tiles.openfreemap.org/planet"
     var glyphsUrl: String = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf"
 
-    /** FOSSGIS's public Valhalla. Fair use, rate-limited, wants an identifying client id. */
-    var valhallaBaseUrl: String = "https://valhalla.openstreetmap.de"
+    /**
+     * FOSSGIS's public Valhalla. Fair use, rate-limited, wants an identifying client id.
+     *
+     * Note the **`valhalla1`**. The bare `valhalla.openstreetmap.de` is the demo *web app*: it
+     * answers `/route` with an HTML page and a 200 status, which sails past a status-code check
+     * and then blows up as "String cannot be converted to JSONObject". The API hosts are
+     * `valhalla1`/`valhalla2`/`valhalla3`.
+     */
+    var valhallaBaseUrl: String = "https://valhalla1.openstreetmap.de"
 
     /** komoot's public Photon. Built for search-as-you-type; throttled if hammered. */
     var photonBaseUrl: String = "https://photon.komoot.io"
