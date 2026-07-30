@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -30,6 +31,7 @@ import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
@@ -62,6 +64,7 @@ internal fun MapLibreMapSurface(
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     val colors = MotorGuard.colors
+    val density = LocalDensity.current.density
 
     // MapLibre.getInstance() must run before any MapView is constructed.
     val mapView: MapView? = remember {
@@ -112,6 +115,16 @@ internal fun MapLibreMapSurface(
                 isTiltGesturesEnabled = false
             }
             ready.setStyle(Style.Builder().fromJson(MapStyle.json(dark))) { loaded ->
+                loaded.addImage(
+                    IMAGE_VEHICLE,
+                    VehicleArrow.bitmap(
+                        density = density,
+                        sizeDp = VehicleArrow.MAP_MARKER_DP,
+                        fillColor = colors.accent.toArgb(),
+                        outlineColor = if (dark) 0xFF05070A.toInt() else 0xFFFFFFFF.toInt(),
+                        haloColor = colors.accent.copy(alpha = 0.20f).toArgb(),
+                    ),
+                )
                 loaded.installRouteLayers(
                     routeColor = colors.accent.toArgb(),
                     flowColor = colors.accent2.toArgb(),
@@ -148,6 +161,15 @@ internal fun MapLibreMapSurface(
         loaded.setLine(SOURCE_REMAINING, route.drop(overlay.traveledIndex))
         loaded.setPoint(SOURCE_DESTINATION, overlay.destination)
         loaded.setPoint(SOURCE_ORIGIN, overlay.origin)
+    }
+
+    // --- on-map vehicle marker --------------------------------------------------------------
+    LaunchedEffect(style, overlay.vehicle, overlay.vehicleBearingDegrees) {
+        val loaded = style ?: return@LaunchedEffect
+        loaded.setPoint(SOURCE_VEHICLE, overlay.vehicle)
+        // One feature, so the rotation is a layer property rather than a data-driven expression.
+        loaded.getLayerAs<SymbolLayer>(LAYER_VEHICLE)
+            ?.setProperties(PropertyFactory.iconRotate(overlay.vehicleBearingDegrees))
     }
 
     // --- camera ---------------------------------------------------------------------------
@@ -238,6 +260,7 @@ private fun Style.installRouteLayers(
     addSource(GeoJsonSource(SOURCE_REMAINING))
     addSource(GeoJsonSource(SOURCE_DESTINATION))
     addSource(GeoJsonSource(SOURCE_ORIGIN))
+    addSource(GeoJsonSource(SOURCE_VEHICLE))
 
     addLayer(
         LineLayer(LAYER_CASING, SOURCE_ROUTE).withProperties(
@@ -291,6 +314,18 @@ private fun Style.installRouteLayers(
             PropertyFactory.circleStrokeWidth(3f),
         ),
     )
+    // Topmost, and exempt from collision so it is never dropped in favour of a place label —
+    // the one marker on this map that must always be visible.
+    addLayer(
+        SymbolLayer(LAYER_VEHICLE, SOURCE_VEHICLE).withProperties(
+            PropertyFactory.iconImage(IMAGE_VEHICLE),
+            PropertyFactory.iconSize(1f),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            // Rotate with the map, so the heading stays true when the camera is turned.
+            PropertyFactory.iconRotationAlignment("map"),
+        ),
+    )
 }
 
 /** A single-point source, or an empty collection when there is nothing to show. */
@@ -324,6 +359,7 @@ private const val SOURCE_PASSED = "mg-src-passed"
 private const val SOURCE_REMAINING = "mg-src-remaining"
 private const val SOURCE_DESTINATION = "mg-src-destination"
 private const val SOURCE_ORIGIN = "mg-src-origin"
+private const val SOURCE_VEHICLE = "mg-src-vehicle"
 
 private const val LAYER_CASING = "mg-route-casing"
 private const val LAYER_ROUTE = "mg-route-line"
@@ -331,6 +367,8 @@ private const val LAYER_FLOW = "mg-route-flow"
 private const val LAYER_PASSED = "mg-route-passed"
 private const val LAYER_DESTINATION = "mg-route-destination"
 private const val LAYER_ORIGIN = "mg-route-origin"
+private const val LAYER_VEHICLE = "mg-vehicle"
+private const val IMAGE_VEHICLE = "mg-vehicle-icon"
 
 private const val CASING_WIDTH = 15f
 private const val ROUTE_WIDTH = 9f

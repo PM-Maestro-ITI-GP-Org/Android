@@ -18,18 +18,23 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.dp
 import com.motorguard.ivi.ui.nav.NavMotion
+import com.motorguard.ivi.ui.nav.map.VehicleArrow
 import com.motorguard.ivi.ui.theme.MotorGuard
 
 /**
- * The car on the map: an accent arrowhead with a soft breathing halo.
+ * The car under the **chase camera**: an accent arrowhead with a soft breathing halo.
  *
- * Drawn in Compose rather than as a map symbol layer, for two reasons. It is identical for both
- * map backends, and while guiding it never moves on screen — the camera follows the car, so the
- * puck sits at a fixed point and only the world slides beneath it. That makes it free to
- * animate: the pulse is a scale and an alpha on a composable the map knows nothing about.
+ * This is the screen-anchored variant, and it is only correct while the camera is following the
+ * car — then the puck genuinely does not move, the world slides beneath it, and the pulse is
+ * free: a scale and an alpha on a composable the map knows nothing about.
  *
- * @param rotationDegrees heading to point at. Zero while guiding (the map itself is rotated to
- *        the heading, so up *is* forward); the real heading in the north-up overview.
+ * Everywhere else — route preview, the whole-trip overview, idle — the car has to be *geo*
+ * anchored, because the camera is framing something other than the car and its position on
+ * screen is wherever its coordinates land. That case is `MapOverlay.vehicle`, drawn by the map
+ * itself from the same [VehicleArrow] geometry.
+ *
+ * @param rotationDegrees heading to point at. Zero under the chase camera, because the map is
+ *        rotated to the heading and up *is* forward.
  */
 @Composable
 fun VehiclePuck(
@@ -70,12 +75,16 @@ fun VehiclePuck(
     }
 }
 
-/** An arrowhead pointing up: sharp nose, swept-back tips, notched tail. */
+/**
+ * An arrowhead pointing up, built from the shared outline in [VehicleArrow] — the same geometry
+ * the map's own marker uses, so the car cannot be one shape in guidance and another in overview.
+ */
 private fun arrowPath(centre: Offset, size: Float): Path = Path().apply {
-    moveTo(centre.x, centre.y - size)
-    lineTo(centre.x + size * 0.72f, centre.y + size * 0.78f)
-    lineTo(centre.x, centre.y + size * 0.34f)
-    lineTo(centre.x - size * 0.72f, centre.y + size * 0.78f)
+    VehicleArrow.outline.forEachIndexed { index, (x, y) ->
+        val px = centre.x + x * size
+        val py = centre.y + y * size
+        if (index == 0) moveTo(px, py) else lineTo(px, py)
+    }
     close()
 }
 
@@ -94,4 +103,4 @@ private fun rememberPulse(active: Boolean): Float {
 }
 
 private const val PUCK_BOX_DP = 76
-private const val ARROW_SCALE = 0.5f
+private val ARROW_SCALE = VehicleArrow.ARROW_SCALE

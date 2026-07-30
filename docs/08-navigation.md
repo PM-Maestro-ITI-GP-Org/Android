@@ -72,6 +72,14 @@ One map card (28 dp radius, 22 dp inset) with glass overlays, matching the nav s
 The map is **one instance for the whole tab** and is never torn down between phases. That is
 what lets the camera fly between them instead of cutting.
 
+**Where the car is drawn depends on the camera, and only on the camera.** Under `Follow` it is a
+Compose overlay pinned at `FOLLOW_ANCHOR_FRACTION` — legitimate, because the camera is locked to
+the car, so it really does stay put while the world slides beneath. Under any `Overview` it is
+`MapOverlay.vehicle`, drawn by the map at its true coordinates: the camera is framing a route,
+not the car, so the car is wherever its coordinates land. Both use the same `VehicleArrow`
+geometry. Pinning the puck to the screen in an overview is what made it sit in the middle of the
+map instead of on the road.
+
 Each panel gets its own `AnimatedVisibility` driven by a boolean. It must **not** be a single
 `AnimatedContent` keyed on the phase: `AnimatedContent` re-runs its transition whenever
 `targetState` changes by value, and `contentKey` only reuses the composition slot rather than

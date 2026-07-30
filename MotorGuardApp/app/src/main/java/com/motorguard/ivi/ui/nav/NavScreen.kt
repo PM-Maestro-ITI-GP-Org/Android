@@ -110,13 +110,26 @@ fun NavScreen(viewModel: NavViewModel = viewModel()) {
             .clip(RoundedCornerShape(28.dp))
             .border(1.dp, colors.glassBorder, RoundedCornerShape(28.dp)),
     ) {
+        val camera = cameraFor(phase, carPoint, heading)
+
+        // The car is drawn on the map unless the camera is locked to it. The Compose puck is
+        // pinned to a fixed screen position, so it is only ever truthful in Follow mode — in any
+        // overview the car sits wherever its coordinates say, which is not the middle.
+        val following = camera is MapCamera.Follow
+
         MapSurface(
-            camera = cameraFor(phase, carPoint, heading),
-            overlay = overlayFor(phase),
+            camera = camera,
+            overlay = overlayFor(
+                phase = phase,
+                vehicle = if (following) null else state.position?.point,
+                vehicleBearing = heading,
+            ),
             modifier = Modifier.fillMaxSize(),
         )
 
-        VehicleMarker(phase = phase, heading = heading)
+        if (following) {
+            FollowVehicleMarker()
+        }
 
         // One AnimatedVisibility per phase, driven by a *boolean*.
         //
@@ -294,62 +307,65 @@ private fun cameraFor(phase: NavPhase, carPoint: GeoPoint, heading: Float): MapC
         else -> MapCamera.Overview(points = listOf(carPoint), paddingPx = ROUTE_PADDING_PX)
     }
 
-private fun overlayFor(phase: NavPhase): MapOverlay = when (phase) {
-    is NavPhase.Guiding -> MapOverlay(
-        route = phase.route.shape,
-        traveledIndex = phase.progress?.traveledShapeIndex ?: 0,
-        destination = phase.route.destination.point,
-        flowDashes = true,
-    )
+/**
+ * @param vehicle where to draw the car on the map, or null when the camera is following it and
+ *        the Compose puck has that job instead.
+ */
+private fun overlayFor(
+    phase: NavPhase,
+    vehicle: GeoPoint?,
+    vehicleBearing: Float,
+): MapOverlay {
+    val base = when (phase) {
+        is NavPhase.Guiding -> MapOverlay(
+            route = phase.route.shape,
+            traveledIndex = phase.progress?.traveledShapeIndex ?: 0,
+            destination = phase.route.destination.point,
+            flowDashes = true,
+        )
 
-    is NavPhase.Preview -> MapOverlay(
-        route = phase.selected.shape,
-        origin = phase.origin?.point,
-        destination = phase.destination.point,
-    )
+        is NavPhase.Preview -> MapOverlay(
+            route = phase.selected.shape,
+            origin = phase.origin?.point,
+            destination = phase.destination.point,
+        )
 
-    is NavPhase.Searching -> MapOverlay(
-        origin = phase.origin?.point,
-        destination = phase.destination?.point,
-    )
+        is NavPhase.Searching -> MapOverlay(
+            origin = phase.origin?.point,
+            destination = phase.destination?.point,
+        )
 
-    else -> MapOverlay()
+        else -> MapOverlay()
+    }
+    return base.copy(vehicle = vehicle, vehicleBearingDegrees = vehicleBearing)
 }
 
 // ---------------------------------------------------------------------------- overlays
 
 /**
- * The car marker, positioned to land exactly on the camera target.
+ * The car marker for the chase camera only.
  *
- * While following, the map is rotated to the heading, so the puck points straight up and sits at
- * [FOLLOW_ANCHOR_FRACTION] down the view — matched to the camera padding by sharing that one
- * constant. Otherwise the map is north-up, the puck carries the heading itself, and it belongs
- * dead centre.
+ * Here — and only here — the car genuinely is at a fixed screen position: the camera follows it,
+ * so the world slides underneath while the puck stays put. That makes it free to animate, and it
+ * points straight up because the map itself is rotated to the heading.
+ *
+ * It sits at [FOLLOW_ANCHOR_FRACTION] down the view, the same constant the camera padding is
+ * derived from — which is what keeps the drawn puck exactly on the camera target.
  */
 @Composable
-private fun BoxScope.VehicleMarker(phase: NavPhase, heading: Float) {
-    val following = phase is NavPhase.Guiding && phase.following
-
-    if (following) {
-        // A column of exactly anchor-fraction height, with the puck hung off its bottom edge and
-        // nudged down by half its own size — no measuring pass needed.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxHeight(FOLLOW_ANCHOR_FRACTION),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            VehiclePuck(
-                rotationDegrees = 0f,
-                moving = true,
-                modifier = Modifier.offset(y = PUCK_HALF),
-            )
-        }
-    } else {
+private fun BoxScope.FollowVehicleMarker() {
+    // A box of exactly anchor-fraction height, with the puck hung off its bottom edge and nudged
+    // down by half its own size — no measuring pass needed.
+    Box(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .fillMaxHeight(FOLLOW_ANCHOR_FRACTION),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
         VehiclePuck(
-            rotationDegrees = heading,
-            moving = phase is NavPhase.Guiding,
-            modifier = Modifier.align(Alignment.Center),
+            rotationDegrees = 0f,
+            moving = true,
+            modifier = Modifier.offset(y = PUCK_HALF),
         )
     }
 }

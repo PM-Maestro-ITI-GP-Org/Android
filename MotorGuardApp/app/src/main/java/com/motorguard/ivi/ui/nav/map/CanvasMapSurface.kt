@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
@@ -355,6 +356,32 @@ private fun DrawScope.drawRoute(
         drawCircle(palette.destinationRing, radius = 13f * density, center = point)
         drawCircle(palette.destination, radius = 9f * density, center = point)
     }
+
+    // The car, at its true coordinates. Drawn inside the world transform, so rotating it by the
+    // vehicle bearing alone is correct — the camera's own rotation is already applied.
+    overlay.vehicle?.let { vehicle ->
+        val centre = vehicle.toWorld(worldSize)
+        val radius = VehicleArrow.MAP_MARKER_DP * density / 2f
+        drawCircle(palette.route, radius = radius * 0.44f, center = centre, alpha = 0.20f)
+        rotate(degrees = overlay.vehicleBearingDegrees, pivot = centre) {
+            val arrow = vehicleArrowPath(centre, radius * VehicleArrow.ARROW_SCALE)
+            drawPath(
+                path = arrow,
+                color = palette.routeCasing,
+                style = Stroke(width = radius * 0.18f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
+            drawPath(path = arrow, color = palette.route)
+        }
+    }
+}
+
+private fun vehicleArrowPath(centre: Offset, size: Float): Path = Path().apply {
+    VehicleArrow.outline.forEachIndexed { index, (x, y) ->
+        val px = centre.x + x * size
+        val py = centre.y + y * size
+        if (index == 0) moveTo(px, py) else lineTo(px, py)
+    }
+    close()
 }
 
 private fun GeoPoint.toWorld(worldSize: Double) = Offset(

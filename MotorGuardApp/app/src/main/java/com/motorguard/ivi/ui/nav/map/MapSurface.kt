@@ -44,6 +44,16 @@ data class MapOverlay(
     /** Only set when the trip starts somewhere other than the car — otherwise the puck says it. */
     val origin: GeoPoint? = null,
     val destination: GeoPoint? = null,
+    /**
+     * The car, drawn *on the map* at its true coordinates.
+     *
+     * Set this whenever the camera is not a [MapCamera.Follow]. The Compose puck overlay is
+     * pinned to a fixed screen position, which is only ever correct when the camera target is
+     * the car itself; in any overview the car is somewhere else on screen entirely and has to
+     * be geo-anchored like every other piece of geometry.
+     */
+    val vehicle: GeoPoint? = null,
+    val vehicleBearingDegrees: Float = 0f,
     /** Animate dashes flowing towards the destination (guidance only). */
     val flowDashes: Boolean = false,
 )
