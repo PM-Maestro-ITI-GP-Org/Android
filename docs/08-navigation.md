@@ -150,6 +150,25 @@ the frame graph has room. No composable defines its own duration.
 | Glass shimmer | — | — | ✅ (preview panel only) |
 | Camera tilt | 0° | 0° | 45° |
 
+### The flowing dashes
+
+MapLibre has no dash-offset property, so the march is done by cycling `line-dasharray` itself.
+Two things about that are easy to get wrong, and both were:
+
+1. **Do not copy the Mapbox "animated line" sequence.** It mixes 3- and 4-element arrays, and an
+   odd-length dash array repeats twice before the dash/gap roles realign — so its effective
+   period is doubled. Half the published cycle runs at period 14 and half at period 7: the
+   spacing visibly doubles and snaps back once per cycle. Frames here are generated as
+   `[0, phase, dash, gap - phase]`, keeping the period at `dash + gap` throughout, and the wrap
+   is seamless because `phase == gap` puts the dash exactly one period along from `phase == 0`.
+2. **The traveled overlay must be fully opaque.** At partial alpha the dashes animate straight
+   through the part already driven — movement in the one place nothing should be moving.
+
+Source uploads matter as much as the animation. Route geometry, the traveled portion and the
+endpoint markers are three separate effects: sharing one keyed on `traveledIndex` re-parsed and
+re-tiled the entire polyline ten times a second, and that churn is visible as blinking. The
+traveled line is also quantized to every `PASSED_STRIDE` shape points.
+
 The two `SHOWCASE` extras are deliberately narrow. The route draw-in runs on preview only — a
 driver mid-route needs the line *now*, not in 720 ms — and the Canvas fallback skips it. The
 shimmer repeats forever, so it is confined to the preview panel, which is transient and never

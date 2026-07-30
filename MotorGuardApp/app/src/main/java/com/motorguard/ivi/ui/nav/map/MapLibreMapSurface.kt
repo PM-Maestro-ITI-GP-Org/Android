@@ -42,12 +42,16 @@ import org.maplibre.geojson.Point
  * The real map: MapLibre Native (BSD-2) rendering OpenFreeMap vector tiles through the
  * token-derived style in [MapStyle].
  *
- * The route is drawn as four stacked line layers on three GeoJSON sources, which is what
+ * The route is drawn as four stacked line layers over two GeoJSON sources, which is what
  * produces a route that looks designed rather than like a debug polyline:
  *   casing  — wide, near-black, gives the line an edge against pale roads
  *   route   — the accent-coloured body
- *   flow    — accent2 dashes marching towards the destination, on the *remaining* geometry only
- *   passed  — the traveled part, greyed back over the body
+ *   flow    — accent2 dashes marching towards the destination
+ *   passed  — the traveled part, opaque, covering the three layers above
+ *
+ * Only `passed` changes while driving. `flow` runs the full route and is simply covered by
+ * `passed`, which avoids maintaining a second "remaining" polyline that would have to be
+ * re-uploaded on every position tick.
  *
  * @param onUnavailable called when MapLibre cannot start at all (missing/limping GL driver on
  *        the Pi throws an `UnsatisfiedLinkError` from the native loader, which is an `Error`,
@@ -140,8 +144,13 @@ internal fun MapLibreMapSurface(
         onDispose { }
     }
 
-    // --- overlay geometry -----------------------------------------------------------------
-    LaunchedEffect(style, overlay.route, overlay.traveledIndex, overlay.destination, overlay.origin) {
+    // --- route geometry: uploaded once per route --------------------------------------------
+    //
+    // Split from the traveled-portion effect deliberately. These used to share one effect keyed
+    // on traveledIndex, which meant the entire polyline — hundreds of points — was re-parsed and
+    // re-tiled ten times a second while nothing about it had changed. That churn is visible: the
+    // line blinks as it re-tiles.
+    LaunchedEffect(style, overlay.route, overlay.flowDashes) {
         val loaded = style ?: return@LaunchedEffect
         val route = overlay.route
 
@@ -155,10 +164,22 @@ internal fun MapLibreMapSurface(
                 delay(ROUTE_DRAW_MS / ROUTE_DRAW_STEPS)
             }
         }
-
         loaded.setLine(SOURCE_ROUTE, route)
+    }
+
+    // --- traveled portion: the only geometry that changes while driving ---------------------
+    //
+    // Quantized: the shape points are metres apart, so updating every PASSED_STRIDE of them is
+    // indistinguishable on screen and cuts the upload rate by the same factor.
+    LaunchedEffect(style, overlay.route, overlay.traveledIndex / PASSED_STRIDE) {
+        val loaded = style ?: return@LaunchedEffect
+        val route = overlay.route
         loaded.setLine(SOURCE_PASSED, route.take((overlay.traveledIndex + 1).coerceAtMost(route.size)))
-        loaded.setLine(SOURCE_REMAINING, route.drop(overlay.traveledIndex))
+    }
+
+    // --- endpoint markers -------------------------------------------------------------------
+    LaunchedEffect(style, overlay.destination, overlay.origin) {
+        val loaded = style ?: return@LaunchedEffect
         loaded.setPoint(SOURCE_DESTINATION, overlay.destination)
         loaded.setPoint(SOURCE_ORIGIN, overlay.origin)
     }
@@ -257,7 +278,6 @@ private fun Style.installRouteLayers(
 ) {
     addSource(GeoJsonSource(SOURCE_ROUTE))
     addSource(GeoJsonSource(SOURCE_PASSED))
-    addSource(GeoJsonSource(SOURCE_REMAINING))
     addSource(GeoJsonSource(SOURCE_DESTINATION))
     addSource(GeoJsonSource(SOURCE_ORIGIN))
     addSource(GeoJsonSource(SOURCE_VEHICLE))
@@ -278,20 +298,24 @@ private fun Style.installRouteLayers(
             PropertyFactory.lineJoin("round"),
         ),
     )
+    // Runs the whole route rather than a separate "remaining" source: the traveled section is
+    // covered by LAYER_PASSED above it, which saves a second polyline upload on every tick.
     addLayer(
-        LineLayer(LAYER_FLOW, SOURCE_REMAINING).withProperties(
+        LineLayer(LAYER_FLOW, SOURCE_ROUTE).withProperties(
             PropertyFactory.lineColor(flowColor),
             PropertyFactory.lineWidth(FLOW_WIDTH),
             PropertyFactory.lineOpacity(0f),
             PropertyFactory.lineCap("butt"),
         ),
     )
-    // Drawn last of the line layers so the traveled section greys back the body underneath.
+    // Drawn last of the line layers so the traveled section covers the body underneath. Fully
+    // opaque on purpose — at partial alpha the animated dashes show through the part already
+    // driven, which reads as flicker in exactly the place nothing should be moving.
     addLayer(
         LineLayer(LAYER_PASSED, SOURCE_PASSED).withProperties(
             PropertyFactory.lineColor(passedColor),
             PropertyFactory.lineWidth(ROUTE_WIDTH),
-            PropertyFactory.lineOpacity(PASSED_OPACITY),
+            PropertyFactory.lineOpacity(1f),
             PropertyFactory.lineCap("round"),
             PropertyFactory.lineJoin("round"),
         ),
@@ -356,7 +380,6 @@ private fun Style.setLine(sourceId: String, points: List<GeoPoint>) {
 
 private const val SOURCE_ROUTE = "mg-src-route"
 private const val SOURCE_PASSED = "mg-src-passed"
-private const val SOURCE_REMAINING = "mg-src-remaining"
 private const val SOURCE_DESTINATION = "mg-src-destination"
 private const val SOURCE_ORIGIN = "mg-src-origin"
 private const val SOURCE_VEHICLE = "mg-src-vehicle"
@@ -374,7 +397,6 @@ private const val CASING_WIDTH = 15f
 private const val ROUTE_WIDTH = 9f
 private const val FLOW_WIDTH = 9f
 private const val FLOW_OPACITY = 0.85f
-private const val PASSED_OPACITY = 0.75f
 
 private const val OVERVIEW_MS = 700
 private const val IDLE_ZOOM = 14.5
@@ -383,23 +405,27 @@ private const val IDLE_ZOOM = 14.5
 private const val ROUTE_DRAW_STEPS = 24
 private const val ROUTE_DRAW_MS = 720L
 
+/** How many shape points the car must advance before the traveled line is re-uploaded. */
+private const val PASSED_STRIDE = 4
+
+private const val DASH_LENGTH = 3f
+private const val DASH_GAP = 4f
+private const val DASH_STEPS = 14
+
 /**
- * One cycle of dash arrays. Values are in line-widths; walking the list makes the gaps appear
- * to travel along the line. Same sequence the Mapbox/MapLibre "animated line" example uses.
+ * One cycle of dash arrays, in line-widths. Walking the list slides the dashes along the route.
+ *
+ * Generated rather than copied from the Mapbox "animated line" example, because that sequence
+ * mixes 3-element and 4-element arrays — and an odd-length dash array repeats twice before the
+ * dash/gap roles realign, so its effective period is doubled. The published sequence therefore
+ * runs at period 14 for half the cycle and period 7 for the other half: the spacing visibly
+ * doubles and snaps back once per cycle, which is exactly what a flicker looks like.
+ *
+ * Every frame here is `[0, phase, dash, gap - phase]`, so the period stays `dash + gap` while
+ * the dash slides forward. At `phase == gap` the dash sits one full period along, which is
+ * identical to `phase == 0` — so the wrap is seamless too.
  */
-private val DASH_FRAMES: List<Array<Float>> = listOf(
-    arrayOf(0f, 4f, 3f),
-    arrayOf(0.5f, 4f, 2.5f),
-    arrayOf(1f, 4f, 2f),
-    arrayOf(1.5f, 4f, 1.5f),
-    arrayOf(2f, 4f, 1f),
-    arrayOf(2.5f, 4f, 0.5f),
-    arrayOf(3f, 4f, 0f),
-    arrayOf(0f, 0.5f, 3f, 3.5f),
-    arrayOf(0f, 1f, 3f, 3f),
-    arrayOf(0f, 1.5f, 3f, 2.5f),
-    arrayOf(0f, 2f, 3f, 2f),
-    arrayOf(0f, 2.5f, 3f, 1.5f),
-    arrayOf(0f, 3f, 3f, 1f),
-    arrayOf(0f, 3.5f, 3f, 0.5f),
-)
+private val DASH_FRAMES: List<Array<Float>> = List(DASH_STEPS) { step ->
+    val phase = DASH_GAP * (step + 1) / DASH_STEPS
+    arrayOf(0f, phase, DASH_LENGTH, DASH_GAP - phase)
+}
