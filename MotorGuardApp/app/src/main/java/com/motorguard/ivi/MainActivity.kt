@@ -1,7 +1,7 @@
 package com.motorguard.ivi
 
+import android.content.Intent
 import android.os.Bundle
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,17 +20,24 @@ import com.motorguard.ivi.ui.media.MediaFragment
 import com.motorguard.ivi.ui.nav.NavFragment
 import com.motorguard.ivi.ui.settings.SettingsFragment
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
+import com.motorguard.ivi.ui.voice.VoiceTrigger
 
 /**
  * Single host. A fixed NavRail (Compose) on the left, one FragmentContainerView on the
  * right; tapping a rail item swaps the fragment. This is the shell every owner extends.
  *
- * Voice is intentionally NOT here — it is a system overlay (VoiceOverlayService), added
- * later. See docs/00-skeleton.md and docs/07-voice.md.
+ * Voice is intentionally NOT a tab — it is a system overlay (VoiceOverlayService) that
+ * floats over whatever is showing. The rail mic button only *asks* for a session;
+ * the wake word is the primary trigger. See docs/00-skeleton.md and docs/07-voice.md.
  */
 class MainActivity : AppCompatActivity() {
 
     enum class Tab { HOME, MEDIA, NAV, DIAGNOSTICS, SETTINGS }
+
+    companion object {
+        /** Voice overlay routes here: putExtra(EXTRA_TAB, Tab.MEDIA.name). */
+        const val EXTRA_TAB = "com.motorguard.ivi.EXTRA_TAB"
+    }
 
     private var selected by mutableStateOf(Tab.HOME)
 
@@ -48,16 +55,25 @@ class MainActivity : AppCompatActivity() {
                 NavRail(
                     selected = selected,
                     onSelect = ::show,
-                    onVoice = {
-                        // TODO: launch VoiceOverlayService (Hey Motor Guard). Not a tab.
-                        Toast.makeText(this, "Voice assistant coming soon", Toast.LENGTH_SHORT).show()
-                    },
+                    onVoice = { VoiceTrigger.show(this) },
                 )
             }
         }
 
-        if (savedInstanceState == null) show(Tab.HOME)
+        if (savedInstanceState == null) show(tabFromIntent(intent) ?: Tab.HOME)
     }
+
+    /** The voice overlay brings a tab forward by re-launching us with EXTRA_TAB. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        tabFromIntent(intent)?.let(::show)
+    }
+
+    private fun tabFromIntent(intent: Intent?): Tab? =
+        intent?.getStringExtra(EXTRA_TAB)?.let { name ->
+            runCatching { Tab.valueOf(name) }.getOrNull()
+        }
 
     /**
      * Take over the full screen: draw edge-to-edge and hide the Automotive system bars

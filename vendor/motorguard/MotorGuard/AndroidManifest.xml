@@ -27,8 +27,20 @@
             </intent-filter>
         </activity>
 
-        <!-- Voice overlay — system service, not a launchable activity -->
+        <!-- Voice overlay — system services, not launchable activities.
+             The intent-filter + meta-data are what let the platform bind this as
+             the assistant; without them the service can never be selected. -->
         <service android:name=".ui.voice.VoiceOverlayService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data android:name="android.voice_interaction"
+                android:resource="@xml/interaction_service" />
+        </service>
+
+        <service android:name=".ui.voice.VoiceSessionService"
             android:permission="android.permission.BIND_VOICE_INTERACTION"
             android:exported="true" />
     </application>
