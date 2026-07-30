@@ -15,6 +15,7 @@ CarProperty / API it touches, and its states.
 | 05 | [Diagnostics fragment](05-diagnostics.md) | C | Hotspot tap → zoom, cards |
 | 06 | [Settings fragment](06-settings.md) | E | Left sub-tabs + toggles |
 | 07 | [Voice overlay](07-voice.md) | D | Wake word, states, chips |
+| 08 | [Navigation fragment](08-navigation.md) | — | Search → route preview → turn-by-turn |
 
 ## Conventions used in every doc
 - **Tap** = single touch-up inside. **Long-press** = ≥ 500 ms.

@@ -6,6 +6,17 @@
         android:name="android.hardware.type.automotive"
         android:required="false" />
 
+    <!-- Navigation: map tiles, routing (Valhalla) and search (Photon) are plain HTTPS calls.
+         ACCESS_NETWORK_STATE lets the Nav tab detect "no internet" up front and fall back to
+         its offline Canvas map instead of rendering an empty world. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Not needed today (position comes from the simulator), declared so switching
+         NavConfig.locationMode to GNSS is a one-line change. See data/nav/oss/AndroidLocationSource. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
