@@ -38,16 +38,25 @@ object NavConfig {
 
     /** Where [VehiclePosition]s come from. */
     enum class LocationMode {
+        /**
+         * Real GNSS via `LocationManager`. The default: it needs no emulator location mocking,
+         * and on hardware with a receiver it is simply correct.
+         *
+         * The cost is that guidance only advances when the vehicle actually moves — sitting at
+         * a desk, the route will not progress. The Nav screen offers a one-tap switch to
+         * [SIMULATED] whenever it is waiting on a fix, so that is recoverable without a rebuild.
+         */
+        GNSS,
+
         /** Drives the puck along the active route. Works at a desk, with no GPS and no sky. */
         SIMULATED,
-
-        /** Real GNSS via `LocationManager` (needs a receiver on the Pi + location permission). */
-        GNSS,
     }
 
     var stack: Stack = Stack.OSS
     var mapBackend: MapBackend = MapBackend.MAPLIBRE
-    var locationMode: LocationMode = LocationMode.SIMULATED
+
+    /** Changing this at runtime is supported — call [NavProviders.invalidate] afterwards. */
+    var locationMode: LocationMode = LocationMode.GNSS
 
     // ---------------------------------------------------------------- OSS endpoints
     //
@@ -75,8 +84,9 @@ object NavConfig {
     // ---------------------------------------------------------------- demo behaviour
 
     /**
-     * Where the car sits before a route is picked. Replace with the first real GNSS fix once
-     * a receiver is attached; until then the whole feature needs *somewhere* to start.
+     * Where the map looks while [LocationMode.GNSS] is still waiting for its first fix, and
+     * where the simulator parks the car when no route is active. Superseded by the real
+     * position the moment one arrives.
      */
     var defaultOrigin: GeoPoint = GeoPoint(30.0444, 31.2357) // Cairo
 

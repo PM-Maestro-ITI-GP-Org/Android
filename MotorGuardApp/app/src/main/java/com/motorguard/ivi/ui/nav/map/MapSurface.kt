@@ -41,6 +41,8 @@ data class MapOverlay(
     val route: List<GeoPoint> = emptyList(),
     /** Index into [route] the car has already passed; that part is drawn dimmed. */
     val traveledIndex: Int = 0,
+    /** Only set when the trip starts somewhere other than the car — otherwise the puck says it. */
+    val origin: GeoPoint? = null,
     val destination: GeoPoint? = null,
     /** Animate dashes flowing towards the destination (guidance only). */
     val flowDashes: Boolean = false,

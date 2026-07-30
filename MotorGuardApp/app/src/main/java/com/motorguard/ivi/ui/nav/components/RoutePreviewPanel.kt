@@ -56,11 +56,13 @@ import com.motorguard.ivi.ui.theme.MotorGuard
  */
 @Composable
 fun RoutePreviewPanel(
+    origin: Place?,
     destination: Place,
     routes: List<Route>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     onStart: () -> Unit,
+    onEdit: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -91,7 +93,22 @@ fun RoutePreviewPanel(
                     )
                 }
                 Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        // The whole endpoint block is the way back into the search panel, so
+                        // fixing a wrong start does not mean cancelling and starting over.
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onEdit)
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = "from ${origin?.name ?: "Your location"}",
+                        fontSize = 13.sp,
+                        color = colors.onBaseDim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         text = destination.name,
                         fontSize = 20.sp,

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.motorguard.ivi.data.nav.NavConfig
+import com.motorguard.ivi.data.nav.NavProviders
 import com.motorguard.ivi.data.nav.NavRepository
 import com.motorguard.ivi.data.nav.Place
 import com.motorguard.ivi.data.nav.VehiclePosition
@@ -32,19 +33,116 @@ class NavViewModel(application: Application) : AndroidViewModel(application) {
 
     private var searchJob: Job? = null
     private var routeJob: Job? = null
+    private var positionJob: Job? = null
 
     init {
-        // One long-lived collection for the whole tab. The simulator emits only while a route
-        // is set, so this idles at zero cost until guidance starts.
-        viewModelScope.launch {
+        collectPositions()
+    }
+
+    /**
+     * (Re)start the position feed.
+     *
+     * Restartable because [com.motorguard.ivi.data.nav.oss.AndroidLocationSource] decides
+     * whether it can produce anything at *collection* time: if the location permission is
+     * granted after the screen opened, or the driver switches to the simulator, the old flow
+     * would sit there empty forever.
+     */
+    private fun collectPositions() {
+        positionJob?.cancel()
+        positionJob = viewModelScope.launch {
             repository.positions().collect(::onPosition)
         }
+    }
+
+    /** Call after the runtime location permission dialog resolves. */
+    fun onLocationPermissionResult(granted: Boolean) {
+        if (granted) collectPositions()
+    }
+
+    /**
+     * Escape hatch offered by the "waiting for GPS fix" chip: drive the puck along the route
+     * instead of waiting for a receiver. This is the thing that makes the feature demoable at a
+     * desk without an emulator and without a rebuild.
+     */
+    fun useSimulatedLocation() {
+        NavConfig.locationMode = NavConfig.LocationMode.SIMULATED
+        NavProviders.invalidate()
+        collectPositions()
+        // The simulator only emits along a route, so re-arm it if one is already active.
+        (_state.value.phase as? NavPhase.Guiding)?.let { repository.startGuidance(it.route) }
     }
 
     // ---------------------------------------------------------------- search
 
     fun openSearch() {
         _state.update { it.copy(phase = NavPhase.Searching(), error = null) }
+    }
+
+    /** Move the caret to the other endpoint field, seeding it with whatever is already there. */
+    fun activateField(field: SearchField) {
+        val phase = _state.value.phase as? NavPhase.Searching ?: return
+        if (phase.active == field) return
+        searchJob?.cancel()
+        val seed = when (field) {
+            SearchField.ORIGIN -> phase.origin?.name.orEmpty()
+            SearchField.DESTINATION -> phase.destination?.name.orEmpty()
+        }
+        _state.update {
+            it.copy(
+                phase = phase.copy(
+                    active = field,
+                    query = seed,
+                    results = emptyList(),
+                    loading = false,
+                ),
+            )
+        }
+    }
+
+    /** Set the origin back to "wherever the car is". */
+    fun useCurrentLocationAsOrigin() {
+        val phase = _state.value.phase as? NavPhase.Searching ?: return
+        searchJob?.cancel()
+        val next = phase.copy(
+            origin = null,
+            active = SearchField.DESTINATION,
+            query = phase.destination?.name.orEmpty(),
+            results = emptyList(),
+            loading = false,
+        )
+        _state.update { it.copy(phase = next) }
+        next.destination?.let { requestRoutes(next.origin, it) }
+    }
+
+    /**
+     * Swap the endpoints. "Your location" has no [Place], so going *into* the destination slot
+     * it has to be materialized from the current position — and that snapshot is deliberate:
+     * once it is the destination, it should stay where it was, not follow the car.
+     */
+    fun swapEndpoints() {
+        val phase = _state.value.phase as? NavPhase.Searching ?: return
+        val newDestination = phase.origin ?: currentLocationPlace()
+        val newOrigin = phase.destination
+        if (newDestination == null && newOrigin == null) return
+
+        searchJob?.cancel()
+        val next = phase.copy(
+            origin = newOrigin,
+            destination = newDestination,
+            query = when (phase.active) {
+                SearchField.ORIGIN -> newOrigin?.name.orEmpty()
+                SearchField.DESTINATION -> newDestination?.name.orEmpty()
+            },
+            results = emptyList(),
+            loading = false,
+        )
+        _state.update { it.copy(phase = next) }
+        if (newDestination != null) requestRoutes(newOrigin, newDestination)
+    }
+
+    /** The car's position as a fixed [Place], or null before the first fix. */
+    private fun currentLocationPlace(): Place? = _state.value.position?.let {
+        Place(name = "Your location", subtitle = "", point = it.point)
     }
 
     fun closeSearch() {
@@ -68,9 +166,14 @@ class NavViewModel(application: Application) : AndroidViewModel(application) {
         }
         searchJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MS)
-            val results = runCatching {
-                repository.search(query, _state.value.position?.point ?: NavConfig.defaultOrigin)
-            }
+            // Bias to the endpoint the driver is *not* editing when it is known — looking for
+            // "parking" while setting a destination in another city should find it there, not
+            // next to the car.
+            val near = when (phase.active) {
+                SearchField.ORIGIN -> phase.destination?.point
+                SearchField.DESTINATION -> phase.origin?.point
+            } ?: _state.value.position?.point ?: NavConfig.defaultOrigin
+            val results = runCatching { repository.search(query, near) }
             _state.update { current ->
                 val searching = current.phase as? NavPhase.Searching ?: return@update current
                 if (searching.query != query) return@update current
@@ -94,21 +197,60 @@ class NavViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------------------------------------------------------------- routing
 
-    fun pickDestination(place: Place) {
+    /**
+     * Commit a search result to whichever field is being edited.
+     *
+     * Picking an origin does not route yet — it advances to the destination field, which is the
+     * order a driver fills these in. Picking a destination always routes, because by then both
+     * ends are known (a null origin just means "from the car").
+     */
+    fun pickResult(place: Place) {
+        val phase = _state.value.phase as? NavPhase.Searching ?: return
         searchJob?.cancel()
+
+        val next = when (phase.active) {
+            SearchField.ORIGIN -> phase.copy(
+                origin = place,
+                active = if (phase.destination == null) SearchField.DESTINATION else phase.active,
+                query = if (phase.destination == null) "" else place.name,
+                results = emptyList(),
+                loading = false,
+            )
+
+            SearchField.DESTINATION -> phase.copy(
+                destination = place,
+                query = place.name,
+                results = emptyList(),
+                loading = false,
+            )
+        }
+        _state.update { it.copy(phase = next) }
+
+        // Route as soon as both ends are known — including when the driver went *back* to change
+        // the start on a trip that already had a destination.
+        next.destination?.let { requestRoutes(next.origin, it) }
+    }
+
+    private fun requestRoutes(origin: Place?, destination: Place) {
         routeJob?.cancel()
         _state.update { it.copy(routing = true, error = null) }
 
         routeJob = viewModelScope.launch {
-            val origin = _state.value.position?.point ?: NavConfig.defaultOrigin
-            runCatching { repository.routes(origin, place) }.fold(
+            val from = origin?.point
+                ?: _state.value.position?.point
+                ?: NavConfig.defaultOrigin
+            runCatching { repository.routes(from, destination) }.fold(
                 onSuccess = { routes ->
                     _state.update { current ->
                         if (routes.isEmpty()) {
-                            current.copy(routing = false, error = "No route to ${place.name}")
+                            current.copy(routing = false, error = "No route to ${destination.name}")
                         } else {
                             current.copy(
-                                phase = NavPhase.Preview(destination = place, routes = routes),
+                                phase = NavPhase.Preview(
+                                    origin = origin,
+                                    destination = destination,
+                                    routes = routes,
+                                ),
                                 routing = false,
                                 error = null,
                             )
@@ -120,6 +262,23 @@ class NavViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(routing = false, error = failure.userMessage("Could not build a route"))
                     }
                 },
+            )
+        }
+    }
+
+    /** Back to the search panel from the preview, with both endpoints intact. */
+    fun editRoute() {
+        val phase = _state.value.phase as? NavPhase.Preview ?: return
+        routeJob?.cancel()
+        _state.update {
+            it.copy(
+                phase = NavPhase.Searching(
+                    origin = phase.origin,
+                    destination = phase.destination,
+                    active = SearchField.DESTINATION,
+                    query = phase.destination.name,
+                ),
+                routing = false,
             )
         }
     }

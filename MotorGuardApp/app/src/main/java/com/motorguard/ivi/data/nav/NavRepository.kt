@@ -13,7 +13,15 @@ import kotlinx.coroutines.flow.Flow
  */
 class NavRepository(context: Context) {
 
-    private val providers = NavProviders.of(context)
+    private val appContext = context.applicationContext
+
+    /**
+     * Re-resolved on every access rather than held. [NavProviders] caches, so this is a field
+     * read in the normal case — but it means flipping [NavConfig.locationMode] at runtime (the
+     * "no GPS fix, fall back to the simulator" escape hatch) actually takes effect instead of
+     * being pinned to whatever was selected when this repository was constructed.
+     */
+    private val providers: NavProviders.Bundle get() = NavProviders.of(appContext)
 
     private var activeRoute: Route? = null
     private var activeCumulative: DoubleArray = DoubleArray(0)

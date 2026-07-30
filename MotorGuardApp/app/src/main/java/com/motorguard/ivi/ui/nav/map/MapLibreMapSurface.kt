@@ -128,7 +128,7 @@ internal fun MapLibreMapSurface(
     }
 
     // --- overlay geometry -----------------------------------------------------------------
-    LaunchedEffect(style, overlay.route, overlay.traveledIndex, overlay.destination) {
+    LaunchedEffect(style, overlay.route, overlay.traveledIndex, overlay.destination, overlay.origin) {
         val loaded = style ?: return@LaunchedEffect
         val route = overlay.route
 
@@ -146,11 +146,8 @@ internal fun MapLibreMapSurface(
         loaded.setLine(SOURCE_ROUTE, route)
         loaded.setLine(SOURCE_PASSED, route.take((overlay.traveledIndex + 1).coerceAtMost(route.size)))
         loaded.setLine(SOURCE_REMAINING, route.drop(overlay.traveledIndex))
-        loaded.getSourceAs<GeoJsonSource>(SOURCE_DESTINATION)?.setGeoJson(
-            overlay.destination?.let { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) }
-                ?.let { FeatureCollection.fromFeatures(listOf(it)) }
-                ?: FeatureCollection.fromFeatures(emptyList()),
-        )
+        loaded.setPoint(SOURCE_DESTINATION, overlay.destination)
+        loaded.setPoint(SOURCE_ORIGIN, overlay.origin)
     }
 
     // --- camera ---------------------------------------------------------------------------
@@ -240,6 +237,7 @@ private fun Style.installRouteLayers(
     addSource(GeoJsonSource(SOURCE_PASSED))
     addSource(GeoJsonSource(SOURCE_REMAINING))
     addSource(GeoJsonSource(SOURCE_DESTINATION))
+    addSource(GeoJsonSource(SOURCE_ORIGIN))
 
     addLayer(
         LineLayer(LAYER_CASING, SOURCE_ROUTE).withProperties(
@@ -275,6 +273,16 @@ private fun Style.installRouteLayers(
             PropertyFactory.lineJoin("round"),
         ),
     )
+    // Hollow ring for a custom start point — the same mark the search panel puts next to the
+    // origin field, so the two read as the same thing.
+    addLayer(
+        CircleLayer(LAYER_ORIGIN, SOURCE_ORIGIN).withProperties(
+            PropertyFactory.circleColor(casingColor),
+            PropertyFactory.circleRadius(7f),
+            PropertyFactory.circleStrokeColor(destinationColor),
+            PropertyFactory.circleStrokeWidth(4f),
+        ),
+    )
     addLayer(
         CircleLayer(LAYER_DESTINATION, SOURCE_DESTINATION).withProperties(
             PropertyFactory.circleColor(destinationColor),
@@ -282,6 +290,20 @@ private fun Style.installRouteLayers(
             PropertyFactory.circleStrokeColor(destinationRing),
             PropertyFactory.circleStrokeWidth(3f),
         ),
+    )
+}
+
+/** A single-point source, or an empty collection when there is nothing to show. */
+private fun Style.setPoint(sourceId: String, point: GeoPoint?) {
+    val source = getSourceAs<GeoJsonSource>(sourceId) ?: return
+    source.setGeoJson(
+        if (point == null) {
+            FeatureCollection.fromFeatures(emptyList())
+        } else {
+            FeatureCollection.fromFeatures(
+                listOf(Feature.fromGeometry(Point.fromLngLat(point.lon, point.lat))),
+            )
+        },
     )
 }
 
@@ -301,12 +323,14 @@ private const val SOURCE_ROUTE = "mg-src-route"
 private const val SOURCE_PASSED = "mg-src-passed"
 private const val SOURCE_REMAINING = "mg-src-remaining"
 private const val SOURCE_DESTINATION = "mg-src-destination"
+private const val SOURCE_ORIGIN = "mg-src-origin"
 
 private const val LAYER_CASING = "mg-route-casing"
 private const val LAYER_ROUTE = "mg-route-line"
 private const val LAYER_FLOW = "mg-route-flow"
 private const val LAYER_PASSED = "mg-route-passed"
 private const val LAYER_DESTINATION = "mg-route-destination"
+private const val LAYER_ORIGIN = "mg-route-origin"
 
 private const val CASING_WIDTH = 15f
 private const val ROUTE_WIDTH = 9f

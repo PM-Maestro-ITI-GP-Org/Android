@@ -340,6 +340,16 @@ private fun DrawScope.drawRoute(
         }
     }
 
+    overlay.origin?.let { origin ->
+        val point = origin.toWorld(worldSize)
+        drawCircle(
+            color = palette.destination,
+            radius = 9f * density,
+            center = point,
+            style = Stroke(width = 4f * density),
+        )
+    }
+
     overlay.destination?.let { destination ->
         val point = destination.toWorld(worldSize)
         drawCircle(palette.destinationRing, radius = 13f * density, center = point)

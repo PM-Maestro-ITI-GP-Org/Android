@@ -12,7 +12,14 @@ initialize even if we wanted it. Everything below is open source.
 | Tiles | **OpenFreeMap** planet (OpenMapTiles schema) | No key, no quota, no registration; self-hostable | `NavConfig.tileJsonUrl` |
 | Routing | **Valhalla** via FOSSGIS | Richest maneuver output (typed turns + street names + shape indices) | `RoutingService` |
 | Search | **Photon** (komoot) | Built for search-as-you-type; Nominatim's policy forbids autocomplete | `GeocodingService` |
-| Position | **Simulator** | Demoable at a desk with no GPS and no sky | `LocationSource` |
+| Position | **GNSS** (`LocationManager`) | No emulator location mocking; correct on real hardware | `LocationSource` |
+
+`LocationManager`, deliberately not FusedLocationProvider — the fused provider lives in Play
+Services, which this image does not have.
+
+Guidance only advances when the vehicle actually moves, so at a desk the route will sit still.
+The **Simulate** button on the "waiting for GPS fix" chip switches to the route simulator at
+runtime — no rebuild — and that is also the answer for a Pi with no receiver fitted.
 
 The three public instances are fair-use. Fine for development and the defence; point
 `NavConfig` at self-hosted Valhalla + Photon + tile server before this goes in a car.
@@ -52,19 +59,43 @@ One map card (28 dp radius, 22 dp inset) with glass overlays, matching the nav s
 | Phase | Map camera | Overlay |
 |-------|-----------|---------|
 | `Idle` | car centred, north-up | "Where to?" pill |
-| `Searching` | unchanged | search panel, left 420 dp |
-| `Preview` | fits the selected route | destination + alternates + **Start** |
+| `Searching` | frames whichever endpoints are chosen | search panel, left 420 dp |
+| `Preview` | fits the selected route | from/to + alternates + **Start** |
 | `Guiding` | chases the car, heading-up, car at 70% height | maneuver card · speed · ETA bar |
 
 The map is **one instance for the whole tab** and is never torn down between phases. That is
 what lets the camera fly between them instead of cutting.
+
+Each panel gets its own `AnimatedVisibility` driven by a boolean. It must **not** be a single
+`AnimatedContent` keyed on the phase: `AnimatedContent` re-runs its transition whenever
+`targetState` changes by value, and `contentKey` only reuses the composition slot rather than
+suppressing the animation — so every keystroke replayed the enter animation, over a full-screen
+container whose height made the slide enormous.
+
+## Start location
+
+Both endpoints are editable, Google-Maps style: a hollow ring for the start, a pin for the
+destination, a dotted run between them, and a swap button.
+
+`Searching.origin` is **null for "Your location"** rather than eagerly resolved to a `Place`.
+That distinction matters: a trip that starts wherever the car happens to be should keep
+tracking the car, not freeze to the coordinates it had when you typed. It is only materialized
+into a real `Place` when swapped into the *destination* slot, where being fixed is the point.
+
+Only the active row hosts a `BasicTextField` — two fields sharing one query string would fight
+over focus and echo each other's text.
 
 ## Buttons & behavior
 
 | Control | Tap | Long-press | Moving |
 |---------|-----|-----------|--------|
 | "Where to?" pill | Open search | — | allowed |
-| Search result row | Request routes → Preview | — | allowed |
+| Start field ○ | Take the caret; search a start point | — | allowed |
+| Destination field ◉ | Take the caret | — | allowed |
+| Swap ⇅ | Exchange start and destination, re-route | — | allowed |
+| "Your location" row | Reset start to the car | — | allowed |
+| Search result row | Commit to the active field; route once both ends are known | — | allowed |
+| Preview from/to block | Back to search with both endpoints intact | — | allowed |
 | Route option | Select that alternate | — | allowed |
 | **Start** (76 dp) | Begin guidance | — | allowed |
 | Cancel ✕ (preview) | Back to Idle | — | allowed |
@@ -78,14 +109,16 @@ after the car has stopped is how this screen goes stale.
 
 ## Data
 
-- `GeocodingService.search` — debounced 280 ms, biased to the car's position.
+- `GeocodingService.search` — debounced 280 ms, biased to the endpoint you are *not* editing
+  when it is known, otherwise to the car. Looking for "parking" while setting a destination in
+  another city should find it there, not next to the car.
 - `RoutingService.routes` — asks Valhalla for 2 alternates; labels are relative
   ("fastest route", "+6 min") and can only be assigned once all of them are parsed.
 - `LocationSource.positions` — cold flow at 10 Hz. Cumulative distances for the active route
   are cached in `NavRepository`; recomputing hundreds of haversines per tick would be waste.
-- Real GNSS is already written (`AndroidLocationSource`, plain `LocationManager` — *not*
-  FusedLocationProvider, which lives in Play Services). Switch with
-  `NavConfig.locationMode = GNSS`.
+- `LocationSource.positions` is collected in a **restartable** job. `AndroidLocationSource`
+  decides whether it can produce anything at collection time, so a permission granted after the
+  screen opened — or a switch to the simulator — would otherwise leave an empty flow forever.
 
 ## Animation levels
 
@@ -132,7 +165,9 @@ do not remove it.
 
 ## Definition of done
 
-- [x] Search returns places and biases to the car.
+- [x] Search returns places and biases sensibly.
+- [x] Start and destination are both editable, with swap and "Your location".
+- [x] Real GNSS position, with a one-tap switch to the simulator when there is no fix.
 - [x] Route preview shows alternates with time, distance and arrival.
 - [x] Guidance advances maneuvers, distance, ETA and the traveled route.
 - [x] Falls back to the Canvas map with no network and no GL.

@@ -1,8 +1,11 @@
 package com.motorguard.ivi.ui.nav
 
-import androidx.compose.animation.AnimatedContent
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,13 +30,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.motorguard.ivi.data.nav.GeoPoint
@@ -42,6 +51,7 @@ import com.motorguard.ivi.data.nav.Place
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.nav.components.EtaBar
 import com.motorguard.ivi.ui.nav.components.FollowingManeuverChip
+import com.motorguard.ivi.ui.nav.components.LocationStatusChip
 import com.motorguard.ivi.ui.nav.components.ManeuverCard
 import com.motorguard.ivi.ui.nav.components.RecenterButton
 import com.motorguard.ivi.ui.nav.components.RoutePreviewPanel
@@ -68,10 +78,28 @@ import com.motorguard.ivi.ui.theme.MotorGuard
 fun NavScreen(viewModel: NavViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val colors = MotorGuard.colors
+    val context = LocalContext.current
     val phase = state.phase
 
     val carPoint = state.position?.point ?: NavConfig.defaultOrigin
     val heading = state.position?.bearingDegrees ?: 0f
+
+    // --- runtime location permission ------------------------------------------------------
+    var permissionGranted by remember { mutableStateOf(context.hasLocationPermission()) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        permissionGranted = granted.values.any { it }
+        viewModel.onLocationPermissionResult(permissionGranted)
+    }
+    val requestPermission = { permissionLauncher.launch(LOCATION_PERMISSIONS) }
+
+    // Ask once, on entering the tab, and only when GNSS is the source that needs it.
+    LaunchedEffect(Unit) {
+        if (NavConfig.locationMode == NavConfig.LocationMode.GNSS && !permissionGranted) {
+            requestPermission()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -88,62 +116,110 @@ fun NavScreen(viewModel: NavViewModel = viewModel()) {
 
         VehicleMarker(phase = phase, heading = heading)
 
-        // One cross-fade between phases, keyed on the phase *type*: guidance updates ten times
-        // a second, and keying on the value itself would restart the transition on every tick.
-        AnimatedContent(
-            targetState = phase,
-            contentKey = { it.key },
-            transitionSpec = { NavMotion.panelEnter togetherWith NavMotion.panelExit },
-            label = "nav-phase",
-            modifier = Modifier.fillMaxSize(),
-        ) { current ->
-            Box(Modifier.fillMaxSize()) {
-                when (current) {
-                    is NavPhase.Idle -> SearchPill(
-                        onClick = viewModel::openSearch,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(22.dp),
-                    )
+        // One AnimatedVisibility per phase, driven by a *boolean*.
+        //
+        // This used to be a single AnimatedContent keyed on the phase type, which was wrong:
+        // AnimatedContent re-runs its transition whenever targetState changes by value, and
+        // contentKey only reuses the composition slot — it does not suppress the animation. So
+        // every keystroke produced a new Searching value and replayed the enter transition,
+        // over a full-screen container whose height made the slide enormous. A boolean only
+        // flips when the phase actually changes, and each panel now slides relative to its own
+        // height instead of the screen's.
+        AnimatedVisibility(
+            visible = phase is NavPhase.Idle,
+            enter = NavMotion.panelEnter,
+            exit = NavMotion.panelExit,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(22.dp),
+        ) {
+            SearchPill(onClick = viewModel::openSearch)
+        }
 
-                    is NavPhase.Searching -> SearchPanel(
-                        query = current.query,
-                        results = current.results,
-                        loading = current.loading,
-                        onQueryChange = viewModel::onQueryChange,
-                        onPick = viewModel::pickDestination,
-                        onDismiss = viewModel::closeSearch,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(22.dp)
-                            .width(SEARCH_PANEL_WIDTH),
-                    )
-
-                    is NavPhase.Preview -> RoutePreviewPanel(
-                        destination = current.destination,
-                        routes = current.routes,
-                        selectedIndex = current.selectedIndex,
-                        onSelect = viewModel::selectRoute,
-                        onStart = viewModel::startGuidance,
-                        onCancel = viewModel::cancelPreview,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(22.dp),
-                    )
-
-                    is NavPhase.Guiding -> GuidanceOverlay(
-                        phase = current,
-                        speedKph = state.position?.speedKph ?: 0,
-                        onToggleMute = viewModel::toggleMute,
-                        onEndRoute = viewModel::endGuidance,
-                        onToggleFollow = { viewModel.setFollowing(!current.following) },
-                    )
-                }
+        // Panels keep their last value so an exit animation still has something to draw after
+        // the phase has already moved on.
+        val searching = rememberLast(phase as? NavPhase.Searching)
+        AnimatedVisibility(
+            visible = phase is NavPhase.Searching,
+            enter = NavMotion.panelEnter,
+            exit = NavMotion.panelExit,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(22.dp)
+                .width(SEARCH_PANEL_WIDTH),
+        ) {
+            searching?.let { current ->
+                SearchPanel(
+                    origin = current.origin,
+                    destination = current.destination,
+                    active = current.active,
+                    query = current.query,
+                    results = current.results,
+                    loading = current.loading,
+                    canUseCurrentLocation = state.position != null,
+                    onQueryChange = viewModel::onQueryChange,
+                    onActivate = viewModel::activateField,
+                    onPick = viewModel::pickResult,
+                    onUseCurrentLocation = viewModel::useCurrentLocationAsOrigin,
+                    onSwap = viewModel::swapEndpoints,
+                    onDismiss = viewModel::closeSearch,
+                )
             }
         }
 
+        val preview = rememberLast(phase as? NavPhase.Preview)
+        AnimatedVisibility(
+            visible = phase is NavPhase.Preview,
+            enter = NavMotion.panelEnter,
+            exit = NavMotion.panelExit,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(22.dp),
+        ) {
+            preview?.let { current ->
+                RoutePreviewPanel(
+                    origin = current.origin,
+                    destination = current.destination,
+                    routes = current.routes,
+                    selectedIndex = current.selectedIndex,
+                    onSelect = viewModel::selectRoute,
+                    onStart = viewModel::startGuidance,
+                    onEdit = viewModel::editRoute,
+                    onCancel = viewModel::cancelPreview,
+                )
+            }
+        }
+
+        val guiding = rememberLast(phase as? NavPhase.Guiding)
+        GuidanceOverlay(
+            visible = phase is NavPhase.Guiding,
+            phase = guiding,
+            speedKph = state.position?.speedKph ?: 0,
+            onToggleMute = viewModel::toggleMute,
+            onEndRoute = viewModel::endGuidance,
+            onToggleFollow = { guiding?.let { viewModel.setFollowing(!it.following) } },
+        )
+
         if (state.routing) {
             RoutingIndicator(modifier = Modifier.align(Alignment.Center))
+        }
+
+        // No fix yet: say so, and offer the way out. Sits at the bottom-centre only while the
+        // ETA bar is not there to claim that space.
+        AnimatedVisibility(
+            visible = NavConfig.locationMode == NavConfig.LocationMode.GNSS &&
+                state.position == null,
+            enter = NavMotion.panelEnter,
+            exit = NavMotion.panelExit,
+            modifier = Modifier
+                .align(if (phase is NavPhase.Guiding) Alignment.Center else Alignment.BottomCenter)
+                .padding(22.dp),
+        ) {
+            LocationStatusChip(
+                permissionGranted = permissionGranted,
+                onGrantPermission = requestPermission,
+                onUseSimulated = viewModel::useSimulatedLocation,
+            )
         }
 
         ErrorBanner(
@@ -158,14 +234,23 @@ fun NavScreen(viewModel: NavViewModel = viewModel()) {
     }
 }
 
-/** Stable identity per phase, so [AnimatedContent] transitions on phase changes only. */
-private val NavPhase.key: String
-    get() = when (this) {
-        is NavPhase.Idle -> "idle"
-        is NavPhase.Searching -> "searching"
-        is NavPhase.Preview -> "preview"
-        is NavPhase.Guiding -> "guiding"
+/**
+ * Holds on to the most recent non-null [value].
+ *
+ * A panel's exit animation outlives the phase that produced it: by the time the search panel is
+ * sliding away, `phase` is already `Idle` and the cast to `Searching` is null. Without this the
+ * panel would blank out and then animate an empty box. The holder is a plain list rather than
+ * snapshot state on purpose — it must not itself trigger a recomposition.
+ */
+@Composable
+private fun <T : Any> rememberLast(value: T?): T? {
+    val holder = remember { mutableListOf<T>() }
+    if (value != null) {
+        holder.clear()
+        holder.add(value)
     }
+    return value ?: holder.firstOrNull()
+}
 
 // ---------------------------------------------------------------------------- camera & overlay
 
@@ -196,6 +281,14 @@ private fun cameraFor(phase: NavPhase, carPoint: GeoPoint, heading: Float): MapC
             paddingPx = ROUTE_PADDING_PX,
         )
 
+        // While searching, frame whichever endpoints are already chosen — picking a start
+        // somewhere else should take the map there, not leave it sitting on the car.
+        is NavPhase.Searching -> MapCamera.Overview(
+            points = listOfNotNull(phase.origin?.point, phase.destination?.point)
+                .ifEmpty { listOf(carPoint) },
+            paddingPx = ROUTE_PADDING_PX,
+        )
+
         else -> MapCamera.Overview(points = listOf(carPoint), paddingPx = ROUTE_PADDING_PX)
     }
 
@@ -209,7 +302,13 @@ private fun overlayFor(phase: NavPhase): MapOverlay = when (phase) {
 
     is NavPhase.Preview -> MapOverlay(
         route = phase.selected.shape,
+        origin = phase.origin?.point,
         destination = phase.destination.point,
+    )
+
+    is NavPhase.Searching -> MapOverlay(
+        origin = phase.origin?.point,
+        destination = phase.destination?.point,
     )
 
     else -> MapOverlay()
@@ -253,49 +352,75 @@ private fun BoxScope.VehicleMarker(phase: NavPhase, heading: Float) {
     }
 }
 
+/**
+ * Guidance chrome, in three independently-animated corners.
+ *
+ * Each corner gets its own [AnimatedVisibility] so it slides relative to its own height, not the
+ * screen's — and, critically, so the ten-times-a-second progress updates flow straight through
+ * to the cards without touching any transition.
+ */
 @Composable
 private fun BoxScope.GuidanceOverlay(
-    phase: NavPhase.Guiding,
+    visible: Boolean,
+    phase: NavPhase.Guiding?,
     speedKph: Int,
     onToggleMute: () -> Unit,
     onEndRoute: () -> Unit,
     onToggleFollow: () -> Unit,
 ) {
-    val progress = phase.progress
+    val progress = phase?.progress
 
-    Column(
+    AnimatedVisibility(
+        visible = visible,
+        enter = NavMotion.panelEnter,
+        exit = NavMotion.panelExit,
         modifier = Modifier
             .align(Alignment.TopStart)
             .padding(22.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (progress != null) {
-            ManeuverCard(progress = progress)
-            FollowingManeuverChip(progress = progress)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (progress != null) {
+                ManeuverCard(progress = progress)
+                FollowingManeuverChip(progress = progress)
+            }
         }
     }
 
-    Column(
+    AnimatedVisibility(
+        visible = visible,
+        enter = NavMotion.panelEnter,
+        exit = NavMotion.panelExit,
         modifier = Modifier
             .align(Alignment.TopEnd)
             .padding(22.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        horizontalAlignment = Alignment.End,
     ) {
-        SpeedPuck(speedKph = speedKph)
-        RecenterButton(following = phase.following, onClick = onToggleFollow)
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            SpeedPuck(speedKph = speedKph)
+            RecenterButton(following = phase?.following ?: true, onClick = onToggleFollow)
+        }
     }
 
-    EtaBar(
-        route = phase.route,
-        progress = progress,
-        muted = phase.muted,
-        onToggleMute = onToggleMute,
-        onEndRoute = onEndRoute,
+    AnimatedVisibility(
+        visible = visible,
+        enter = NavMotion.panelEnter,
+        exit = NavMotion.panelExit,
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .padding(22.dp),
-    )
+    ) {
+        if (phase != null) {
+            EtaBar(
+                route = phase.route,
+                progress = progress,
+                muted = phase.muted,
+                onToggleMute = onToggleMute,
+                onEndRoute = onEndRoute,
+            )
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------- small pieces
@@ -374,6 +499,16 @@ private fun Attribution(modifier: Modifier = Modifier) {
         color = MotorGuard.colors.onBaseDim,
         modifier = modifier.padding(start = 14.dp, bottom = 6.dp),
     )
+}
+
+/** Coarse is requested alongside fine so a "approximate location only" grant still works. */
+private val LOCATION_PERMISSIONS = arrayOf(
+    Manifest.permission.ACCESS_FINE_LOCATION,
+    Manifest.permission.ACCESS_COARSE_LOCATION,
+)
+
+private fun Context.hasLocationPermission(): Boolean = LOCATION_PERMISSIONS.any {
+    ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
 }
 
 private val SEARCH_PANEL_WIDTH = 420.dp

@@ -10,13 +10,25 @@ import com.motorguard.ivi.data.nav.VehiclePosition
  * nullable fields so the screen cannot render "guiding, but with no route" — the compiler
  * refuses to construct it.
  */
+/** Which of the two endpoint fields the search box is currently editing. */
+enum class SearchField { ORIGIN, DESTINATION }
+
 sealed interface NavPhase {
 
     /** Map, car, and one affordance: "Where to?". */
     data object Idle : NavPhase
 
-    /** Search panel open over the map. */
+    /**
+     * Search panel open over the map, editing one of two endpoints.
+     *
+     * [origin] is null for "Your location" — the common case, and the reason it is nullable
+     * rather than eagerly resolved to a [Place]: a trip that starts wherever the car happens to
+     * be should keep tracking the car, not freeze to the coordinates it had when you searched.
+     */
     data class Searching(
+        val origin: Place? = null,
+        val destination: Place? = null,
+        val active: SearchField = SearchField.DESTINATION,
         val query: String = "",
         val results: List<Place> = emptyList(),
         val loading: Boolean = false,
@@ -24,6 +36,7 @@ sealed interface NavPhase {
 
     /** Routes computed; the driver picks one and starts. */
     data class Preview(
+        val origin: Place?,
         val destination: Place,
         val routes: List<Route>,
         val selectedIndex: Int = 0,

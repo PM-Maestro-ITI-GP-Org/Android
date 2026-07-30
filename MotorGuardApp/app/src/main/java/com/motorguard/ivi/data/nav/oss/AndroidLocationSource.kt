@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Bundle
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.motorguard.ivi.data.nav.GeoPoint
@@ -41,7 +42,21 @@ class AndroidLocationSource(private val context: Context) : LocationSource {
             val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
                 ?: return@callbackFlow run { close() }
 
-            val listener = LocationListener { location -> trySend(location.toVehiclePosition()) }
+            // Explicit object, not a SAM lambda. `onStatusChanged` / `onProviderEnabled` /
+            // `onProviderDisabled` only became default methods in API 30; against minSdk 29 a
+            // lambda compiles fine and then throws AbstractMethodError on a real API 29 device.
+            val listener = object : LocationListener {
+                override fun onLocationChanged(location: Location) {
+                    trySend(location.toVehiclePosition())
+                }
+
+                @Deprecated("Required by LocationListener below API 30")
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+
+                override fun onProviderEnabled(provider: String) = Unit
+
+                override fun onProviderDisabled(provider: String) = Unit
+            }
 
             val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
                 .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
