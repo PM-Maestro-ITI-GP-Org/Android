@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Points the platform at the session service. `recognitionService` is required by
+  the framework; it references our session service for now because speech comes
+  from the platform SpeechRecognizer. When offline STT (Whisper/Vosk) lands it
+  becomes a real RecognitionService — see docs/07-voice-implementation.md.
+-->
+<voice-interaction-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.motorguard.ivi.ui.voice.VoiceSessionService"
+    android:recognitionService="com.motorguard.ivi.ui.voice.VoiceSessionService"
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="false" />

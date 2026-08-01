@@ -14,5 +14,15 @@ import android.service.voice.VoiceInteractionService
  * REQUIRES: mic + AudioFocus, SYSTEM_ALERT_WINDOW / VoiceInteractionService,
  *           on-device STT + NLU
  * NOTE    : has no launcher icon; not user-launchable from the rail
+ *
+ * IMPLEMENTED — the working version lives in the Gradle module:
+ *   MotorGuardApp/app/src/main/java/com/motorguard/ivi/ui/voice/
+ *   (VoiceOverlayService · VoiceSessionService · VoiceOverlaySession ·
+ *    VoiceOverlayUi · VoiceEngine · WakeWord · VoiceTrigger)
+ * plus the native reasoning core in MotorGuardApp/app/src/main/cpp/.
+ *
+ * When this AOSP tree is built, copy those sources here (and add the cpp/ tree to
+ * Android.bp) rather than re-implementing. Notes + known gaps:
+ *   docs/07-voice-implementation.md
  */
 class VoiceOverlayService : VoiceInteractionService()

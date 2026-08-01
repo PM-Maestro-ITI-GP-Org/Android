@@ -14,6 +14,27 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
+
+        // The reasoning core is native C++ shared with the Linux build.
+        ndk {
+            // arm64 for the Pi/device, x86_64 so it still runs on the emulator.
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+        externalNativeBuild {
+            cmake { cppFlags += "-std=c++17" }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    // .onnx wake-word models must not be compressed, or ORT can't mmap them.
+    androidResources {
+        noCompress += listOf("onnx")
     }
 
     buildTypes {
@@ -44,6 +65,14 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    // ComposeView inside the voice-overlay service window needs its own
+    // ViewTree owners (see VoiceOverlaySession.OverlayHost).
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.savedstate:savedstate-ktx:1.2.1")
+
+    // Wake word (openWakeWord models run on ONNX Runtime). If the models are
+    // absent the detector disables itself and the rail mic button still works.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
 
     // Compose (versions come from the BOM)
     val composeBom = platform("androidx.compose:compose-bom:2024.09.02")
