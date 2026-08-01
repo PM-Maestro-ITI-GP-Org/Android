@@ -72,7 +72,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             // needs them, so the session supplies a minimal lifecycle host.
             host.attachTo(this)
             setContent {
-                MotorGuardTheme(dark = true) {
+                MotorGuardTheme(forceDark = true) {
                     VoiceOverlay(
                         model = model,
                         onChip = ::route,

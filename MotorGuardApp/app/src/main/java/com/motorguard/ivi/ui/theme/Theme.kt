@@ -32,10 +32,13 @@ private val DayColors = lightColorScheme(
  * Wrap every Compose surface (rail + each fragment) in this. Day/Night and the accent
  * come from [ThemeState] — which the Settings screen writes to — so changing the theme
  * anywhere updates the whole app. AUTO follows the system UiMode / light sensor.
+ *
+ * [forceDark] overrides [ThemeState] for surfaces that must stay dark regardless of the
+ * app theme — e.g. the voice overlay scrim (pass `true`). Leave null to follow ThemeState.
  */
 @Composable
-fun MotorGuardTheme(content: @Composable () -> Unit) {
-    val dark = when (ThemeState.mode) {
+fun MotorGuardTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
+    val dark = forceDark ?: when (ThemeState.mode) {
         ThemeMode.DAY -> false
         ThemeMode.NIGHT -> true
         ThemeMode.AUTO -> isSystemInDarkTheme()
