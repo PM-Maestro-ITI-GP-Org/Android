@@ -22,6 +22,17 @@ android_app {
     ],
     manifest: "app/src/main/AndroidManifest.xml",
 
+    // Voice wake-word models (openWakeWord *.onnx). ORT mmaps them, so they must
+    // NOT be compressed in the APK (mirrors android.androidResources.noCompress
+    // "onnx" in build.gradle.kts).
+    asset_dirs: ["app/src/main/assets"],
+    aaptflags: ["-0 .onnx"],
+
+    // The native reasoning/voice core (see cc_library_shared below) and the
+    // ONNX Runtime prebuilt (android_library_import below) — the two pieces the
+    // Vega voice subsystem added on top of the pure-Compose launcher.
+    jni_libs: ["libmotorguardvoice"],
+
     // System APIs (WifiManager/BluetoothAdapter control) + platform signing so the app
     // can be HOME and hold privileged permissions.
     platform_apis: true,
@@ -47,6 +58,9 @@ android_app {
         "androidx.compose.ui_ui-tooling-preview",
         "androidx.compose.material3_material3",
         "androidx.compose.material_material-icons-extended",
+        // ONNX Runtime (ai.onnxruntime.*) — not in AOSP prebuilts, vendored as an
+        // AAR via the android_library_import below. You must drop the .aar in first.
+        "motorguard-onnxruntime",
     ],
 
     // Jetpack Compose compiler plugin. Module name can vary by tree/version — if Soong
@@ -69,6 +83,50 @@ prebuilt_etc {
     sub_dir: "permissions",
     src: "aosp/privapp_permissions_com.motorguard.ivi.xml",
     filename_from_src: true,
+}
+
+// ---------------------------------------------------------------------------
+// Native voice/reasoning core — the Soong equivalent of app/src/main/cpp/
+// CMakeLists.txt (Soong does NOT run CMake). Produces libmotorguardvoice.so,
+// loaded by VoiceEngine.kt via System.loadLibrary("motorguardvoice").
+// sqlite3.c is the official amalgamation compiled straight in (the NDK/platform
+// does not expose libsqlite to apps).
+// ---------------------------------------------------------------------------
+cc_library_shared {
+    name: "libmotorguardvoice",
+
+    srcs: [
+        "app/src/main/cpp/native-lib.cpp",
+        "app/src/main/cpp/sqlite3.c",
+        "app/src/main/cpp/assistant-core/src/*.cpp",
+    ],
+    local_include_dirs: [
+        "app/src/main/cpp",                        // seed_data.h, sqlite3.h, adapters/
+        "app/src/main/cpp/assistant-core/include", // assistant/*.hpp
+    ],
+
+    cflags: [
+        "-DSQLITE_OMIT_LOAD_EXTENSION",
+        "-DSQLITE_THREADSAFE=1",
+    ],
+    cppflags: ["-std=c++17"],
+
+    shared_libs: ["liblog"],
+
+    // Platform-variant build (matches the platform_apis app it ships in). If you
+    // instead build the app against a numbered sdk_version, add sdk_version +
+    // stl: "c++_static" here so the lib is self-contained.
+}
+
+// ONNX Runtime for Android (ai.onnxruntime.*). AOSP has no onnxruntime prebuilt,
+// so vendor the official AAR and import it. Download onnxruntime-android-1.19.2.aar
+// (the version pinned in build.gradle.kts) from Maven Central and drop it at the
+// path below; extract_jni pulls its bundled libonnxruntime*.so into the app.
+android_library_import {
+    name: "motorguard-onnxruntime",
+    aars: ["aosp/prebuilts/onnxruntime-android-1.19.2.aar"],
+    sdk_version: "current",
+    extract_jni: true,
 }
 
 // ---------------------------------------------------------------------------
