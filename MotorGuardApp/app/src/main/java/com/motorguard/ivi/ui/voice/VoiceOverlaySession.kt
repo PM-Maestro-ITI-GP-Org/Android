@@ -87,6 +87,9 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        // Hand the mic from the always-on wake-word recorder to our recognizer;
+        // running both at once starves STT and it reports "I didn't hear anything".
+        VoiceOverlayService.pauseWakeWord()
         VoiceEngine.ensureReady()
         overlayHost?.resume()
         requestFocus()
@@ -103,6 +106,8 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         overlayHost?.destroy()
         overlayHost = null
         model = VoiceUiModel()
+        // Give the mic back to wake-word listening for the next "Hey Vega".
+        VoiceOverlayService.resumeWakeWord()
         super.onHide()
     }
 

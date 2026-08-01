@@ -19,6 +19,18 @@ interface WakeWordDetector {
     /** Frames of 16 kHz mono PCM are fed in; [onDetected] fires on a trigger. */
     fun start(onDetected: () -> Unit): Boolean
     fun stop()
+
+    /**
+     * Release the microphone without tearing down the models, so another capture —
+     * the session's SpeechRecognizer — can use it. Call [resume] to listen again.
+     * Without this the always-on recorder and the recognizer fight over the mic and
+     * the recognizer hears silence ("I didn't hear anything").
+     */
+    fun pause()
+
+    /** Re-acquire the mic and resume wake-word listening after a [pause]. */
+    fun resume()
+
     val isRunning: Boolean
 
     /** Last score seen, for tuning/telemetry (0f when unknown). */
@@ -32,6 +44,8 @@ class DisabledWakeWordDetector(private val reason: String) : WakeWordDetector {
         return false
     }
     override fun stop() {}
+    override fun pause() {}
+    override fun resume() {}
     override val isRunning = false
     override val lastScore = 0f
 }
@@ -94,6 +108,9 @@ class OnnxWakeWordDetector(
 
     private var recorder: android.media.AudioRecord? = null
     private var thread: Thread? = null
+    // Kept across a pause/resume so the mic can be handed to the session's recognizer
+    // and reclaimed afterwards, without reloading the ONNX models each time.
+    private var onDetected: (() -> Unit)? = null
 
     @Volatile override var isRunning = false
         private set
@@ -107,10 +124,35 @@ class OnnxWakeWordDetector(
     override fun start(onDetected: () -> Unit): Boolean {
         if (isRunning) return true
         if (!loadModels()) return false
-        if (!openMic()) { closeModels(); return false }
+        this.onDetected = onDetected
+        if (!startCapture()) { closeModels(); this.onDetected = null; return false }
+        return true
+    }
 
+    override fun stop() {
+        stopCapture()
+        closeModels()
+        onDetected = null
+    }
+
+    override fun pause() {
+        if (!isRunning) return
+        stopCapture()
+        Log.i(TAG, "wake word paused — mic released for the session")
+    }
+
+    override fun resume() {
+        if (isRunning || onDetected == null) return
+        if (startCapture()) Log.i(TAG, "wake word resumed")
+        else Log.w(TAG, "wake word could not resume — trigger with the rail mic button")
+    }
+
+    /** Open the mic and spin up the inference loop. Models must already be loaded. */
+    private fun startCapture(): Boolean {
+        val cb = onDetected ?: return false
+        if (!openMic()) return false
         isRunning = true
-        thread = Thread({ loop(onDetected) }, "wake-word").apply {
+        thread = Thread({ loop(cb) }, "wake-word").apply {
             priority = Thread.NORM_PRIORITY + 1
             start()
         }
@@ -118,14 +160,15 @@ class OnnxWakeWordDetector(
         return true
     }
 
-    override fun stop() {
+    /** Stop the loop and release the mic, but leave the models loaded. */
+    private fun stopCapture() {
         isRunning = false
         thread?.join(500)
         thread = null
         runCatching { recorder?.stop() }
         runCatching { recorder?.release() }
         recorder = null
-        closeModels()
+        // Drop stale audio so a resumed detector can't re-fire on the last utterance.
         melBuffer.clear()
         embBuffer.clear()
     }

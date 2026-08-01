@@ -38,6 +38,16 @@ class VoiceOverlayService : VoiceInteractionService() {
                 .onFailure { Log.e(TAG, "showSession failed", it) }
                 .getOrDefault(false)
         }
+
+        /**
+         * Release the wake-word mic so the active session's SpeechRecognizer can use
+         * it. The session calls this on show and [resumeWakeWord] on hide — otherwise
+         * the always-on recorder and the recognizer contend and STT hears nothing.
+         */
+        fun pauseWakeWord() = instance.get()?.wakeWord?.pause()
+
+        /** Reclaim the mic for wake-word listening after a session closes. */
+        fun resumeWakeWord() = instance.get()?.wakeWord?.resume()
     }
 
     private var wakeWord: WakeWordDetector? = null
