@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.motorguard.ivi.data.media.Track
 import com.motorguard.ivi.ui.nav.NavMotion
-import com.motorguard.ivi.ui.theme.AlbumTheme
 import com.motorguard.ivi.ui.theme.MotorGuard
 
 /**
@@ -52,10 +51,9 @@ fun TrackRow(
     modifier: Modifier = Modifier,
 ) {
     val colors = MotorGuard.colors
-    val album = AlbumTheme.colors
 
     val background by animateColorAsState(
-        targetValue = if (isCurrent) album.accent.copy(alpha = 0.12f) else Color.Transparent,
+        targetValue = if (isCurrent) colors.accent.copy(alpha = 0.12f) else Color.Transparent,
         animationSpec = NavMotion.settle(),
         label = "track-row-bg",
     )
@@ -71,7 +69,7 @@ fun TrackRow(
     ) {
         Box(modifier = Modifier.width(22.dp), contentAlignment = Alignment.Center) {
             if (isCurrent) {
-                Equalizer(animating = isPlaying, color = album.accent)
+                Equalizer(animating = isPlaying, color = colors.accent)
             } else {
                 Text(
                     text = "${index + 1}",
@@ -87,7 +85,7 @@ fun TrackRow(
                 text = track.title,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = if (isCurrent) album.accent else MaterialTheme.colorScheme.onSurface,
+                color = if (isCurrent) colors.accent else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

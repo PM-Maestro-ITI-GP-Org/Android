@@ -64,12 +64,27 @@ honest.
 Glyphs are 24–30 dp inside **76 dp** touch targets, so the row is slightly wider than the mock.
 The touch-target rule wins.
 
-## Album-art theming
+### Responsive behaviour
 
-The media screen and the Home widget sit inside `AlbumThemedContent`, which derives the accent
-from the current cover with `androidx.palette`. Everything else — nav rail, status bar,
-diagnostics severity colours — keeps the Modern Tech palette. A green/amber/red safety language
-that shifts hue with whatever is playing stops being a language.
+The now-playing pane is sized from both axes. The text, scrubber and transport claim their space
+first and the cover takes what is left; under 64 dp the cover drops out entirely, and on a narrow
+pane the transport falls back to 56 dp targets. Losing the artwork is a real cost — losing
+play/pause is a broken screen. This is what keeps 1280x720 and 1024x600 working, not just the
+1920x720 primary.
+
+## Album-art theming — app-wide
+
+`MotorGuardTheme` derives the accent from the current cover with `androidx.palette` and feeds it
+into both `MotorGuard.colors.accent` and `MaterialTheme.colorScheme.primary`. Because every
+fragment is wrapped in that theme, the whole system follows the music — nav rail, media, home,
+and any screen that reads the accent rather than a literal token.
+
+`MainActivity` drives it: one observer on the playback session, one artwork load, one palette
+extraction. Only the **seed** colour is stored, not a finished palette, so a Day/Night flip
+re-derives a correction appropriate to the new background instead of reusing a stale one.
+
+`success` / `caution` / `critical` stay pinned to `Tokens`. They mean battery, tyre-pressure and
+brake severity; a safety language that changes hue with the current track is not a language.
 
 The part that matters is **contrast correction**. Palette returns whatever is in the artwork, and
 plenty of covers are near-black or muddy maroon; used raw they are unreadable on `#161B24`. Every
@@ -96,7 +111,17 @@ whoever picks it up.
 - `MediaSourceManager` — process singleton, owns the four sources and which is active.
 - `MediaStoreQuery` — one query, parameterised by storage volume. Library and USB differ only by
   which volumes they ask for.
-- `AlbumArtLoader` — `loadThumbnail` first, album-art URI as fallback, LRU-cached by bytes.
+- `AlbumArtLoader` — four lookups in order of cost: memory, embedded (`loadThumbnail`), the
+  album-art URI, then **disk and the network**. Most files ripped from CD, and nearly every file
+  shared over a messaging app, carry no artwork, so on a real library the local path misses far
+  more often than it hits.
+- `ArtworkProvider` / `ITunesArtworkProvider` — cover lookup with no API key and one request.
+  Keyed by artist+album, cached on disk so it survives a restart, with a negative cache so an
+  album with no cover is not looked up 20 times. MusicBrainz + Cover Art Archive is the OSS
+  alternative; see the KDoc for the trade-off.
+- Bitmaps are decoded to **software** config on purpose: `loadThumbnail` returns
+  `Config.HARDWARE`, and Palette cannot read pixels from one — the theme would silently never
+  work.
 - `MediaConnection` — the `MediaController`, plus a 500 ms ticker (the player reports position
   only when something else changes, so without it the scrubber would not move).
 
@@ -114,7 +139,10 @@ on entry; the library is re-read on grant.
 - [x] Transport, scrubbing, shuffle, repeat, queue with the playing row's equaliser.
 - [x] Home now-playing widget driven by the same session.
 - [x] Album-art theming, contrast-corrected and unit-tested.
-- [ ] Verify on hardware — none of this has been run on a device.
+- [x] Online artwork fallback with disk + negative caching.
+- [x] Verified on a real device (Huawei P40, API 29): scan, playback, notification, media-button
+      session, online artwork and app-wide theming all confirmed working.
+- [ ] Verify on the Pi/AAOS image.
 - [ ] Bluetooth AVRCP metadata mirroring (availability is built; now-playing needs
       `MediaSessionManager`, which wants a privileged permission on AAOS).
 - [ ] Radio against a real tuner.

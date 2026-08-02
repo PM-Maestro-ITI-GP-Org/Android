@@ -35,7 +35,6 @@ import com.motorguard.ivi.data.media.MediaLibrarySource
 import com.motorguard.ivi.data.media.MediaSourceId
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.nav.NavMotion
-import com.motorguard.ivi.ui.theme.AlbumTheme
 import com.motorguard.ivi.ui.theme.MotorGuard
 
 /**
@@ -83,16 +82,15 @@ private fun SourceTab(
     onClick: () -> Unit,
 ) {
     val colors = MotorGuard.colors
-    val album = AlbumTheme.colors
 
     val background by animateColorAsState(
-        targetValue = if (selected) album.accent.copy(alpha = 0.18f) else Color.Transparent,
+        targetValue = if (selected) colors.accent.copy(alpha = 0.18f) else Color.Transparent,
         animationSpec = NavMotion.settle(),
         label = "source-tab-bg",
     )
     val tint by animateColorAsState(
         targetValue = when {
-            selected -> album.accent
+            selected -> colors.accent
             else -> colors.onBaseDim
         },
         animationSpec = NavMotion.settle(),

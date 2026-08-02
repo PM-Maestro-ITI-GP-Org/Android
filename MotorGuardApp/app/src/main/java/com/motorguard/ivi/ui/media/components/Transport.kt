@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.motorguard.ivi.data.media.RepeatMode
 import com.motorguard.ivi.ui.nav.NavMotion
-import com.motorguard.ivi.ui.theme.AlbumTheme
 import com.motorguard.ivi.ui.theme.MotorGuard
 
 /**
@@ -63,9 +62,13 @@ fun TransportBar(
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val colors = MotorGuard.colors
-    val album = AlbumTheme.colors
+    // Five 76 dp targets plus the play button need ~370 dp. A narrow pane (1024x600, or a phone)
+    // cannot give that, and a clipped repeat button is worse than a slightly smaller one.
+    val target = if (compact) COMPACT_TARGET else TOUCH_TARGET
+    val playSize = if (compact) 52.dp else 66.dp
 
     Row(
         modifier = modifier,
@@ -79,8 +82,9 @@ fun TransportBar(
             icon = Icons.Filled.Shuffle,
             description = "Shuffle",
             size = 24.dp,
-            tint = if (shuffle) album.accent else colors.onBaseDim,
+            tint = if (shuffle) colors.accent else colors.onBaseDim,
             enabled = enabled,
+            target = target,
             onClick = onShuffle,
         )
         TransportIcon(
@@ -89,23 +93,31 @@ fun TransportBar(
             size = 30.dp,
             tint = MaterialTheme.colorScheme.onSurface,
             enabled = enabled && canSkip,
+            target = target,
             onClick = onPrevious,
         )
-        PlayPauseButton(isPlaying = isPlaying, enabled = enabled, onClick = onPlayPause)
+        PlayPauseButton(
+            isPlaying = isPlaying,
+            enabled = enabled,
+            onClick = onPlayPause,
+            diameter = playSize,
+        )
         TransportIcon(
             icon = Icons.Filled.SkipNext,
             description = "Next track",
             size = 30.dp,
             tint = MaterialTheme.colorScheme.onSurface,
             enabled = enabled && canSkip,
+            target = target,
             onClick = onNext,
         )
         TransportIcon(
             icon = if (repeat == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
             description = "Repeat",
             size = 24.dp,
-            tint = if (repeat == RepeatMode.OFF) colors.onBaseDim else album.accent,
+            tint = if (repeat == RepeatMode.OFF) colors.onBaseDim else colors.accent,
             enabled = enabled,
+            target = target,
             onClick = onRepeat,
         )
     }
@@ -173,6 +185,7 @@ private fun TransportIcon(
     size: Dp,
     tint: Color,
     enabled: Boolean,
+    target: Dp,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -187,7 +200,7 @@ private fun TransportIcon(
         // The glyph is 24–30 dp; the hit area is the docs' 76 dp minimum. Visual size and touch
         // size are not the same thing in a moving vehicle.
         modifier = Modifier
-            .size(TOUCH_TARGET)
+            .size(target)
             .clip(CircleShape)
             .clickable(
                 enabled = enabled,
@@ -214,3 +227,6 @@ private const val DISABLED_ALPHA = 0.38f
 
 /** docs/README.md: minimum touch target, whatever the glyph inside measures. */
 private val TOUCH_TARGET = 76.dp
+
+/** Fallback for panes too narrow for five full-size targets. Still comfortably tappable. */
+private val COMPACT_TARGET = 56.dp

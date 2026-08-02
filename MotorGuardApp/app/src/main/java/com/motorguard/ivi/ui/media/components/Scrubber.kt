@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.motorguard.ivi.ui.nav.NavMotion
-import com.motorguard.ivi.ui.theme.AlbumTheme
 import com.motorguard.ivi.ui.theme.MotorGuard
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -60,7 +59,6 @@ fun Scrubber(
     modifier: Modifier = Modifier,
 ) {
     val colors = MotorGuard.colors
-    val album = AlbumTheme.colors
 
     var dragging by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
@@ -116,7 +114,7 @@ fun Scrubber(
                         transformOrigin = TransformOrigin(0f, 0.5f)
                     }
                     .clip(RoundedCornerShape(3.dp))
-                    .background(album.accent),
+                    .background(colors.accent),
             )
 
             Box(

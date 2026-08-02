@@ -45,8 +45,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.motorguard.ivi.media.MediaConnection
 import com.motorguard.ivi.ui.components.GlassCard
-import com.motorguard.ivi.ui.theme.AlbumTheme
-import com.motorguard.ivi.ui.theme.AlbumThemedContent
 import com.motorguard.ivi.ui.theme.MotorGuard
 
 /**
@@ -71,12 +69,9 @@ fun NowPlayingCard(
     val track = playback.track
     val artwork = rememberAlbumArt(track, sizeDp = 128)
 
-    // The widget is themed by the artwork too — the second of the two places the album colour is
-    // allowed to reach. The rest of Home keeps the Modern Tech palette.
-    AlbumThemedContent(artwork = artwork) {
-        val colors = MotorGuard.colors
+    val colors = MotorGuard.colors
 
-        GlassCard(
+    GlassCard(
             modifier = modifier.clickable(onClick = onOpenMedia),
             shape = RoundedCornerShape(26.dp),
             padding = PaddingValues(horizontal = 26.dp, vertical = 20.dp),
@@ -147,7 +142,6 @@ fun NowPlayingCard(
                         enabled = playback.hasTrack && playback.canSkip,
                         onClick = connection::next,
                     )
-                }
             }
         }
     }
@@ -157,7 +151,6 @@ fun NowPlayingCard(
 @Composable
 private fun MiniProgress(fraction: Float) {
     val colors = MotorGuard.colors
-    val album = AlbumTheme.colors
     Box(
         Modifier
             .fillMaxWidth()
@@ -174,7 +167,7 @@ private fun MiniProgress(fraction: Float) {
                     transformOrigin = TransformOrigin(0f, 0.5f)
                 }
                 .clip(RoundedCornerShape(2.dp))
-                .background(album.accent),
+                .background(colors.accent),
         )
     }
 }
@@ -225,7 +218,7 @@ private fun FavoriteButton(enabled: Boolean) {
         Icon(
             imageVector = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
             contentDescription = if (favorite) "Remove from favourites" else "Add to favourites",
-            tint = if (favorite) AlbumTheme.colors.accent else colors.onBaseDim,
+            tint = if (favorite) MotorGuard.colors.accent else colors.onBaseDim,
             modifier = Modifier.size(24.dp),
         )
     }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -60,16 +61,15 @@ import com.motorguard.ivi.ui.media.components.TrackRow
 import com.motorguard.ivi.ui.media.components.TransportBar
 import com.motorguard.ivi.ui.media.components.rememberAlbumArt
 import com.motorguard.ivi.ui.nav.NavMotion
-import com.motorguard.ivi.ui.theme.AlbumThemedContent
 import com.motorguard.ivi.ui.theme.MotorGuard
 
 /**
  * The Media surface: now-playing on the left, the queue on the right, matching
  * MeowScreen.dc.html.
  *
- * The whole screen sits inside [AlbumThemedContent], so every accent below — the progress fill,
- * the active source tab, the equaliser, the shuffle and repeat states — is derived from the
- * current cover. Nothing outside this subtree is affected.
+ * Accents here — the progress fill, the active source tab, the equaliser, the shuffle and
+ * repeat states — come from `MotorGuard.colors.accent`, which [com.motorguard.ivi.ui.theme.MotorGuardTheme]
+ * derives from the current cover for the whole app.
  */
 @Composable
 fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
@@ -92,42 +92,47 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
 
     val artwork = rememberAlbumArt(state.playback.track)
 
-    AlbumThemedContent(artwork = artwork) {
-        Column(
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 22.dp),
+    ) {
+        SourceTabs(
+            sources = sources.sources,
+            active = state.activeSource,
+            availableIds = state.availability.filter { it.available }.map { it.id }.toSet(),
+            onSelect = viewModel::selectSource,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+
+        Spacer(Modifier.height(14.dp))
+
+        Row(
+            // weight(1f), NOT fillMaxSize(). A Column measures its children with an unbounded
+            // main axis, and fillMaxSize passes that Infinity straight through to its children —
+            // which makes the LazyColumn in the queue pane throw "Vertically scrollable component
+            // was measured with an infinity maximum height". weight() is what actually bounds
+            // this row to the leftover space.
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 22.dp),
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            SourceTabs(
-                sources = sources.sources,
-                active = state.activeSource,
-                availableIds = state.availability.filter { it.available }.map { it.id }.toSet(),
-                onSelect = viewModel::selectSource,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+            NowPlayingPane(
+                state = state,
+                artwork = artwork,
+                viewModel = viewModel,
+                modifier = Modifier
+                    .weight(1.05f)
+                    .fillMaxHeight(),
             )
-
-            Spacer(Modifier.height(14.dp))
-
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                NowPlayingPane(
-                    state = state,
-                    artwork = artwork,
-                    viewModel = viewModel,
-                    modifier = Modifier
-                        .weight(1.05f)
-                        .fillMaxHeight(),
-                )
-                QueuePane(
-                    state = state,
-                    onPlayTrack = viewModel::playTrack,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                )
-            }
+            QueuePane(
+                state = state,
+                onPlayTrack = viewModel::playTrack,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            )
         }
     }
 }
@@ -148,62 +153,92 @@ private fun NowPlayingPane(
         shape = RoundedCornerShape(28.dp),
         padding = PaddingValues(24.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            AlbumArtStack(
-                artwork = artwork,
-                modifier = Modifier.widthIn(max = 232.dp).fillMaxWidth(0.54f),
-            )
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            // The cover is bounded by BOTH axes, and it is the thing that yields.
+            //
+            // Sizing it from width alone works at 1920x720 and pushes the controls off a shorter
+            // panel — the README also targets 1024x600, and a phone in landscape is shorter
+            // still. So the text, scrubber and 76 dp transport row claim their space first and
+            // the cover takes what is left; below MIN_ART there is nothing worth showing and it
+            // drops out entirely. Losing the artwork is a real cost, but losing play/pause is a
+            // broken screen.
+            val artSize = minOf(maxWidth * 0.54f, maxHeight - CONTROLS_HEIGHT, MAX_ART)
+            val showArt = artSize >= MIN_ART
+            val tight = maxHeight < COMFORTABLE_HEIGHT
+            // Captured out here: inside the Column, BoxWithConstraints' receiver is shadowed.
+            val narrow = maxWidth < NARROW_PANE
 
-            Spacer(Modifier.height(26.dp))
-            Text(
-                text = track?.title ?: "Nothing playing",
-                fontSize = 27.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = track?.subtitle?.takeIf { it.isNotBlank() } ?: "Pick a track to start",
-                fontSize = 14.sp,
-                color = colors.onBaseDim,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                if (showArt) {
+                    AlbumArtStack(artwork = artwork, modifier = Modifier.width(artSize))
+                    Spacer(Modifier.height(if (tight) 12.dp else 26.dp))
+                }
+                Text(
+                    text = track?.title ?: "Nothing playing",
+                    fontSize = if (tight) 22.sp else 27.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = track?.subtitle?.takeIf { it.isNotBlank() } ?: "Pick a track to start",
+                    fontSize = 14.sp,
+                    color = colors.onBaseDim,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
 
-            Spacer(Modifier.height(22.dp))
-            Scrubber(
-                positionMs = playback.positionMs,
-                durationMs = playback.durationMs,
-                enabled = playback.hasTrack && playback.canSeek,
-                onSeek = viewModel::seekTo,
-                modifier = Modifier.widthIn(max = 380.dp).fillMaxWidth(0.82f),
-            )
+                Spacer(Modifier.height(if (tight) 10.dp else 22.dp))
+                Scrubber(
+                    positionMs = playback.positionMs,
+                    durationMs = playback.durationMs,
+                    enabled = playback.hasTrack && playback.canSeek,
+                    onSeek = viewModel::seekTo,
+                    modifier = Modifier
+                        .widthIn(max = 380.dp)
+                        .fillMaxWidth(0.82f),
+                )
 
-            Spacer(Modifier.height(22.dp))
-            TransportBar(
-                isPlaying = playback.isPlaying,
-                shuffle = playback.shuffle,
-                repeat = playback.repeat,
-                enabled = playback.hasTrack,
-                // Radio has no queue to skip through — docs/04-media.md disables these there.
-                canSkip = playback.canSkip && playback.playbackKind != PlaybackKind.TUNER,
-                onPlayPause = viewModel::playPause,
-                onPrevious = viewModel::previous,
-                onNext = viewModel::next,
-                onShuffle = viewModel::toggleShuffle,
-                onRepeat = viewModel::cycleRepeat,
-            )
+                Spacer(Modifier.height(if (tight) 6.dp else 22.dp))
+                TransportBar(
+                    isPlaying = playback.isPlaying,
+                    shuffle = playback.shuffle,
+                    repeat = playback.repeat,
+                    enabled = playback.hasTrack,
+                    // Radio has no queue to skip through — docs/04-media.md disables these there.
+                    canSkip = playback.canSkip && playback.playbackKind != PlaybackKind.TUNER,
+                    onPlayPause = viewModel::playPause,
+                    onPrevious = viewModel::previous,
+                    onNext = viewModel::next,
+                    onShuffle = viewModel::toggleShuffle,
+                    onRepeat = viewModel::cycleRepeat,
+                    compact = tight || narrow,
+                )
+            }
         }
     }
 }
+
+/** What the title, subtitle, scrubber and 76 dp transport row need below the cover. */
+private val CONTROLS_HEIGHT = 165.dp
+
+/** Below this the pane switches to reduced spacing and a smaller title. */
+private val COMFORTABLE_HEIGHT = 420.dp
+
+/** Below this width the transport row cannot fit five 76 dp targets. */
+private val NARROW_PANE = 380.dp
+
+/** Smaller than this and the cover is not worth the space it costs the controls. */
+private val MIN_ART = 64.dp
+private val MAX_ART = 232.dp
 
 @Composable
 private fun QueuePane(
@@ -241,19 +276,23 @@ private fun QueuePane(
                 }
             }
 
-            when {
-                unavailable != null -> EmptyState(message = unavailable.emptyMessage)
-                state.loading -> EmptyState(message = "Scanning…")
-                state.tracks.isEmpty() -> EmptyState(message = emptyLibraryMessage(state.activeSource))
-                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(state.tracks, key = { _, track -> track.id }) { index, track ->
-                        TrackRow(
-                            track = track,
-                            index = index,
-                            isCurrent = track.id == state.playback.track?.id,
-                            isPlaying = state.playback.isPlaying,
-                            onClick = { onPlayTrack(index) },
-                        )
+            // The content area takes the leftover height so the header keeps its own. Same
+            // reason as the row above: inside a Column, fillMaxSize is not a bound.
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    unavailable != null -> EmptyState(message = unavailable.emptyMessage)
+                    state.loading -> EmptyState(message = "Scanning…")
+                    state.tracks.isEmpty() -> EmptyState(message = emptyLibraryMessage(state.activeSource))
+                    else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        itemsIndexed(state.tracks, key = { _, track -> track.id }) { index, track ->
+                            TrackRow(
+                                track = track,
+                                index = index,
+                                isCurrent = track.id == state.playback.track?.id,
+                                isPlaying = state.playback.isPlaying,
+                                onClick = { onPlayTrack(index) },
+                            )
+                        }
                     }
                 }
             }

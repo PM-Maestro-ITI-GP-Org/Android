@@ -96,8 +96,9 @@ Playback from multiple sources via a segmented source switcher.
 - Bluetooth: phone track metadata + transport via AVRCP
 - Radio: abstract `RadioTuner` contract, awaiting hardware
 - Unified transport bar & now-playing across all sources, shared with the Home widget
-- **Album-art theming** — accents derived from the cover, contrast-corrected to WCAG AA,
-  scoped to Media + the Home widget
+- **Album-art theming** — the whole app's accent follows the current cover, contrast-corrected
+  to WCAG AA; the semantic green/amber/red stay fixed
+- Online cover-art lookup when a file has no embedded artwork, cached on disk
 
 ### 4.3 Navigation  · `App`
 Full-bleed map with destination search, route preview and turn-by-turn guidance.

@@ -12,6 +12,16 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.motorguard.ivi.data.media.AlbumArtLoader
+import com.motorguard.ivi.media.MediaConnection
+import com.motorguard.ivi.ui.theme.AlbumThemeState
+import com.motorguard.ivi.ui.theme.extractAlbumSeed
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import com.motorguard.ivi.ui.components.NavRail
 import com.motorguard.ivi.ui.components.StatusBar
 import com.motorguard.ivi.ui.diagnostics.DiagnosticsFragment
@@ -31,6 +41,11 @@ import com.motorguard.ivi.ui.theme.MotorGuardTheme
 class MainActivity : AppCompatActivity() {
 
     enum class Tab { HOME, MEDIA, NAV, DIAGNOSTICS, SETTINGS }
+
+    private companion object {
+        /** Big enough for Palette to find a stable dominant colour, small enough to be cheap. */
+        const val ARTWORK_PX = 256
+    }
 
     private var selected by mutableStateOf(Tab.HOME)
 
@@ -57,6 +72,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (savedInstanceState == null) show(Tab.HOME)
+
+        followAlbumArtwork()
+    }
+
+    /**
+     * Keep the app-wide accent in step with the playing track.
+     *
+     * Driven from the single Activity rather than from a composable, because the accent applies
+     * to every surface — including ones that are not composed at the time the track changes. One
+     * observer, one artwork load, one palette extraction; [MotorGuardTheme] reads the result.
+     */
+    private fun followAlbumArtwork() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                MediaConnection.get(this@MainActivity).state
+                    .map { it.track }
+                    .distinctUntilChangedBy { it?.id }
+                    .collect { track ->
+                        val artwork = AlbumArtLoader.load(this@MainActivity, track, ARTWORK_PX)
+                        AlbumThemeState.setArtwork(artwork?.let { extractAlbumSeed(it) })
+                    }
+            }
+        }
     }
 
     /**

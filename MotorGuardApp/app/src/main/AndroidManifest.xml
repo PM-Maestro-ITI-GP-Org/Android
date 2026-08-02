@@ -48,7 +48,8 @@
             android:label="@string/app_name"
             android:launchMode="singleTask"
             android:stateNotNeeded="true"
-            android:resizeableActivity="true">
+            android:resizeableActivity="true"
+            android:screenOrientation="landscape">
             <!-- Boots as the dashboard HOME (replaces the stock CarLauncher) while
                  still appearing in the app list. Set it as default home with:
                  adb shell cmd package set-home-activity com.motorguard.ivi/.MainActivity -->

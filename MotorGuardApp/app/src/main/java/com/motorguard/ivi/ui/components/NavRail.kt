@@ -37,13 +37,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.motorguard.ivi.MainActivity.Tab
+import com.motorguard.ivi.ui.theme.MotorGuard
 import com.motorguard.ivi.ui.theme.Tokens
 
 // The rail is always dark (independent of Day/Night), so it reads like the reference
 // even in light mode. Colors are pinned to the night palette.
 private val RailBg = Tokens.Night.railBg
 private val RailActiveBg = Color.White.copy(alpha = 0.10f)
-private val RailAccent = Tokens.Night.accent
 private val RailDim = Tokens.Night.onBaseDim
 
 private data class RailItem(
@@ -121,7 +121,7 @@ private fun RailButton(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = if (selected) RailAccent else RailDim,
+            tint = if (selected) MotorGuard.colors.accent else RailDim,
             modifier = Modifier.size(30.dp),
         )
     }
@@ -133,7 +133,7 @@ private fun BrandMark() {
         Icon(
             imageVector = Icons.Filled.Shield,
             contentDescription = "Motor Guard",
-            tint = RailAccent,
+            tint = MotorGuard.colors.accent,
             modifier = Modifier.size(26.dp),
         )
         Spacer(Modifier.height(6.dp))

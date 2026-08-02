@@ -93,7 +93,7 @@ internal object MediaStoreQuery {
                         title = cursor.getString(titleCol)?.takeIf { it.isNotBlank() } ?: "Unknown title",
                         artist = cursor.getString(artistCol)?.unknownToBlank().orEmpty(),
                         album = cursor.getString(albumCol)?.unknownToBlank().orEmpty(),
-                        durationMs = cursor.getLong(durationCol),
+                        durationMs = cursor.getLong(durationCol).sanitizeDuration(),
                         uri = ContentUris.withAppendedId(collection, id),
                         artworkUri = albumArtUri(cursor.getLong(albumIdCol)),
                         source = source,
@@ -119,6 +119,20 @@ internal object MediaStoreQuery {
     /** MediaStore writes the literal string "<unknown>" for missing tags. */
     private fun String.unknownToBlank(): String = if (this == "<unknown>") "" else this
 
+    /**
+     * Report an implausible duration as unknown (0) rather than passing it on.
+     *
+     * When MediaStore cannot parse a file's length it stores `Long.MAX_VALUE / 1000`, and that
+     * sentinel is not rare — a single WhatsApp voice note on a real device was enough to turn
+     * the queue header into "541 songs · 2562047823h 0m". The track itself is kept: the file is
+     * real and playable, and ExoPlayer resolves the true duration when it opens it.
+     */
+    private fun Long.sanitizeDuration(): Long =
+        if (this <= 0L || this > MAX_PLAUSIBLE_DURATION_MS) 0L else this
+
     /** Skip sub-second files — almost always UI sounds rather than music. */
     private const val MIN_DURATION_MS = 5_000
+
+    /** 24 h. Longer than any real audio file, shorter than the unknown-duration sentinel. */
+    private const val MAX_PLAUSIBLE_DURATION_MS = 24L * 60 * 60 * 1000
 }
