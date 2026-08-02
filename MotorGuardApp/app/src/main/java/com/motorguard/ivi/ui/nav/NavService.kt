@@ -57,8 +57,19 @@ class NavService : Service() {
         // at a permission-less desk demo (simulated location) startForeground throws instead of
         // starting. We swallow that: the in-process session still survives tab switches — only the
         // backgrounded-process guarantee is lost. See TODO(on-device) in the PR notes.
-        runCatching { startForeground(NOTIFICATION_ID, buildNotification(NavSession.state.value)) }
-            .onFailure { Log.w(TAG, "startForeground denied (location permission?) — session still runs in-process", it) }
+        val foregrounded = runCatching {
+            startForeground(NOTIFICATION_ID, buildNotification(NavSession.state.value))
+        }.onFailure {
+            Log.w(TAG, "startForeground denied (location permission?) — session still runs in-process", it)
+        }.isSuccess
+
+        if (!foregrounded) {
+            // Couldn't enter the foreground (FGS type "location" needs a granted location perm on
+            // 14+). Don't linger as a started-but-not-foreground service — NavSession keeps the
+            // drive alive in-process on its own app scope; only the backgrounded guarantee is lost.
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         // Keep the notification honest: refresh it when the destination changes. Guidance-ending
         // is handled by NavSession calling stop(), so we don't self-stop here.
@@ -136,10 +147,17 @@ class NavService : Service() {
          */
         fun start(context: Context) {
             val intent = Intent(context, NavService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }.onFailure {
+                // startForegroundService throws ForegroundServiceStartNotAllowedException if ever
+                // called while backgrounded — not reachable today (guidance starts from the visible
+                // Nav tab), but guarded so a future voice-triggered start can't crash the app.
+                Log.w(TAG, "could not start NavService — session still runs in-process", it)
             }
         }
 
