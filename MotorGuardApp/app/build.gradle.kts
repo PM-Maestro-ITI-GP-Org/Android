@@ -74,4 +74,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     // rememberLauncherForActivityResult, for the runtime location permission.
     implementation("androidx.activity:activity-compose:1.9.3")
+
+    // Media: ExoPlayer for playback, media3-session for the background MediaLibraryService
+    // (audio focus, media buttons and the notification come with it). Palette derives the
+    // album-art theme. See docs/04-media.md.
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.palette:palette-ktx:1.0.0")
+    // media3's session callbacks return Guava ListenableFutures; this bridges them to coroutines
+    // so the library tree can be built with suspend functions instead of callbacks.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.1")
 }

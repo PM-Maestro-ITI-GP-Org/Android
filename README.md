@@ -90,11 +90,14 @@ Playback from multiple sources via a segmented source switcher.
 - `MediaSession` / `MediaBrowserService` per source
 
 **Provides**
-- Source tabs: **USB · Bluetooth · Radio**
-- USB: browse folders/artists/albums, queue & search
+- Source tabs: **Library · USB · Bluetooth · Radio**
+- Background playback (Media3 `MediaLibraryService` + ExoPlayer) that survives leaving the app
+- Library/USB: MediaStore scanning, mount detection, queue, shuffle, repeat, scrubbing
 - Bluetooth: phone track metadata + transport via AVRCP
-- Radio: band toggle, seek/tune, presets, RDS station name
-- Unified transport bar & now-playing across all sources
+- Radio: abstract `RadioTuner` contract, awaiting hardware
+- Unified transport bar & now-playing across all sources, shared with the Home widget
+- **Album-art theming** — accents derived from the cover, contrast-corrected to WCAG AA,
+  scoped to Media + the Home widget
 
 ### 4.3 Navigation  · `App`
 Full-bleed map with destination search, route preview and turn-by-turn guidance.
@@ -173,7 +176,7 @@ Connectivity, theme, and system.
 |-----------------|---------------|-------------|
 | State of charge, range | `CarPropertyManager · EV_BATTERY_LEVEL` | Home gauges, Diagnostics |
 | Tire pressure | `CarPropertyManager · TIRE_PRESSURE` | Diagnostics, alerts |
-| USB media | `MediaStore` + `MediaBrowserService` | Media (USB) |
+| USB / on-device media | `MediaStore` (per storage volume) + Media3 `MediaLibraryService` | Media, Home widget |
 | Phone audio | Bluetooth A2DP / AVRCP | Media (Bluetooth) |
 | FM / DAB radio | `RadioManager` / tuner HAL + RDS | Media (Radio) |
 | Wake word + speech | `VoiceInteractionService` + STT/NLU | Voice overlay |
@@ -196,7 +199,7 @@ Full tree and stub files: **`vendor/motorguard/`**.
 | Fragment | Owner | Features | Reads | Writes |
 |----------|-------|----------|-------|--------|
 | **HomeFragment** | A | Battery+range gauge rings · mini-map w/ ETA · weather + now-playing widgets (equal height) · Vehicle/Service shortcuts · 3 separated cards (Map·Vehicle·Weather+Media) | SoC, range, MediaSession, weather | none (launch intents) |
-| **MediaFragment** | B | Source tabs **USB · Bluetooth · Radio** · USB browse/queue/search · BT metadata+transport (AVRCP) · Radio band/seek/presets/RDS · unified transport bar | MediaSourceManager, MediaSession | transport, active source, presets |
+| **MediaFragment** | B | Source tabs **Library · USB · Bluetooth · Radio** · MediaStore browse/queue · BT metadata+transport (AVRCP) · Radio band/seek/presets/RDS · unified transport bar · album-art theming | MediaSourceManager, MediaConnection | transport, active source, presets |
 | **DiagnosticsFragment** | C | Interactive car w/ tappable hotspots · **tap a part → zoom-in + live state card** · per-part PSI/temp/charge/health · health score + alerts · semantic green/amber/red · live property updates | TIRE_PRESSURE, EV_BATTERY_LEVEL, temps, brakes, doors (VHAL) | ack/dismiss alerts |
 | **VoiceOverlayService** | D | **NOT a tab** — wake-word ("Hey Motor Guard") bottom listen bar over any surface · idle/listening/thinking/speaking · live transcript · routes intents | mic, STT/NLU | routes to tabs |
 | **SettingsFragment** | E | Wi-Fi toggle+list+state · Bluetooth toggle+paired list+roles · Theme Day/Night + auto day-night · accent/ambient-LED sync · OS/OTA/About | wifi/bt state, UiMode, OTA | wifi connect, bt pair, theme, accent |

@@ -76,6 +76,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Switch tabs from inside a fragment — the Home now-playing card opening Media, per
+     * docs/03-home.md. Fragments reach this with `(activity as? MainActivity)?.openTab(...)`.
+     */
+    fun openTab(tab: Tab) = show(tab)
+
     private fun show(tab: Tab) {
         // Re-tapping the current tab is a no-op (never reload the fragment).
         if (tab == selected && supportFragmentManager.findFragmentById(R.id.fragment_container) != null) return

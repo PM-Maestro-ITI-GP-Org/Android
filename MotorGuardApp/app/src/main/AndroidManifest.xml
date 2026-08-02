@@ -17,6 +17,23 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Media: the player keeps running with the app in the background, so it is a foreground
+         service of type mediaPlayback (required from API 34). POST_NOTIFICATIONS is what makes
+         its transport notification visible on API 33+. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Reading the on-device / USB library. The storage permission was split by media type in
+         API 33, so both spellings are needed to cover minSdk 29 upwards. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Detecting a connected phone for the Bluetooth source (runtime permission from API 31). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -42,5 +59,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The player. Exported and advertising both the media3 and the legacy MediaBrowser
+             actions so the car's own media UI, the voice assistant and any other controller can
+             browse and control it without this app's Activity being alive. -->
+        <service
+            android:name=".media.MotorGuardMediaService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
