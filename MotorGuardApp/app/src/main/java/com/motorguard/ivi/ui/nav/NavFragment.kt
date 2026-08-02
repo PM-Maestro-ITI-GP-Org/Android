@@ -7,12 +7,14 @@ import android.view.ViewGroup
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
-import com.motorguard.ivi.ui.components.Placeholder
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
 
 /**
- * Navigation tab. Deferred per the design (full turn-by-turn is future work); shown in
- * the rail as a placeholder for now. See README 4.3.
+ * Navigation tab: search a destination, preview the routes, then turn-by-turn guidance.
+ *
+ * Map, routing and search are all open source and provider-swappable — knobs live in
+ * [com.motorguard.ivi.data.nav.NavConfig], rationale in docs/08-navigation.md. Nothing here
+ * depends on Google Play Services, which this AOSP image does not ship.
  */
 class NavFragment : Fragment() {
     override fun onCreateView(
@@ -22,7 +24,7 @@ class NavFragment : Fragment() {
     ): View = ComposeView(requireContext()).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
-            MotorGuardTheme { Placeholder("Navigation") }
+            MotorGuardTheme { NavScreen() }
         }
     }
 }

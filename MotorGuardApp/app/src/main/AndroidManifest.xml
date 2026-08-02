@@ -10,8 +10,9 @@
          effect on a platform-signed / privileged build; unprivileged it falls back to mock. -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-    <!-- Scan results need location (pre-33) or NEARBY_WIFI_DEVICES (33+). -->
+    <!-- Scan results need location (pre-33) or NEARBY_WIFI_DEVICES (33+). Also used by Nav. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
@@ -31,6 +32,12 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- Navigation: map tiles, routing (Valhalla) and search (Photon) are plain HTTPS calls.
+         ACCESS_NETWORK_STATE lets the Nav tab detect "no internet" up front and fall back to
+         its offline Canvas map instead of rendering an empty world. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"

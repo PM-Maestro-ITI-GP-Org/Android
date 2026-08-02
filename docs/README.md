@@ -16,6 +16,7 @@ CarProperty / API it touches, and its states.
 | 06 | [Settings fragment](06-settings.md) | E | Left sub-tabs + toggles |
 | 07 | [Voice overlay](07-voice.md) | D | Wake word, states, chips |
 | 07a | [Voice — implementation](07-voice-implementation.md) | D | What landed, how to run it, known gaps |
+| 08 | [Navigation fragment](08-navigation.md) | — | Search → route preview → turn-by-turn |
 
 ## Conventions used in every doc
 - **Tap** = single touch-up inside. **Long-press** = ≥ 500 ms.

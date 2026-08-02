@@ -15,9 +15,10 @@ android {
         versionCode = 1
         versionName = "0.1"
 
-        // The reasoning core is native C++ shared with the Linux build.
+        // Native deps: the C++ voice/reasoning core (built from src/main/cpp) plus MapLibre
+        // (nav map, prebuilt .so from the AAR). Both run arm64 on the Pi; x86_64 keeps the
+        // emulator working. Add armeabi-v7a here if you ever target a 32-bit board.
         ndk {
-            // arm64 for the Pi/device, x86_64 so it still runs on the emulator.
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
         externalNativeBuild {
@@ -83,4 +84,18 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Pure-JVM tests for the navigation maths and the generated map style.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("com.google.code.gson:gson:2.11.0")
+
+    // Navigation stack — all OSS, no Google Play Services (this is an AOSP build).
+    // Map rendering: MapLibre Native (BSD-2). Tiles + routing + search are plain HTTPS
+    // calls made by hand, so there is nothing else to pull in. See ui/nav/README.md.
+    implementation("org.maplibre.gl:android-sdk:11.8.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    // rememberLauncherForActivityResult, for the runtime location permission.
+    implementation("androidx.activity:activity-compose:1.9.3")
 }

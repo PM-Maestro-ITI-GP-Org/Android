@@ -96,8 +96,24 @@ Playback from multiple sources via a segmented source switcher.
 - Radio: band toggle, seek/tune, presets, RDS station name
 - Unified transport bar & now-playing across all sources
 
-### 4.3 Navigation  · `Deferred`
-Out of scope this revision. The Home mini-map remains; full turn-by-turn is future work.
+### 4.3 Navigation  · `App`
+Full-bleed map with destination search, route preview and turn-by-turn guidance.
+**No Google Maps** — this is an AOSP image with no Play Services, so the whole stack is OSS
+and provider-swappable. Details: **`docs/08-navigation.md`**.
+
+**Requires**
+- MapLibre Native + OpenFreeMap vector tiles (no key, no quota)
+- Valhalla for routes, Photon for search — public fair-use instances, self-host for production
+- A `LocationSource`: route simulator today, `LocationManager` GNSS when a receiver is fitted
+- `INTERNET` + `ACCESS_NETWORK_STATE`
+
+**Provides**
+- Search-as-you-type destinations, biased to the car's position
+- Route preview with alternates (time · distance · arrival) and one 76 dp **Start**
+- Guidance: maneuver card, "then…" chip, speed puck, ETA bar, mute, end route
+- Heading-up chase camera; one tap frames the whole remaining route
+- Map style generated from `Tokens` — Day and Night, no second palette
+- Automatic fallback to an offline Canvas map when there is no network or no GL
 
 ### 4.4 Voice Assistant  · `System overlay (NOT an app)`
 Google-Assistant-style pop-over that appears **over whatever is on screen** when the
@@ -163,6 +179,8 @@ Connectivity, theme, and system.
 | Wake word + speech | `VoiceInteractionService` + STT/NLU | Voice overlay |
 | Ambient light / time | `UiModeManager` NIGHT / light sensor | Day↔Night theme |
 | Wi-Fi / Bluetooth | `WifiManager` / `BluetoothAdapter` | Settings |
+| Map tiles · routes · search | OpenFreeMap · Valhalla · Photon (HTTPS, all OSS) | Navigation |
+| Vehicle position | `LocationSource` — simulator now, `LocationManager` GNSS later | Navigation |
 
 ---
 
@@ -182,6 +200,7 @@ Full tree and stub files: **`vendor/motorguard/`**.
 | **DiagnosticsFragment** | C | Interactive car w/ tappable hotspots · **tap a part → zoom-in + live state card** · per-part PSI/temp/charge/health · health score + alerts · semantic green/amber/red · live property updates | TIRE_PRESSURE, EV_BATTERY_LEVEL, temps, brakes, doors (VHAL) | ack/dismiss alerts |
 | **VoiceOverlayService** | D | **NOT a tab** — wake-word ("Hey Motor Guard") bottom listen bar over any surface · idle/listening/thinking/speaking · live transcript · routes intents | mic, STT/NLU | routes to tabs |
 | **SettingsFragment** | E | Wi-Fi toggle+list+state · Bluetooth toggle+paired list+roles · Theme Day/Night + auto day-night · accent/ambient-LED sync · OS/OTA/About | wifi/bt state, UiMode, OTA | wifi connect, bt pair, theme, accent |
+| **NavFragment** | — | Destination search (Photon) · route preview w/ alternates (Valhalla) · turn-by-turn guidance · MapLibre vector map styled from `Tokens` · offline Canvas fallback | LocationSource (simulated → GNSS), network | active route, guidance state |
 
 ### Shared skeleton (don't fork — extend)
 - `ui/core/theme/` — `Tokens` / `Color` / `Type`: **single source of truth**; Day+Night free.
