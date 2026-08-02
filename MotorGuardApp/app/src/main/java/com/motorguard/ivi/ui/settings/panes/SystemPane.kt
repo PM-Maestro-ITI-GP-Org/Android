@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.SettingsEthernet
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.motorguard.ivi.data.Conn
+import com.motorguard.ivi.ui.components.MgSwitch
 import com.motorguard.ivi.ui.components.RowDivider
 import com.motorguard.ivi.ui.components.SectionCard
 import com.motorguard.ivi.ui.components.SettingRow
@@ -43,6 +46,28 @@ fun SystemPane() {
                 subtitle = updateStatus,
                 leading = Icons.Filled.SystemUpdate,
                 onClick = { updateStatus = "Up to date · checked just now" },
+            )
+        }
+
+        // Which Wi-Fi/Bluetooth implementation is live. On the platform build this is already
+        // true from the resource overlay; on a phone or the emulator it is the only way to reach
+        // the real radios without rebuilding, which is exactly when you want to check them.
+        SectionCard(title = "Connectivity source") {
+            SettingRow(
+                title = "Use real Wi-Fi & Bluetooth",
+                subtitle = if (Conn.useReal) {
+                    "Live radios · control needs a platform-signed build"
+                } else {
+                    "Demo data"
+                },
+                leading = Icons.Filled.SettingsEthernet,
+                onClick = { Conn.switchSource(!Conn.useReal) },
+                trailing = {
+                    MgSwitch(
+                        checked = Conn.useReal,
+                        onCheckedChange = { Conn.switchSource(it) },
+                    )
+                },
             )
         }
 

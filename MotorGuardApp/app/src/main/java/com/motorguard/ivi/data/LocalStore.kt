@@ -59,5 +59,6 @@ object LocalStore {
         const val USERS = "users.profiles"
         const val USERS_ACTIVE = "users.active"
         const val WIFI_KNOWN = "wifi.known"
+        const val USE_REAL = "conn.useReal"
     }
 }
