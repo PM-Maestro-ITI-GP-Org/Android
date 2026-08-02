@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SettingsEthernet
@@ -22,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.motorguard.ivi.data.Conn
+import com.motorguard.ivi.data.ConnPolicy
 import com.motorguard.ivi.ui.components.MgSwitch
 import com.motorguard.ivi.ui.components.RowDivider
 import com.motorguard.ivi.ui.components.SectionCard
@@ -66,6 +68,23 @@ fun SystemPane() {
                     MgSwitch(
                         checked = Conn.useReal,
                         onCheckedChange = { Conn.switchSource(it) },
+                    )
+                },
+            )
+            RowDivider()
+            SettingRow(
+                title = "Direct radio control",
+                subtitle = if (ConnPolicy.directOnly) {
+                    "Toggles act here · no system screens"
+                } else {
+                    "Fall back to system settings when blocked"
+                },
+                leading = Icons.Filled.Bolt,
+                onClick = { ConnPolicy.directOnly = !ConnPolicy.directOnly },
+                trailing = {
+                    MgSwitch(
+                        checked = ConnPolicy.directOnly,
+                        onCheckedChange = { ConnPolicy.directOnly = it },
                     )
                 },
             )

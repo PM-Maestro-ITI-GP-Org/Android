@@ -140,6 +140,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Re-assert immersive mode whenever this window becomes the focused one again.
+     *
+     * Hiding the bars is a property of the *focused* window, so anything that takes focus away —
+     * a permission dialog, the Bluetooth or Wi-Fi panel Settings opens, the notification shade —
+     * hands it back with the bars showing, and nothing puts them away again. That is the "the
+     * status bar appears and then stays" case: the transient-reveal timeout never applies,
+     * because from the framework's point of view the bars were never transient.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enableImmersiveMode()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Covers returning from another activity without a focus change of our own.
+        enableImmersiveMode()
+    }
+
+    /**
      * Request the runtime (dangerous) permissions the real Wi-Fi/BT path needs. Only on
      * the real build (bool/use_real_connectivity); the emulator uses mock data and skips
      * the prompts. Privileged/signature perms come from the privapp allow-list, not here.

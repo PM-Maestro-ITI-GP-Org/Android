@@ -100,7 +100,7 @@ class RealWifiRepo(private val context: Context) : WifiRepo {
         val applied = runCatching {
             wm?.setWifiEnabled(enabled) == true
         }.getOrDefault(false)
-        if (!applied) openSystemWifiPicker()
+        if (!applied && !ConnPolicy.directOnly) openSystemWifiPicker()
         refresh()
     }
 
@@ -127,7 +127,7 @@ class RealWifiRepo(private val context: Context) : WifiRepo {
             true
         }.getOrDefault(false)
 
-        if (!joined) openSystemWifiPicker()
+        if (!joined && !ConnPolicy.directOnly) openSystemWifiPicker()
         refresh()
     }
 

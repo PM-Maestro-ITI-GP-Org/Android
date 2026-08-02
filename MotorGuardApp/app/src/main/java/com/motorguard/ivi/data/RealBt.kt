@@ -98,7 +98,7 @@ class RealBtRepo(context: Context) : BtRepo {
         val applied = runCatching {
             if (enabled) adapter?.enable() == true else adapter?.disable() == true
         }.getOrDefault(false)
-        if (applied) return
+        if (applied || ConnPolicy.directOnly) return
 
         val intent = if (enabled) {
             Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)

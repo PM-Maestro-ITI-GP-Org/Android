@@ -60,5 +60,6 @@ object LocalStore {
         const val USERS_ACTIVE = "users.active"
         const val WIFI_KNOWN = "wifi.known"
         const val USE_REAL = "conn.useReal"
+        const val DIRECT_CONTROL = "conn.directOnly"
     }
 }

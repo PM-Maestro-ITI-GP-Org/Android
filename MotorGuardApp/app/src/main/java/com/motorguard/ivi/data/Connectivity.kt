@@ -105,6 +105,9 @@ object Conn {
         appContext = context.applicationContext
         // The build's answer is the default; a saved override from Settings wins over it.
         val fromBuild = context.resources.getBoolean(R.bool.use_real_connectivity)
+        // The platform build is expected to control the radios directly, so it defaults to not
+        // handing off to system screens; a phone build defaults to the handoff that works there.
+        ConnPolicy.restore(defaultForBuild = fromBuild)
         build(LocalStore.getBoolean(LocalStore.Keys.USE_REAL, fromBuild))
         initialized = true
     }

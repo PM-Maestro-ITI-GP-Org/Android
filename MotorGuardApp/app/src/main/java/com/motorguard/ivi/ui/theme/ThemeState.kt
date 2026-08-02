@@ -51,12 +51,12 @@ object ThemeState {
     /**
      * Let the playing album's cover drive the accent and the surface tint.
      *
-     * Off by default: it is a striking effect, but it takes the accent out of the driver's hands,
-     * and a setting that silently overrides an explicit choice is the wrong default. Turning it
-     * off falls straight back to [accent] — which is why the chosen accent is kept alongside it
-     * rather than being overwritten while the effect is on.
+     * On by default — it is the look the system was designed around. The driver's chosen [accent]
+     * is kept rather than overwritten while it runs, so switching this off returns to their colour
+     * instead of to whatever the last cover happened to be, and a car with nothing playing already
+     * shows that colour.
      */
-    private var _dynamicColor by mutableStateOf(false)
+    private var _dynamicColor by mutableStateOf(true)
     var dynamicColor: Boolean
         get() = _dynamicColor
         set(value) {
@@ -73,6 +73,6 @@ object ThemeState {
         }
         val savedAccent = LocalStore.getInt(LocalStore.Keys.THEME_ACCENT, 0)
         if (savedAccent != 0) _accent = Color(savedAccent)
-        _dynamicColor = LocalStore.getBoolean(LocalStore.Keys.THEME_DYNAMIC, false)
+        _dynamicColor = LocalStore.getBoolean(LocalStore.Keys.THEME_DYNAMIC, true)
     }
 }
