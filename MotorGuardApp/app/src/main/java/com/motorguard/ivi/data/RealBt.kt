@@ -84,8 +84,30 @@ class RealBtRepo(context: Context) : BtRepo {
         else -> BtKind.AUDIO
     }
 
+    /**
+     * Turn the radio on or off.
+     *
+     * `BluetoothAdapter.enable()/disable()` were deprecated in API 33 and simply return false for
+     * anything that is not a system app — which is why this switch appeared to do nothing on a
+     * phone. The direct call is still tried first (it works on the platform build), and when it
+     * is refused the system is asked instead: ACTION_REQUEST_ENABLE shows the standard "allow
+     * Bluetooth?" dialog, and for switching off there is no such intent, so the Bluetooth
+     * settings screen is opened.
+     */
     override fun setEnabled(enabled: Boolean) {
-        runCatching { if (enabled) adapter?.enable() else adapter?.disable() }
+        val applied = runCatching {
+            if (enabled) adapter?.enable() == true else adapter?.disable() == true
+        }.getOrDefault(false)
+        if (applied) return
+
+        val intent = if (enabled) {
+            Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)
+        } else {
+            Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+        }
+        runCatching {
+            appContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
     }
 
     /**
