@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">Motor Guard</string>
-    <string name="tab_home">Home</string>
-    <string name="tab_media">Media</string>
-    <string name="tab_diagnostics">Vehicle</string>
-    <string name="tab_settings">Settings</string>
-    <string name="wake_word">Hey Motor Guard</string>
-</resources>

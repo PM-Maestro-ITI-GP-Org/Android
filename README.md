@@ -1,245 +1,130 @@
-# Motor Guard — AAOS Infotainment System
+# Motor Guard — AAOS in-tree build
 
-Custom **Android Automotive OS (AAOS)** system UI + launcher for a **full-EV** vehicle,
-running on a **Raspberry Pi 5** driving a landscape touchscreen (primary 1920×720,
-reflows to 1280×720 and 1024×600).
+This branch is the **Soong drop-in**: Motor Guard laid out to be copied straight into an
+AOSP / Raspberry Pi (KonstaKANG) tree and built with `m MotorGuard` as a platform-signed,
+privileged AAOS launcher. There is no Gradle here — `Android.bp` is the only build file.
 
-Design language: glassmorphism · **Modern Tech / Sleek** palette · dark-centric ·
-Day + Night themes from a single token source.
+> **The app source lives on `media-nav-settings-voice`.** That branch is where you edit code
+> and iterate with Gradle + the emulator. This branch is the packaged form of the same commit.
+> Changes flow one way: dev branch → here. See *Keeping this branch in sync* below.
 
----
+## Layout
 
-## 1. Platform & Constraints
+```
+Android.bp                    Soong modules — the whole build (paths are relative to this file)
+app/src/main/                 the app: java/ res/ assets/ cpp/ AndroidManifest.xml
+aosp/motorguard.mk            product makefile snippet (PRODUCT_PACKAGES += MotorGuard)
+aosp/privapp_permissions_*    privileged-permission allow-list → /system/etc/permissions
+aosp/res-platform/            overlay flipping use_real_connectivity → true (real radios)
+aosp/prebuilts/               you must drop the ONNX Runtime AAR here — see that README
+```
 
-| Item | Requirement |
-|------|-------------|
-| Target OS | Android Automotive OS (AOSP automotive build) |
-| Hardware | Raspberry Pi 5 — modest VideoCore VII GPU |
-| Display | Landscape only, horizontal dash mount |
-| Resolutions | 1920×720 (primary), 1280×720, 1024×600 — and any other panel, via a uniform UI scale |
-| Vehicle | Full EV — battery %, charge state, range (no ICE fuel) |
-| Build | adb-flashable `userdebug` image (KonstaKANG / android-rpi) |
-| Framework | Kotlin + Jetpack Compose |
+`Android.bp` defines three modules: the `MotorGuard` app, `libmotorguardvoice` (the native
+voice/reasoning core — the Soong equivalent of `cpp/CMakeLists.txt`, since Soong does not run
+CMake), and `motorguard-onnxruntime` (the vendored ONNX Runtime AAR). A commented
+`android_app_import` at the bottom is path (B): bundle a Gradle-built, platform-re-signed APK
+instead of compiling from source. Use it if your tree's AndroidX/Compose prebuilts fight you.
 
-### Adapting to the panel
-Every dimension is drawn for the **720 dp-tall** primary target. `MotorGuardTheme` overrides
-`LocalDensity` by `rememberUiScale()` — the panel's height over 720 — so `dp` and `sp` alike are
-converted through it and the whole design keeps its proportions on any screen. At 1920×720 the
-scale is 1.0 and nothing changes. The scale floors at 0.5 so touch targets stay usable.
+## Build
 
-### Performance budget (RPi 5)
-- **One** blurred backdrop per screen, blur radius ≤ 16 dp.
-- Animate **transform / opacity only** — never blur, shadow, or layout.
-- Target 60 fps, degrade gracefully to 30.
-- GPU acceleration via mesa `v3d`; watch overdraw with the dev overlay.
+1. **Copy this tree in** as `vendor/motorguard/MotorGuard/`:
 
----
+   ```bash
+   git clone -b media-nav-settings-voice_forAAOS git@github.com:PM-Maestro-ITI-GP-Org/Android.git vendor/motorguard/MotorGuard
+   ```
 
-## 2. Design Principles
+2. **Add the ONNX Runtime AAR.** Download
+   `com.microsoft.onnxruntime:onnxruntime-android:1.19.2` from Maven Central and place it at
+   `aosp/prebuilts/onnxruntime-android-1.19.2.aar`. It is a ~15 MB binary and is deliberately
+   not committed. Without it, `m MotorGuard` cannot resolve `ai.onnxruntime.*`.
 
-- **Strict contrast** — all text & critical icons meet WCAG AA (4.5:1).
-- **Dark-mode centric** — deep charcoal/black bases reduce night glare.
-- **Context-aware** — auto Day↔Night from the light sensor / `UiModeManager`.
-- **Universal semantic color** — 🟢 ready/active · 🟡 caution · 🔴 critical.
-- **Glanceability** — ≥ 76 dp touch targets, oversized numerals, readable in < 2 s.
-- **Distraction limits** — honor `CarUxRestrictions` while the vehicle is moving.
+3. **Inherit the product makefile** from your device product `.mk` (e.g.
+   `device/<vendor>/rpi5/aosp_rpi5_car.mk`):
 
----
+   ```make
+   $(call inherit-product, vendor/motorguard/MotorGuard/aosp/motorguard.mk)
+   ```
 
-## 3. Color System — Modern Tech / Sleek
+4. **Build:**
 
-| Token | Hex | Use |
-|-------|-----|-----|
-| Base Dark | `#121212` | App/background base (night) |
-| Panel | `#161B24` | Card / glass surface |
-| Primary Accent | `#56C9EF` | Electric Blue — active state, highlights |
-| Secondary Accent | `#80DCF8` | Icy Cyan — gradients, secondary |
-| Success | `#38D17F` | Green — ready / charging complete |
-| Caution | `#F5B942` | Amber — non-critical warnings |
-| Critical | `#F46C64` | Salmon/Red — emergencies |
+   ```bash
+   source build/envsetup.sh && lunch <your_rpi5_car target> && m MotorGuard
+   ```
 
-All tokens live in **one place** (CSS variables here → a Compose `MaterialTheme`
-`ColorScheme` + small `Tokens` object). Day/Night swaps one attribute.
-Accent can optionally sync to the cabin ambient LED / drive mode.
+   Soong compiles the C++ core with the tree's clang and links the AAR — no NDK or CMake step.
 
----
+5. **Flash and boot.** It is already the launcher: `overrides: ["CarLauncher"]` drops the stock
+   Car launcher, so Motor Guard is HOME from first boot with no runtime step. Optionally hide the
+   system bars with the immersive overlay noted in `aosp/motorguard.mk`.
 
-## 4. Components / Surfaces
+### Voice subsystem (Vega) prerequisites
 
-Each surface lists **Requires** (hardware / platform inputs) and
-**Provides** (user-facing capability).
+The app bundles a native voice/reasoning core and an ONNX wake-word engine, both built from
+source here:
 
-### 4.1 Launcher / Home  · `App · HOME role`
-Glanceable hub that opens apps and hosts live widgets.
+- **SQLite** — `app/src/main/cpp/sqlite3.c` + `sqlite3.h` (the official amalgamation) are
+  committed and compiled straight in, because the NDK/platform does not expose libsqlite to
+  apps. If they are ever missing, see `app/src/main/cpp/README-native.md`.
+- **Wake-word models** — the `*.onnx` files under `app/src/main/assets/wakeword/` are committed
+  and kept uncompressed via `aaptflags: ["-0 .onnx"]`.
+- **ONNX Runtime** — step 2 above.
 
-**Requires**
-- CarLauncher HOME role on AOSP
-- Live vehicle props (SoC, range) via `CarPropertyManager`
-- `MediaSession` for the now-playing widget
-- Weather + location provider
+## Why it has to be built this way
 
-**Provides**
-- App grid + persistent left nav rail
-- Battery & range gauge rings
-- Mini-map with ETA (image/nav provider)
-- Now-playing + weather widgets (equal height)
-- One-tap into Vehicle Status / Service
-- Three separated glass cards: Map · Vehicle · Weather+Media
+The app controls real Wi-Fi and Bluetooth radios (`setWifiEnabled`, `addNetwork`,
+`BluetoothAdapter.enable`, `removeBond`). Those calls **return `false` for any non-system app** —
+they need `NETWORK_SETTINGS` / `OVERRIDE_WIFI_CONFIG` / `BLUETOOTH_PRIVILEGED`, which require all
+three of: the app being platform-signed, shipping in `/system/priv-app`, and being named in the
+privapp allow-list. `adb install` gives you none of that.
 
-### 4.2 Media  · `App`
-Playback from multiple sources via a segmented source switcher.
+`Conn.init()` reads `bool/use_real_connectivity`. The Gradle build leaves it `false` (mock repos);
+`aosp/res-platform` flips it `true` in this build, selecting `RealWifiRepo` / `RealBtRepo`. There
+is also a runtime override in Settings ▸ System, added because the Gradle APK cannot carry this
+overlay.
 
-**Requires**
-- USB mass-storage mount + `MediaStore` scan of the stick
-- Bluetooth **A2DP** (audio) + **AVRCP** (metadata/controls)
-- FM/DAB tuner hardware + RDS station data
-- `MediaSession` / `MediaBrowserService` per source
+> **The manifest and the allow-list must stay in sync.** A privileged permission needs to be BOTH
+> requested in `AndroidManifest.xml` and allow-listed in
+> `aosp/privapp_permissions_com.motorguard.ivi.xml`. If a permission is allow-listed but not
+> requested it silently does nothing; if one is requested but not allow-listed the platform
+> **refuses to boot the app at all**. Change one, change the other.
 
-**Provides**
-- Source tabs: **Library · USB · Bluetooth · Radio**
-- Background playback (Media3 `MediaLibraryService` + ExoPlayer) that survives leaving the app
-- Library/USB: MediaStore scanning, mount detection, queue, shuffle, repeat, scrubbing
-- Bluetooth: phone track metadata + transport via AVRCP
-- Radio: abstract `RadioTuner` contract, awaiting hardware
-- Unified transport bar & now-playing across all sources, shared with the Home widget
-- **Album-art theming** — the whole app's accent follows the current cover, contrast-corrected
-  to WCAG AA; the semantic green/amber/red stay fixed
-- Online cover-art lookup when a file has no embedded artwork, cached on disk
+## Status — read before you trust it
 
-### 4.3 Navigation  · `App`
-Full-bleed map with destination search, route preview and turn-by-turn guidance.
-**No Google Maps** — this is an AOSP image with no Play Services, so the whole stack is OSS
-and provider-swappable. Details: **`docs/08-navigation.md`**.
+Nothing in this tree has been compiled by Soong or run on real hardware. It was authored on a
+machine with no AOSP tree and no Pi, so treat the notes below as predictions, not results:
 
-**Requires**
-- MapLibre Native + OpenFreeMap vector tiles (no key, no quota)
-- Valhalla for routes, Photon for search — public fair-use instances, self-host for production
-- A `LocationSource`: route simulator today, `LocationManager` GNSS when a receiver is fitted
-- `INTERNET` + `ACCESS_NETWORK_STATE`
+- **The `m MotorGuard` build itself is unverified.** Expect module-name and flag tweaks on the
+  first attempt, particularly the Compose compiler plugin
+  (`androidx.compose.compiler_compiler-hosted-plugin`) and the AndroidX `static_libs` names, which
+  vary by tree and platform version. Check `prebuilts/sdk/current/androidx` for the exact names.
+  If Soong keeps fighting Compose, switch to path (B) — it is the reliable route for a Compose app.
+- **`libmotorguardvoice`** is built platform-variant (no `sdk_version`). If your tree complains
+  about an STL/NDK mismatch against the app, add `sdk_version: "current"` + `stl: "c++_static"` to
+  the `cc_library_shared`. The ONNX Runtime AAR ships arm64 + x86 `.so`; the Pi uses arm64.
+- **The wake-word models must stay uncompressed** (`aaptflags: ["-0 .onnx"]`) — ONNX Runtime mmaps
+  them. If the detector fails to load them, check a custom aapt step did not re-compress them.
+- **Privileged behaviour is unproven on hardware**: direct radio control actually succeeding,
+  HOME-from-boot, and the allow-list being honoured all need a flashed `userdebug` image. Everything
+  verified so far was on the emulator or an ordinary phone, where those paths necessarily fall back
+  to the system settings panels.
+- **`RealBtRepo` connect/unpair** are partly stubbed and marked `TODO(on-device)`; `RealWifiRepo.connect`
+  uses the legacy `addNetwork` flow.
+- **Real Bluetooth (phone pairing / A2DP)** only works on real hardware — not on Cuttlefish
+  (virtual Rootcanal BT) or the emulator.
+- **Known gap:** Bluetooth *audio* now-playing. The platform does A2DP-sink audio, not the app, but
+  `BluetoothSessionMirror` — referenced in `BluetoothMediaSource`'s KDoc — was never written, so the
+  Bluetooth media tab shows a connection indicator and no track, artwork, or transport controls.
+  It needs `MediaSessionManager` mirroring of the AVRCP session.
 
-**Provides**
-- Search-as-you-type destinations, biased to the car's position
-- Route preview with alternates (time · distance · arrival) and one 76 dp **Start**
-- Guidance: maneuver card, "then…" chip, speed puck, ETA bar, mute, end route
-- Heading-up chase camera; one tap frames the whole remaining route
-- Map style generated from `Tokens` — Day and Night, no second palette
-- Automatic fallback to an offline Canvas map when there is no network or no GL
+## Keeping this branch in sync
 
-### 4.4 Voice Assistant  · `System overlay (NOT an app)`
-Google-Assistant-style pop-over that appears **over whatever is on screen** when the
-wake word is heard. No launcher icon, not user-launchable.
+This branch is `media-nav-settings-voice` with the Gradle build system removed and `Android.bp`
+hoisted to the root. To pull in later app changes:
 
-**Requires**
-- Always-on wake-word engine (“Hey Motor Guard”)
-- Microphone + `AudioFocus`
-- `VoiceInteractionService` + system-window / overlay permission
-- On-device STT + NLU intent routing
+```bash
+git checkout media-nav-settings-voice_forAAOS && git merge media-nav-settings-voice
+```
 
-**Provides**
-- Floating HUD over any surface; dismisses on completion
-- Four states: **idle · listening · thinking · speaking** (animated orb + waveform)
-- Live transcript of the utterance
-- Quick-action chips: play music, navigate, set climate, call
-- Hands-free intents routed to the right surface
-
-### 4.5 Vehicle Diagnostics  · `App · live hardware`
-Bound to **real** vehicle hardware. Interactive car view; **tapping any component
-(battery, tires, motor, brakes, doors) zooms into it and shows its live state**.
-
-**Requires**
-- CAN bus → VHAL, read via `CarPropertyManager`
-- Real sensor feeds: tire PSI, cell temp, SoC, brake wear, door/lock state
-- Subscription/polling on property change
-- Threshold config for alert severity
-
-**Provides**
-- Tap a component → zoom-in animation + live state card
-- Per-part telemetry (PSI, temp, charge %, health %)
-- Overall health score + prioritized alerts list
-- Semantic severity coding (green/amber/red)
-- Real-time updates as hardware values change
-
-### 4.6 Settings  · `App`
-Connectivity, theme, and system.
-
-**Requires**
-- `WifiManager` (scan/connect/state)
-- `BluetoothAdapter` (pair/connect/state)
-- `UiModeManager` + light sensor for auto theme
-- OTA update service
-
-**Provides**
-- Wi-Fi: toggle, network list, connection state
-- Bluetooth: toggle, paired-device list, roles (audio/phone)
-- Theme: Day / Night picker + **auto day/night** toggle
-- Accent color / ambient-LED sync
-- System info & OTA (MotorGuard OS)
-
----
-
-## 5. Hardware & Data Integration
-
-| Signal / Source | Channel / API | Consumed by |
-|-----------------|---------------|-------------|
-| State of charge, range | `CarPropertyManager · EV_BATTERY_LEVEL` | Home gauges, Diagnostics |
-| Tire pressure | `CarPropertyManager · TIRE_PRESSURE` | Diagnostics, alerts |
-| USB / on-device media | `MediaStore` (per storage volume) + Media3 `MediaLibraryService` | Media, Home widget |
-| Phone audio | Bluetooth A2DP / AVRCP | Media (Bluetooth) |
-| FM / DAB radio | `RadioManager` / tuner HAL + RDS | Media (Radio) |
-| Wake word + speech | `VoiceInteractionService` + STT/NLU | Voice overlay |
-| Ambient light / time | `UiModeManager` NIGHT / light sensor | Day↔Night theme |
-| Wi-Fi / Bluetooth | `WifiManager` / `BluetoothAdapter` | Settings |
-| Map tiles · routes · search | OpenFreeMap · Valhalla · Photon (HTTPS, all OSS) | Navigation |
-| Vehicle position | `LocationSource` — simulator now, `LocationManager` GNSS later | Navigation |
-
----
-
-## 6. App architecture — one app, tabbed fragments
-
-Single AAOS app. `MainActivity` hosts a `NavRail` + one `FragmentContainerView`;
-each rail tab swaps a Fragment. Team members each own one fragment and extend the
-shared skeleton (theme tokens, `core/components`, `CarDataRepository`).
-Full tree and stub files: **`vendor/motorguard/`**.
-
-### Fragment features (what each surface actually does)
-
-| Fragment | Owner | Features | Reads | Writes |
-|----------|-------|----------|-------|--------|
-| **HomeFragment** | A | Battery+range gauge rings · mini-map w/ ETA · weather + now-playing widgets (equal height) · Vehicle/Service shortcuts · 3 separated cards (Map·Vehicle·Weather+Media) | SoC, range, MediaSession, weather | none (launch intents) |
-| **MediaFragment** | B | Source tabs **Library · USB · Bluetooth · Radio** · MediaStore browse/queue · BT metadata+transport (AVRCP) · Radio band/seek/presets/RDS · unified transport bar · album-art theming | MediaSourceManager, MediaConnection | transport, active source, presets |
-| **DiagnosticsFragment** | C | Interactive car w/ tappable hotspots · **tap a part → zoom-in + live state card** · per-part PSI/temp/charge/health · health score + alerts · semantic green/amber/red · live property updates | TIRE_PRESSURE, EV_BATTERY_LEVEL, temps, brakes, doors (VHAL) | ack/dismiss alerts |
-| **VoiceOverlayService** | D | **NOT a tab** — wake-word ("Hey Motor Guard") bottom listen bar over any surface · idle/listening/thinking/speaking · live transcript · routes intents | mic, STT/NLU | routes to tabs |
-| **SettingsFragment** | E | Wi-Fi toggle+list+state · Bluetooth toggle+paired list+roles · Theme Day/Night + auto day-night · accent/ambient-LED sync · OS/OTA/About | wifi/bt state, UiMode, OTA | wifi connect, bt pair, theme, accent |
-| **NavFragment** | — | Destination search (Photon) · route preview w/ alternates (Valhalla) · turn-by-turn guidance · MapLibre vector map styled from `Tokens` · offline Canvas fallback | LocationSource (simulated → GNSS), network | active route, guidance state |
-
-### Shared skeleton (don't fork — extend)
-- `ui/core/theme/` — `Tokens` / `Color` / `Type`: **single source of truth**; Day+Night free.
-- `ui/core/components/` — `GlassCard`, `GaugeRing`, `StatCard`, `NavRail`, `StatusBar`, `AppTile`, `AlertBadge`, `Toggle`.
-- `data/CarDataRepository` — the **only** place that touches `CarPropertyManager`; fragments observe StateFlows.
-
-### Component → Compose mapping
-| Component | Compose |
-|-----------|---------|
-| GlassCard | `Surface` + `graphicsLayer` blur (`RenderEffect.createBlurEffect`) |
-| GaugeRing | `Canvas { drawArc(useCenter=false, cap=Round) }` + `animateFloatAsState` |
-| NavRail | `NavigationRail` |
-| StatusBar | `CarSystemBar` / custom `Row` |
-| PlaylistRow · AlertBadge | `LazyColumn` items |
-| VoiceOrb | `Canvas` + `rememberInfiniteTransition` |
-| Vehicle data | `CarPropertyManager` + VHAL |
-
----
-
-## 7. Files in this project
-
-| File | Purpose |
-|------|---------|
-| `Meow AAOS.dc.html` | Live prototype shell — surface / theme / resolution switcher + Reflow, Day/Night, Tips |
-| `MeowScreen.dc.html` | The reusable screen component: tokens, NavRail, StatusBar + every surface |
-| `System Design.dc.html` | Visual system-design spec (this README in UI form) |
-| `vendor/motorguard/` | Skeleton AAOS app tree — Android.bp, manifest, MainActivity, one Fragment per tab + shared core |
-| `assets/map.png` | Dark map image used by Home + Nav |
-| `image-slot.js` | Drag-drop image slots (car render, album art) |
-
-> Placeholders still open for your art: **car render** (transparent PNG), **album art**,
-> and an optional **weather photo**.
+Expect conflicts wherever a file moved (`MotorGuardApp/app/…` → `app/…`); resolve by keeping this
+branch's layout. If `app/build.gradle.kts` changes a dependency on the dev branch, mirror it into
+`static_libs` in `Android.bp` — nothing checks that for you.

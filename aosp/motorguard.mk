@@ -11,10 +11,10 @@ PRODUCT_PACKAGES += MotorGuard
 # --- Make Motor Guard the HOME/launcher ---
 # Handled at BUILD time by `overrides: ["CarLauncher"]` in Android.bp: the stock launcher
 # isn't installed and Motor Guard becomes the default HOME from first boot. Nothing to run
-# after booting. (The runtime scripts/set-as-home.sh is only for the emulator, where you
-# can't rebuild the image.)
+# after booting. (The emulator-only set-as-home.sh helper lives on the Gradle branch,
+# media-nav-settings-voice, under MotorGuardApp/scripts/ — it is not part of this tree,
+# because on an image build you rebuild instead of poking a running device.)
 
 # --- Hide the Automotive system bars (optional, for the fullscreen kiosk look) ---
-# Enable the immersive CarSystemUI overlay in the image (or via the running-device
-# script MotorGuardApp/scripts/hide-system-bars.sh):
+# Enable the immersive CarSystemUI overlay in the image:
 #     PRODUCT_PACKAGES += com.android.car.systemui.systembar.persistency.immersive

@@ -1,6 +1,12 @@
 # Native voice core — setup
 
-Two binary blobs are deliberately **not** committed (one is 9 MB of third-party C,
+> **On this AAOS branch everything below is already committed** — `sqlite3.{c,h}` and all
+> three `.onnx` models are in the tree, and Soong (`cc_library_shared libmotorguardvoice`
+> in the root `Android.bp`) compiles them with the platform clang. `CMakeLists.txt` in this
+> directory is the Gradle/NDK equivalent, kept for the `media-nav-settings-voice` branch;
+> Soong ignores it. The rest of this file is the from-scratch setup, for reference.
+
+Two kinds of binary blob are normally **not** committed (one is 9 MB of third-party C,
 the others are trained models). Drop them in once per clone.
 
 ## 1. SQLite amalgamation → `cpp/`
@@ -13,7 +19,7 @@ If you already have it from the standalone voice project:
 
 ```bash
 cp /path/to/VoiceAssistantKotlin/app/src/main/cpp/sqlite3.{c,h} \
-   MotorGuardApp/app/src/main/cpp/
+   app/src/main/cpp/
 ```
 
 Otherwise download the amalgamation from sqlite.org and copy `sqlite3.c` +
@@ -53,7 +59,7 @@ The fault database (`assistant-core/data/dtc_seed.sql`) is embedded into
 edit the SQL, regenerate the header:**
 
 ```bash
-cd MotorGuardApp/app/src/main/cpp
+cd app/src/main/cpp
 { echo '// GENERATED from assistant-core/data/dtc_seed.sql — do not edit by hand.'; \
   echo '#pragma once'; echo 'namespace seed {'; \
   echo 'inline const char* kDtcSeedSql = R"SQL('; \

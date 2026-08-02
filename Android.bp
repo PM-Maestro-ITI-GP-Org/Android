@@ -1,6 +1,7 @@
 // Motor Guard — AAOS launcher, built inside the AOSP / Raspberry Pi tree and
-// platform-signed. Copy this whole MotorGuardApp/ dir into your device/vendor tree
-// (e.g. vendor/motorguard/MotorGuard/) and adjust the relative paths below.
+// platform-signed. This repo IS the drop-in: copy it whole into your device or
+// vendor tree as vendor/motorguard/MotorGuard/. Every path below is already
+// relative to this file, so nothing needs adjusting.
 //
 // Two ways to build it — pick ONE:
 //   (A) android_app  — compile from source in the tree (this file's default).

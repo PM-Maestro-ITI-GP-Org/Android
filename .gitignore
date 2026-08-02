@@ -1,10 +1,32 @@
+# Vendored binary — fetched, never committed (see aosp/prebuilts/README.md)
+aosp/prebuilts/*.aar
+
+# Soong/AOSP build output, if this dir is ever used as a build cwd
+/out/
+
+# Native/Gradle build output. Nothing here builds with CMake or Gradle, but these
+# reappear if you ever point Android Studio at this tree — and .cxx carries .o files.
+.cxx/
+.externalNativeBuild/
+build/
+captures/
+
+# Left behind when switching from the Gradle branch (media-nav-settings-voice):
+# that branch's IDE state and build cache live under MotorGuardApp/ and are not
+# part of this tree. Do not delete it — the other branch still uses it.
+/MotorGuardApp/
+
+# Editor / IDE
+.idea/
+.gradle/
+.kotlin/
+*.iml
+local.properties
+.vscode/
+*.swp
+*~
+
 # OS junk
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Editor
-.vscode/
-.idea/
-*.swp
-*~
