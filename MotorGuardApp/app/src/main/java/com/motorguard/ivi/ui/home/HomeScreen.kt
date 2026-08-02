@@ -24,22 +24,20 @@ import com.motorguard.ivi.ui.theme.MotorGuard
 /**
  * Home, laid out as the three glass cards from the design: Map · Vehicle · Weather + Media.
  *
- * **Only the now-playing card is implemented here.** Home belongs to owner A (docs/03-home.md);
- * the gauge rings, mini-map and weather widget are theirs to build. What this file provides is
- * the card skeleton in the right proportions plus the real media widget, so the two can be
- * developed without colliding — the placeholder slots are named for what goes in them.
+ * The map and now-playing cards are live — each reads the same session its own tab drives, so
+ * what Home shows is the real trip and the real player rather than a copy. The vehicle card is
+ * still owner A's to build (docs/03-home.md); its placeholder is named for what goes in it.
  */
 @Composable
-fun HomeScreen(onOpenMedia: () -> Unit) {
+fun HomeScreen(onOpenMedia: () -> Unit, onOpenNav: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxSize()
             .padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 22.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        PlaceholderSlot(
-            title = "Map",
-            note = "Owner A · mini-map + ETA",
+        NavCard(
+            onOpenNav = onOpenNav,
             modifier = Modifier
                 .weight(1.35f)
                 .fillMaxHeight(),

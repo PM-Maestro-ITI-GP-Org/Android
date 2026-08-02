@@ -24,8 +24,15 @@ internal object MapStyle {
     /** Ids the route layers are inserted above, so the route never hides under a road. */
     const val TOP_LAYER_ID = "mg-place-label"
 
-    fun json(dark: Boolean): String {
-        val p = if (dark) nightPalette() else dayPalette()
+    /**
+     * @param base the app's current surface colour, and the colour every other map colour is
+     *        blended out of. Passing it in — rather than reading a [Tokens] constant — is what
+     *        makes the map follow the album tint and the Settings accent instead of sitting
+     *        there as the one rectangle on screen that ignores the theme.
+     * @param accent the themed accent, used for water and trunk roads.
+     */
+    fun json(dark: Boolean, base: Color, accent: Color): String {
+        val p = if (dark) nightPalette(base, accent) else dayPalette(base, accent)
         return """
         {
           "version": 8,
@@ -75,38 +82,38 @@ internal object MapStyle {
         val labelHalo: Color,
     )
 
-    private fun nightPalette(): Palette {
-        val base = Tokens.Night.railBg
+    private fun nightPalette(base: Color, accent: Color): Palette {
         val t = Tokens.Night
         return Palette(
             background = base,
             land = lerp(base, t.panel, 0.35f),
             park = lerp(base, t.success, 0.10f),
-            water = lerp(base, t.accent, 0.16f),
+            water = lerp(base, accent, 0.16f),
             building = lerp(base, t.panel, 0.85f),
             buildingOpacity = 0.9,
             roadCasing = lerp(base, Color.Black, 0.45f),
             roadMinor = lerp(base, t.onBaseDim, 0.22f),
             roadMajor = lerp(base, t.onBaseDim, 0.38f),
-            roadTrunk = lerp(base, t.accent, 0.26f),
+            roadTrunk = lerp(base, accent, 0.26f),
             label = t.onBaseDim,
             labelHalo = lerp(base, Color.Black, 0.5f),
         )
     }
 
-    private fun dayPalette(): Palette {
-        val base = Tokens.Day.base
+    private fun dayPalette(base: Color, accent: Color): Palette {
         val t = Tokens.Day
         return Palette(
             background = base,
             land = lerp(base, t.onBaseDim, 0.06f),
             park = lerp(base, t.success, 0.16f),
-            water = lerp(base, t.accent, 0.30f),
+            water = lerp(base, accent, 0.30f),
             building = lerp(base, t.onBaseDim, 0.14f),
             buildingOpacity = 0.8,
             roadCasing = lerp(base, t.onBaseDim, 0.28f),
-            roadMinor = Color.White,
-            roadMajor = Color.White,
+            // Roads stay near-white so they read as roads, but take a touch of the surface so a
+            // strongly tinted map does not have bright neutral ribbons laid over it.
+            roadMinor = lerp(Color.White, base, 0.12f),
+            roadMajor = lerp(Color.White, base, 0.08f),
             roadTrunk = lerp(Color.White, t.caution, 0.22f),
             label = t.onBaseDim,
             labelHalo = Color.White,

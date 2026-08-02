@@ -1,6 +1,6 @@
 package com.motorguard.ivi.ui.nav.map
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -66,8 +66,12 @@ internal fun MapLibreMapSurface(
     onUnavailable: () -> Unit,
 ) {
     val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
     val colors = MotorGuard.colors
+    // From the theme, not the system: Settings owns Day/Night, and the map is the one surface
+    // big enough that disagreeing with the rest of the app is impossible to miss.
+    val dark = colors.isDark
+    // The surface the whole map palette is blended out of, so it carries the album tint too.
+    val mapBase = if (dark) colors.railBg else MaterialTheme.colorScheme.background
     val density = LocalDensity.current.density
 
     // MapLibre.getInstance() must run before any MapView is constructed.
@@ -106,7 +110,10 @@ internal fun MapLibreMapSurface(
     }
 
     // --- style + route layers -------------------------------------------------------------
-    DisposableEffect(mapView, dark) {
+    // Keyed on the themed colours as well as the mode: when the album (or the Settings accent)
+    // shifts the palette, the style is rebuilt and re-applied rather than staying on the hue
+    // that happened to be current when the map first loaded.
+    DisposableEffect(mapView, dark, mapBase, colors.accent) {
         mapView.getMapAsync { ready ->
             ready.uiSettings.apply {
                 // No MapLibre chrome: the design system owns every control on this screen.
@@ -118,7 +125,9 @@ internal fun MapLibreMapSurface(
                 isRotateGesturesEnabled = false
                 isTiltGesturesEnabled = false
             }
-            ready.setStyle(Style.Builder().fromJson(MapStyle.json(dark))) { loaded ->
+            ready.setStyle(
+                Style.Builder().fromJson(MapStyle.json(dark, mapBase, colors.accent)),
+            ) { loaded ->
                 loaded.addImage(
                     IMAGE_VEHICLE,
                     VehicleArrow.bitmap(

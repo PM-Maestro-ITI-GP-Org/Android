@@ -6,7 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,10 +57,16 @@ internal fun CanvasMapSurface(
     overlay: MapOverlay,
     modifier: Modifier = Modifier,
 ) {
-    val dark = isSystemInDarkTheme()
     val colors = MotorGuard.colors
+    // Theme, not system: Settings owns Day/Night. See MapLibreMapSurface for the same call.
+    val dark = colors.isDark
     val density = LocalDensity.current
-    val palette = remember(dark) { canvasPalette(dark) }
+    // Rebuilt whenever the themed surface or accent moves, so the offline map carries the album
+    // tint exactly like the vector one.
+    val mapBase = if (dark) colors.railBg else MaterialTheme.colorScheme.background
+    val palette = remember(dark, mapBase, colors.accent, colors.accent2) {
+        canvasPalette(dark, mapBase, colors.accent, colors.accent2)
+    }
 
     var viewSize by remember { mutableStateOf(Offset.Zero) }
 
@@ -187,32 +193,41 @@ private class CanvasPalette(
     val destinationRing: Color,
 )
 
-private fun canvasPalette(dark: Boolean): CanvasPalette = if (dark) {
-    val base = Tokens.Night.railBg
+/**
+ * @param base themed surface the map is blended out of, and [accent]/[accent2] the themed
+ *        accents — all passed in rather than read from [Tokens] so the offline map follows the
+ *        album tint and the Settings accent like every other surface.
+ */
+private fun canvasPalette(
+    dark: Boolean,
+    base: Color,
+    accent: Color,
+    accent2: Color,
+): CanvasPalette = if (dark) {
     CanvasPalette(
         background = base,
         block = lerp(base, Tokens.Night.panel, 0.55f),
         street = lerp(base, Tokens.Night.onBaseDim, 0.16f),
         avenue = lerp(base, Tokens.Night.onBaseDim, 0.30f),
         routeCasing = Color(0xFF05070A),
-        route = Tokens.Night.accent,
-        routeFlow = Tokens.Night.accent2,
+        route = accent,
+        routeFlow = accent2,
         routePassed = lerp(base, Tokens.Night.onBaseDim, 0.45f),
-        destination = Tokens.Night.accent,
+        destination = accent,
         destinationRing = Color(0x33FFFFFF),
     )
 } else {
-    val base = Tokens.Day.base
     CanvasPalette(
         background = base,
         block = lerp(base, Tokens.Day.onBaseDim, 0.10f),
-        street = Color.White,
-        avenue = Color.White,
-        routeCasing = lerp(Tokens.Day.accent, Color.Black, 0.35f),
-        route = Tokens.Day.accent,
-        routeFlow = Tokens.Day.accent2,
+        // A touch of the surface, so streets belong to a tinted map instead of sitting on it.
+        street = lerp(Color.White, base, 0.12f),
+        avenue = lerp(Color.White, base, 0.08f),
+        routeCasing = lerp(accent, Color.Black, 0.35f),
+        route = accent,
+        routeFlow = accent2,
         routePassed = lerp(base, Tokens.Day.onBaseDim, 0.35f),
-        destination = Tokens.Day.accent,
+        destination = accent,
         destinationRing = Color.White,
     )
 }

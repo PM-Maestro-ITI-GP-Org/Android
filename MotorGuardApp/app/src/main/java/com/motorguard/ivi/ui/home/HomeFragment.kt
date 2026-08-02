@@ -27,6 +27,7 @@ class HomeFragment : Fragment() {
             MotorGuardTheme {
                 HomeScreen(
                     onOpenMedia = { (activity as? MainActivity)?.openTab(MainActivity.Tab.MEDIA) },
+                    onOpenNav = { (activity as? MainActivity)?.openTab(MainActivity.Tab.NAV) },
                 )
             }
         }
