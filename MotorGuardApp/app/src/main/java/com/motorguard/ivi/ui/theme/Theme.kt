@@ -13,9 +13,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 
 private val NightColors = darkColorScheme(
     primary = Tokens.Night.accent,
@@ -164,7 +167,19 @@ fun MotorGuardTheme(
         surface = panel,
     )
 
-    CompositionLocalProvider(LocalMotorGuardColors provides colors) {
+    // Uniform scale so the fixed 1920x720 design fits whatever panel it lands on. Overriding
+    // density converts every dp AND sp through it, so proportions, type and touch targets all
+    // shrink or grow together instead of each needing its own breakpoint. See rememberUiScale.
+    val density = LocalDensity.current
+    val scale = rememberUiScale()
+    val scaledDensity = remember(density, scale) {
+        Density(density.density * scale, density.fontScale)
+    }
+
+    CompositionLocalProvider(
+        LocalMotorGuardColors provides colors,
+        LocalDensity provides scaledDensity,
+    ) {
         MaterialTheme(colorScheme = scheme) {
             // The host layout paints a static @color/base, which cannot follow the music. Painting
             // here instead means every surface wrapped in this theme — including the placeholder

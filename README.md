@@ -16,10 +16,16 @@ Day + Night themes from a single token source.
 | Target OS | Android Automotive OS (AOSP automotive build) |
 | Hardware | Raspberry Pi 5 — modest VideoCore VII GPU |
 | Display | Landscape only, horizontal dash mount |
-| Resolutions | 1920×720 (primary), 1280×720, 1024×600 |
+| Resolutions | 1920×720 (primary), 1280×720, 1024×600 — and any other panel, via a uniform UI scale |
 | Vehicle | Full EV — battery %, charge state, range (no ICE fuel) |
 | Build | adb-flashable `userdebug` image (KonstaKANG / android-rpi) |
 | Framework | Kotlin + Jetpack Compose |
+
+### Adapting to the panel
+Every dimension is drawn for the **720 dp-tall** primary target. `MotorGuardTheme` overrides
+`LocalDensity` by `rememberUiScale()` — the panel's height over 720 — so `dp` and `sp` alike are
+converted through it and the whole design keeps its proportions on any screen. At 1920×720 the
+scale is 1.0 and nothing changes. The scale floors at 0.5 so touch targets stay usable.
 
 ### Performance budget (RPi 5)
 - **One** blurred backdrop per screen, blur radius ≤ 16 dp.
