@@ -52,8 +52,18 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Re-read the library — after a permission grant, or a USB stick appearing. */
-    fun refresh() = loadTracks(_state.value.activeSource)
+    /**
+     * Re-read the library — after a permission grant, or a USB stick appearing.
+     *
+     * Availability is re-evaluated too, not just the tracks: the screen shows a source's
+     * empty message *instead of* its list while it reads as unavailable, so re-loading the
+     * tracks alone would leave the driver staring at "Allow access to media…" over a library
+     * that had in fact just loaded.
+     */
+    fun refresh() {
+        sources.refreshAvailability()
+        loadTracks(_state.value.activeSource)
+    }
 
     private fun loadTracks(id: MediaSourceId) {
         loadJob?.cancel()

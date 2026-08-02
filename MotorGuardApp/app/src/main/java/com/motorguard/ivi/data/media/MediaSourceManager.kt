@@ -5,11 +5,13 @@ import com.motorguard.ivi.data.media.sources.BluetoothMediaSource
 import com.motorguard.ivi.data.media.sources.LocalMediaSource
 import com.motorguard.ivi.data.media.sources.RadioMediaSource
 import com.motorguard.ivi.data.media.sources.UsbMediaSource
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 
 /**
  * Owns the four sources and which one is active.
@@ -43,9 +45,25 @@ class MediaSourceManager private constructor(context: Context) {
         _active.value = id
     }
 
+    /**
+     * Bumped when something changed an availability answer that the sources cannot observe for
+     * themselves. Today that is the runtime media permission: [LocalMediaSource] reads it once
+     * when collected and Android broadcasts nothing on a grant, so without this nudge the
+     * library would stay "Allow access to media…" until the fragment was recreated.
+     */
+    private val _revision = MutableStateFlow(0)
+
+    /** Re-evaluate every source's availability. Call after a runtime permission grant. */
+    fun refreshAvailability() {
+        _revision.value++
+    }
+
     /** Availability of every source at once, in tab order, for the source switcher. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun availability(): Flow<List<SourceAvailability>> =
-        combine(sources.map { it.availability() }) { states -> states.toList() }
+        _revision.flatMapLatest {
+            combine(sources.map { it.availability() }) { states -> states.toList() }
+        }
 
     suspend fun tracks(id: MediaSourceId): List<Track> = source(id).tracks()
 
