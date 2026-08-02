@@ -2,7 +2,9 @@ package com.motorguard.ivi.ui.theme
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -12,6 +14,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 
 private val NightColors = darkColorScheme(
@@ -54,6 +57,8 @@ data class MotorGuardColors(
     val caution: Color,
     val critical: Color,
     val onBaseDim: Color,
+    /** Nav-rail background. Follows the album hue like the other surfaces. */
+    val railBg: Color,
     val isDark: Boolean,
 )
 
@@ -69,6 +74,7 @@ private val NightExtras = MotorGuardColors(
     caution = Tokens.Night.caution,
     critical = Tokens.Night.critical,
     onBaseDim = Tokens.Night.onBaseDim,
+    railBg = Tokens.Night.railBg,
     isDark = true,
 )
 
@@ -84,6 +90,7 @@ private val DayExtras = MotorGuardColors(
     caution = Tokens.Day.caution,
     critical = Tokens.Day.critical,
     onBaseDim = Tokens.Day.onBaseDim,
+    railBg = Tokens.Day.railBg,
     isDark = false,
 )
 
@@ -116,30 +123,62 @@ fun MotorGuardTheme(
     content: @Composable () -> Unit,
 ) {
     val base = if (dark) NightExtras else DayExtras
-    val panel = if (dark) Tokens.Night.panel else Tokens.Day.panel
+    val seed = AlbumThemeState.seed
+    val onSurface = if (dark) Tokens.Night.onBase else Tokens.Day.onBase
+
+    // Surfaces take the album's hue but keep their own lightness — see tintSurface. Deriving
+    // these first matters: the accent is then corrected against the surface it will actually sit
+    // on, rather than against the untinted token it no longer matches.
+    val targetBase = seed?.let {
+        tintSurface(if (dark) Tokens.Night.base else Tokens.Day.base, it, onSurface, surfaceL(dark))
+    } ?: (if (dark) Tokens.Night.base else Tokens.Day.base)
+
+    val targetPanel = seed?.let {
+        tintSurface(if (dark) Tokens.Night.panel else Tokens.Day.panel, it, onSurface, panelL(dark))
+    } ?: (if (dark) Tokens.Night.panel else Tokens.Day.panel)
+
+    val targetRail = seed?.let {
+        tintSurface(if (dark) Tokens.Night.railBg else Tokens.Day.railBg, it, onSurface, railL(dark))
+    } ?: (if (dark) Tokens.Night.railBg else Tokens.Day.railBg)
 
     // Re-derived from the raw seed on every theme flip, so Day and Night each get a correction
     // appropriate to their own background.
-    val seed = AlbumThemeState.seed
-    val targetAccent = seed?.ensureContrast(panel, MIN_CONTRAST, lighten = dark) ?: base.accent
+    val targetAccent = seed?.ensureContrast(targetPanel, MIN_CONTRAST, lighten = dark) ?: base.accent
     val targetAccent2 = seed?.let { targetAccent.shiftLightness(if (dark) 0.12f else -0.12f) }
         ?: base.accent2
 
-    // Tracks change while the driver is looking at the screen; repainting every accent instantly
-    // reads as a glitch rather than a response.
+    // Tracks change while the driver is looking at the screen; repainting instantly reads as a
+    // glitch rather than a response.
     val spec = tween<Color>(durationMillis = ACCENT_TRANSITION_MS)
     val accent by animateColorAsState(targetAccent, spec, label = "app-accent")
     val accent2 by animateColorAsState(targetAccent2, spec, label = "app-accent-2")
+    val background by animateColorAsState(targetBase, spec, label = "app-background")
+    val panel by animateColorAsState(targetPanel, spec, label = "app-panel")
+    val rail by animateColorAsState(targetRail, spec, label = "app-rail")
 
-    val colors = base.copy(accent = accent, accent2 = accent2)
+    val colors = base.copy(accent = accent, accent2 = accent2, railBg = rail)
     val scheme = (if (dark) NightColors else DayColors).copy(
         primary = accent,
         secondary = accent2,
+        background = background,
+        surface = panel,
     )
 
     CompositionLocalProvider(LocalMotorGuardColors provides colors) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = scheme) {
+            // The host layout paints a static @color/base, which cannot follow the music. Painting
+            // here instead means every surface wrapped in this theme — including the placeholder
+            // fragments nobody has built yet — gets the tinted background for free.
+            Box(Modifier.background(scheme.background)) { content() }
+        }
     }
 }
+
+// Target lightness per surface. Night stays deep charcoal and Day stays near-white — the album
+// changes the hue of these surfaces, never how bright they are. That is what keeps the README's
+// "deep charcoal bases reduce night glare" true with the feature switched on.
+private fun surfaceL(dark: Boolean) = if (dark) 0.09f else 0.95f
+private fun panelL(dark: Boolean) = if (dark) 0.14f else 0.99f
+private fun railL(dark: Boolean) = if (dark) 0.07f else 0.90f
 
 private const val ACCENT_TRANSITION_MS = 650

@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.palette.graphics.Palette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -88,6 +89,12 @@ internal fun Color.ensureContrast(against: Color, minRatio: Double, lighten: Boo
  * without Robolectric — worth it for a rule the design system depends on.
  */
 internal fun Color.shiftLightness(delta: Float): Color {
+    val (hue, saturation, lightness) = toHsl()
+    return hsl(hue, saturation, (lightness + delta).coerceIn(0f, 1f), alpha)
+}
+
+/** Hue, saturation and lightness, each 0..1 except hue which is 0..360. */
+private fun Color.toHsl(): Triple<Float, Float, Float> {
     val maxChannel = maxOf(red, green, blue)
     val minChannel = minOf(red, green, blue)
     val lightness = (maxChannel + minChannel) / 2f
@@ -101,7 +108,39 @@ internal fun Color.shiftLightness(delta: Float): Color {
         else -> 60f * (((red - green) / chroma) + 4f)
     }.let { if (it < 0f) it + 360f else it }
 
-    return hsl(hue, saturation, (lightness + delta).coerceIn(0f, 1f), alpha)
+    return Triple(hue, saturation, lightness)
+}
+
+/**
+ * Blend the album's **hue** into a surface without letting it change how light that surface is.
+ *
+ * This is what makes the background follow the music while still obeying the README's
+ * dark-centric rule: the seed is first forced to [lightness] and its saturation capped, so what
+ * gets mixed in is a charcoal (or an off-white in Day) that merely leans towards the album's
+ * colour. Mixing the raw seed would produce a bright coloured panel, night glare, and unreadable
+ * text.
+ *
+ * [onSurface] is the text that will sit on the result. The tint is pulled back until that text
+ * clears AA, so no cover can make the UI illegible — the same guarantee [ensureContrast] gives
+ * the accent, applied from the other side.
+ */
+internal fun tintSurface(
+    surface: Color,
+    seed: Color,
+    onSurface: Color,
+    lightness: Float,
+    amount: Float = SURFACE_TINT,
+): Color {
+    val (hue, saturation, _) = seed.toHsl()
+    val muted = hsl(hue, saturation.coerceAtMost(MAX_SURFACE_SATURATION), lightness, 1f)
+
+    var strength = amount
+    var candidate = lerp(surface, muted, strength)
+    while (strength > 0f && contrastRatio(onSurface, candidate) < MIN_CONTRAST) {
+        strength -= TINT_BACKOFF
+        candidate = lerp(surface, muted, strength.coerceAtLeast(0f))
+    }
+    return candidate
 }
 
 private fun hsl(hue: Float, saturation: Float, lightness: Float, alpha: Float): Color {
@@ -146,3 +185,10 @@ private const val PALETTE_COLORS = 24
 internal const val MIN_CONTRAST = 4.5
 private const val CONTRAST_STEP = 0.04f
 private const val MAX_CONTRAST_STEPS = 25
+
+/** How much of the album's hue reaches the surfaces. Enough to read as a mood, not a repaint. */
+private const val SURFACE_TINT = 0.7f
+
+/** Surfaces stay near-neutral; a saturated background is glare, not design. */
+private const val MAX_SURFACE_SATURATION = 0.5f
+private const val TINT_BACKOFF = 0.1f

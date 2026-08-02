@@ -40,9 +40,8 @@ import com.motorguard.ivi.MainActivity.Tab
 import com.motorguard.ivi.ui.theme.MotorGuard
 import com.motorguard.ivi.ui.theme.Tokens
 
-// The rail is always dark (independent of Day/Night), so it reads like the reference
-// even in light mode. Colors are pinned to the night palette.
-private val RailBg = Tokens.Night.railBg
+// The rail reads dark even in light mode, like the reference. Its background now comes from the
+// theme so it picks up the album hue with the rest of the app; the dim foreground stays pinned.
 private val RailActiveBg = Color.White.copy(alpha = 0.10f)
 private val RailDim = Tokens.Night.onBaseDim
 
@@ -75,7 +74,7 @@ fun NavRail(
         modifier = Modifier
             .fillMaxHeight()
             .width(92.dp)
-            .background(RailBg),
+            .background(MotorGuard.colors.railBg),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.weight(1f))

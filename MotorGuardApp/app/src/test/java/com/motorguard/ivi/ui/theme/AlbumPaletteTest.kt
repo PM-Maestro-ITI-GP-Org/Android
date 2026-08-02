@@ -69,6 +69,47 @@ class AlbumPaletteTest {
     }
 
     @Test
+    fun `a tinted background stays dark and keeps text readable`() {
+        // A saturated cover must not turn the night background into a bright colour panel: the
+        // README's whole night-glare argument depends on the base staying deep charcoal.
+        val loud = Color(0xFFFF2D00) // vivid red
+        val tinted = tintSurface(Tokens.Night.base, loud, Tokens.Night.onBase, lightness = 0.09f)
+
+        assertTrue(
+            "background must stay dark, got luminance-ish ${tinted.red + tinted.green + tinted.blue}",
+            (tinted.red + tinted.green + tinted.blue) / 3f < 0.25f,
+        )
+        assertTrue(
+            "body text must still clear AA on the tinted background: " +
+                contrastRatio(Tokens.Night.onBase, tinted),
+            contrastRatio(Tokens.Night.onBase, tinted) >= aa,
+        )
+    }
+
+    @Test
+    fun `a tinted background actually takes the album hue`() {
+        val red = Color(0xFFFF2D00)
+        val blue = Color(0xFF0033FF)
+        val fromRed = tintSurface(Tokens.Night.base, red, Tokens.Night.onBase, lightness = 0.09f)
+        val fromBlue = tintSurface(Tokens.Night.base, blue, Tokens.Night.onBase, lightness = 0.09f)
+
+        // Not merely different from each other — each must lean towards its own hue.
+        assertTrue("red cover should warm the base", fromRed.red > fromRed.blue)
+        assertTrue("blue cover should cool the base", fromBlue.blue > fromBlue.red)
+    }
+
+    @Test
+    fun `day background stays light`() {
+        val dark = Color(0xFF120018)
+        val tinted = tintSurface(Tokens.Day.base, dark, Tokens.Day.onBase, lightness = 0.95f)
+        assertTrue(
+            "day background must stay near-white",
+            (tinted.red + tinted.green + tinted.blue) / 3f > 0.85f,
+        )
+        assertTrue(contrastRatio(Tokens.Day.onBase, tinted) >= aa)
+    }
+
+    @Test
     fun `contrast ratio matches the WCAG reference values`() {
         // Black on white is exactly 21:1, and any colour against itself is 1:1.
         assertEquals(21.0, contrastRatio(Color.Black, Color.White), 0.01)
