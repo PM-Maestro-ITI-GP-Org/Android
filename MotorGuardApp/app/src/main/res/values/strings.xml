@@ -7,4 +7,12 @@
     <string name="tab_settings">Settings</string>
     <string name="brand">MOTOR GUARD</string>
     <string name="wake_word">Hey Motor Guard</string>
+
+    <!-- NavService: ongoing "Navigating" foreground notification (keeps guidance alive when the
+         app is backgrounded). %1$s is the destination name. -->
+    <string name="nav_channel_name">Navigation</string>
+    <string name="nav_channel_desc">Shown while turn-by-turn guidance is running.</string>
+    <string name="nav_notification_title">Navigating</string>
+    <string name="nav_notification_to">To %1$s</string>
+    <string name="nav_notification_active">Guidance active</string>
 </resources>

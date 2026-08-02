@@ -45,6 +45,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- NavService keeps turn-by-turn guidance running when the app is backgrounded, so the
+         drive survives more than a tab switch. FOREGROUND_SERVICE is the base grant;
+         FOREGROUND_SERVICE_LOCATION matches the service's "location" type (API 34+); the location
+         runtime perms it also needs are already declared above (ACCESS_FINE/COARSE_LOCATION).
+         POST_NOTIFICATIONS (API 33+) is for the ongoing "Navigating" notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -91,6 +100,14 @@
             android:name=".ui.voice.VoiceSessionService"
             android:permission="android.permission.BIND_VOICE_INTERACTION"
             android:exported="true" />
+
+        <!-- Foreground service that keeps navigation guidance alive across tab switches and while
+             the app is backgrounded. Not launchable; started/stopped by NavSession at the
+             guidance boundaries. "location" type because it tracks the car's position. -->
+        <service
+            android:name=".ui.nav.NavService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
 
     </application>
 </manifest>
