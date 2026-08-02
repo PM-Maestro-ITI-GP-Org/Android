@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
  */
 class RealUsersRepo(context: Context) : UsersRepo {
 
+    private val appContext = context.applicationContext
     private val um = context.getSystemService(UserManager::class.java)
     private val am = context.getSystemService(ActivityManager::class.java)
 
@@ -104,7 +105,7 @@ class RealUsersRepo(context: Context) : UsersRepo {
         runCatching {
             UserManager::class.java
                 .getMethod("createGuest", Context::class.java)
-                .invoke(um, null)
+                .invoke(um, appContext)
         }
         refresh()
     }
