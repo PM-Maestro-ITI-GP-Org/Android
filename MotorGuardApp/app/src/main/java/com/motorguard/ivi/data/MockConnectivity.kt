@@ -70,3 +70,38 @@ class MockBtRepo : BtRepo {
         }
     }
 }
+
+/** Emulator / demo driver profiles. A few fake drivers with switch/add/remove fully wired. */
+class MockUsersRepo : UsersRepo {
+    private var nextId = 100
+
+    private val _users = mutableStateListOf(
+        UserProfile(id = 0, name = "Driver", isActive = true, color = 0),
+        UserProfile(id = 1, name = "Alex", isActive = false, color = 1),
+        UserProfile(id = 2, name = "Sam", isActive = false, color = 2),
+    )
+    override val users: List<UserProfile> get() = _users
+    override val active: UserProfile? get() = _users.firstOrNull { it.isActive }
+
+    override fun switchTo(id: Int) {
+        for (i in _users.indices) {
+            _users[i] = _users[i].copy(isActive = _users[i].id == id)
+        }
+    }
+
+    override fun addUser(name: String) {
+        _users.add(UserProfile(id = nextId++, name = name, isActive = false, color = _users.size))
+    }
+
+    override fun removeUser(id: Int) {
+        val wasActive = _users.firstOrNull { it.id == id }?.isActive == true
+        _users.removeAll { it.id == id }
+        // Removing the active user falls back to the first remaining profile.
+        if (wasActive) _users.firstOrNull()?.let { switchTo(it.id) }
+    }
+
+    override fun addGuest() {
+        if (_users.any { it.isGuest }) return // one guest at a time
+        _users.add(UserProfile(id = nextId++, name = "Guest", isActive = false, isGuest = true, color = _users.size))
+    }
+}

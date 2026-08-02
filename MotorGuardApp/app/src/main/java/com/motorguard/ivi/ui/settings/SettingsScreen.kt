@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
@@ -40,6 +41,7 @@ import com.motorguard.ivi.data.Conn
 import com.motorguard.ivi.ui.settings.panes.BluetoothPane
 import com.motorguard.ivi.ui.settings.panes.SystemPane
 import com.motorguard.ivi.ui.settings.panes.ThemePane
+import com.motorguard.ivi.ui.settings.panes.UsersPane
 import com.motorguard.ivi.ui.settings.panes.WifiPane
 import com.motorguard.ivi.ui.theme.ThemeMode
 import com.motorguard.ivi.ui.theme.ThemeState
@@ -47,6 +49,7 @@ import com.motorguard.ivi.ui.theme.ThemeState
 private enum class SettingsTab(val label: String, val icon: ImageVector) {
     WIFI("Wi-Fi", Icons.Filled.Wifi),
     BLUETOOTH("Bluetooth", Icons.Filled.Bluetooth),
+    USERS("Users", Icons.Filled.People),
     THEME("Theme & Display", Icons.Filled.Palette),
     SYSTEM("System", Icons.Filled.Tune),
 }
@@ -102,6 +105,7 @@ fun SettingsScreen() {
             when (selected) {
                 SettingsTab.WIFI -> WifiPane()
                 SettingsTab.BLUETOOTH -> BluetoothPane()
+                SettingsTab.USERS -> UsersPane()
                 SettingsTab.THEME -> ThemePane()
                 SettingsTab.SYSTEM -> SystemPane()
             }
@@ -112,6 +116,7 @@ fun SettingsScreen() {
 private fun subtitleFor(tab: SettingsTab, systemDark: Boolean): String = when (tab) {
     SettingsTab.WIFI -> if (Conn.wifi.enabled) (Conn.wifi.connectedSsid ?: "On") else "Off"
     SettingsTab.BLUETOOTH -> if (Conn.bt.enabled) (Conn.bt.connectedName ?: "On") else "Off"
+    SettingsTab.USERS -> Conn.users.active?.name ?: "Driver profiles"
     SettingsTab.THEME -> {
         val mode = when (ThemeState.mode) {
             ThemeMode.DAY -> "Day"

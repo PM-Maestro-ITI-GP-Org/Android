@@ -11,6 +11,19 @@ enum class BtKind { PHONE, AUDIO, WEARABLE }
 data class BtDevice(val name: String, val kind: BtKind)
 
 /**
+ * An Android user (driver profile) as shown in Settings. [id] is the platform user id,
+ * [initial] is a single letter for the avatar, [color] 0..n picks an accent from the theme.
+ */
+data class UserProfile(
+    val id: Int,
+    val name: String,
+    val isActive: Boolean,
+    val isGuest: Boolean = false,
+    val initial: String = name.trim().firstOrNull()?.uppercase() ?: "?",
+    val color: Int = 0,
+)
+
+/**
  * Wi-Fi state + control. Implemented by [MockWifiRepo] (emulator / unprivileged) and
  * [RealWifiRepo] (WifiManager on a platform-signed build). State properties are
  * Compose-observable, so Settings recomposes on change.
@@ -38,6 +51,20 @@ interface BtRepo {
 }
 
 /**
+ * Driver profiles (multi-user) state + control. Mock or real (UserManager). Listing/reading
+ * users works unprivileged; switching/adding/removing users are privileged system APIs, so on
+ * an unprivileged build those no-op (see [RealUsersRepo]). State is Compose-observable.
+ */
+interface UsersRepo {
+    val users: List<UserProfile>
+    val active: UserProfile?
+    fun switchTo(id: Int)
+    fun addUser(name: String)
+    fun removeUser(id: Int)
+    fun addGuest()
+}
+
+/**
  * App-wide connectivity provider. Picks the real system-service implementation when the
  * build enables it (bool/use_real_connectivity — overlaid to true in the platform build),
  * otherwise the mock. Call [init] once from MainActivity.
@@ -46,6 +73,8 @@ object Conn {
     lateinit var wifi: WifiRepo
         private set
     lateinit var bt: BtRepo
+        private set
+    lateinit var users: UsersRepo
         private set
 
     private var initialized = false
@@ -56,6 +85,7 @@ object Conn {
         val app = context.applicationContext
         wifi = if (useReal) RealWifiRepo(app) else MockWifiRepo()
         bt = if (useReal) RealBtRepo(app) else MockBtRepo()
+        users = if (useReal) RealUsersRepo(app) else MockUsersRepo()
         initialized = true
     }
 }

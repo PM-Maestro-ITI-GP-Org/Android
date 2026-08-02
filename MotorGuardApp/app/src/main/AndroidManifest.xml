@@ -27,6 +27,12 @@
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
 
+    <!-- Driver profiles (multi-user): list/switch/add/remove Android users. MANAGE_USERS +
+         INTERACT_ACROSS_USERS are signature|privileged — they only take effect on a platform-
+         signed build (see privapp-permissions). Unprivileged the app falls back to mock users. -->
+    <uses-permission android:name="android.permission.MANAGE_USERS" />
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS" />
+
     <!-- Voice overlay (owner D): always-on wake word + assistant session. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
