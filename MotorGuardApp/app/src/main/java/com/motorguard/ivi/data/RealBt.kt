@@ -6,6 +6,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothClass
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -16,13 +17,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * Real Bluetooth via BluetoothAdapter. Enable/disable + reading bonded devices work on a
- * privileged platform build. Connecting/unpairing a specific device needs profile proxies
- * / hidden APIs — left as TODO to finish on real hardware (the emulator has no BT).
+ * Real Bluetooth via BluetoothAdapter.
+ *
+ * Reading state and bonded devices needs only the runtime BLUETOOTH_CONNECT permission. The
+ * control paths — enable/disable, connect/disconnect, unpair — go through `@SystemApi` or hidden
+ * methods, so they take effect on the platform-signed build (BLUETOOTH_PRIVILEGED, see the
+ * privapp allow-list) and are swallowed everywhere else. Every one of them is wrapped, because
+ * "this build cannot do that" must never present as a crash.
+ *
+ * Pairing a *new* device is deliberately absent: it needs the system pairing dialog to show a
+ * passkey, which an app cannot draw. Settings' role here is managing devices already bonded.
  */
 @SuppressLint("MissingPermission")
 class RealBtRepo(context: Context) : BtRepo {
 
+    private val appContext = context.applicationContext
     private val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
 
     private var _enabled by mutableStateOf(adapter?.isEnabled == true)
@@ -79,15 +88,66 @@ class RealBtRepo(context: Context) : BtRepo {
         runCatching { if (enabled) adapter?.enable() else adapter?.disable() }
     }
 
-    // TODO(on-device): connect/disconnect a specific device via A2DP/Headset profile proxies.
+    /**
+     * Connect or disconnect a bonded device over A2DP (and Headset, so a phone gets both audio
+     * and calls rather than half a connection).
+     *
+     * `BluetoothA2dp.connect/disconnect` are `@SystemApi` and hidden from the SDK, so they are
+     * reached reflectively through a profile proxy. On the platform-signed build with
+     * BLUETOOTH_PRIVILEGED they work; anywhere else the call throws and is swallowed. The
+     * optimistic state update below is what keeps the UI honest in the meantime: the ACL
+     * broadcast corrects it either way, so a refused connect goes back on its own.
+     */
     override fun toggleConnect(name: String) {
-        connectedName = if (connectedName == name) null else name
+        val device = adapter?.bondedDevices?.firstOrNull { safeName(it) == name }
+        val disconnecting = connectedName == name
+        connectedName = if (disconnecting) null else name
+        if (device == null) return
+        listOf(BluetoothProfile.A2DP, BluetoothProfile.HEADSET).forEach { profile ->
+            withProxy(profile) { proxy ->
+                val method = if (disconnecting) "disconnect" else "connect"
+                proxy.javaClass
+                    .getMethod(method, BluetoothDevice::class.java)
+                    .invoke(proxy, device)
+            }
+        }
     }
 
-    // TODO(on-device): BluetoothDevice.removeBond() is a hidden API — call via reflection.
+    /**
+     * Forget a device. `removeBond()` is hidden, so it goes through reflection; the bond-state
+     * broadcast registered above is what removes the row once the platform agrees.
+     */
     override fun unpair(name: String) {
+        val device = adapter?.bondedDevices?.firstOrNull { safeName(it) == name }
+        runCatching {
+            device?.javaClass?.getMethod("removeBond")?.invoke(device)
+        }
+        // Drop it locally too: on an unprivileged build removeBond throws and no broadcast is
+        // coming, and a "forget" that visibly does nothing is worse than one that is optimistic.
         _paired.removeAll { it.name == name }
         if (connectedName == name) connectedName = null
+    }
+
+    /**
+     * Run [block] against a profile proxy, then hand the proxy straight back — these are a
+     * shared system resource and leaking one starves the next caller.
+     */
+    private fun withProxy(profile: Int, block: (BluetoothProfile) -> Unit) {
+        runCatching {
+            adapter?.getProfileProxy(
+                appContext,
+                object : BluetoothProfile.ServiceListener {
+                    override fun onServiceConnected(p: Int, proxy: BluetoothProfile) {
+                        runCatching { block(proxy) }
+                        runCatching { adapter.closeProfileProxy(p, proxy) }
+                        refresh()
+                    }
+
+                    override fun onServiceDisconnected(p: Int) = Unit
+                },
+                profile,
+            )
+        }
     }
 
     override fun rename(oldName: String, newName: String) {

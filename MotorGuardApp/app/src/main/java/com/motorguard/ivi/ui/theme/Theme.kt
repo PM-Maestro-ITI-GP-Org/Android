@@ -129,7 +129,9 @@ fun MotorGuardTheme(forceDark: Boolean? = null, content: @Composable () -> Unit)
         ThemeMode.AUTO -> isSystemInDarkTheme()
     }
     val base = if (dark) NightExtras else DayExtras
-    val seed = AlbumThemeState.seed
+    // Only follow the cover when the driver asked for it; otherwise every derived colour below
+    // falls back to their chosen accent, which is exactly the null-seed path.
+    val seed = AlbumThemeState.seed.takeIf { ThemeState.dynamicColor }
     val onSurface = if (dark) Tokens.Night.onBase else Tokens.Day.onBase
 
     // Surfaces take the album's hue but keep their own lightness — see tintSurface. Deriving

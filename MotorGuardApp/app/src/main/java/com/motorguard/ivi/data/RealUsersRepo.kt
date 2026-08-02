@@ -56,14 +56,28 @@ class RealUsersRepo(context: Context) : UsersRepo {
                     ?: "User $id"
                 val isGuest = runCatching { cls.getMethod("isGuest").invoke(info) as Boolean }
                     .getOrDefault(false)
-                UserProfile(id = id, name = name, isActive = id == me, isGuest = isGuest, color = i)
+                UserProfile(
+                    id = id,
+                    name = name,
+                    isActive = id == me,
+                    isGuest = isGuest,
+                    // Our colour choice for this system user, if the driver ever picked one.
+                    color = LocalStore.getInt(userColorKey(id), i),
+                )
             }
         }.getOrNull()
 
         if (listed.isNullOrEmpty()) {
             // Fallback: only the current user is visible without privilege.
             val name = runCatching { um?.userName }.getOrNull()?.ifBlank { null } ?: "Driver"
-            _users.add(UserProfile(id = me, name = name, isActive = true, color = 0))
+            _users.add(
+                UserProfile(
+                    id = me,
+                    name = name,
+                    isActive = true,
+                    color = LocalStore.getInt(userColorKey(me), 0),
+                ),
+            )
         } else {
             _users.addAll(listed)
         }
@@ -99,6 +113,28 @@ class RealUsersRepo(context: Context) : UsersRepo {
         }
         refresh()
     }
+
+    // TODO(on-device): UserManager.setUserName(int, String) needs MANAGE_USERS. The avatar colour
+    // has no platform equivalent at all, so it is kept next to the profile in LocalStore — the
+    // system owns who the users are, we own how they look in this UI.
+    override fun rename(id: Int, newName: String) {
+        val clean = newName.trim()
+        if (clean.isBlank()) return
+        runCatching {
+            UserManager::class.java
+                .getMethod("setUserName", Int::class.javaPrimitiveType, String::class.java)
+                .invoke(um, id, clean)
+        }
+        refresh()
+    }
+
+    override fun setColor(id: Int, color: Int) {
+        LocalStore.putInt(userColorKey(id), color)
+        val i = _users.indexOfFirst { it.id == id }
+        if (i >= 0) _users[i] = _users[i].copy(color = color)
+    }
+
+    private fun userColorKey(id: Int) = "${LocalStore.Keys.USERS}.color.$id"
 
     // TODO(on-device): UserManager.createGuest(context) / createUser(GUEST flag) needs MANAGE_USERS.
     override fun addGuest() {

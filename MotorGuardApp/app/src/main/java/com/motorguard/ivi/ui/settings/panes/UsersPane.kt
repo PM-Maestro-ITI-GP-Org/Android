@@ -2,6 +2,8 @@ package com.motorguard.ivi.ui.settings.panes
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -84,14 +86,53 @@ fun UsersPane() {
         }
     }
 
-    // Long-press: switch · remove.
+    // Long-press: rename · recolour · switch · remove. Everything about a profile is edited from
+    // one sheet, so there is a single place to look rather than a control per row.
     menuFor?.let { user ->
+        var draftName by remember(user.id) { mutableStateOf(user.name) }
         AlertDialog(
             onDismissRequest = { menuFor = null },
-            title = { Text(user.name) },
-            text = { Text(if (user.isActive) "Active profile" else if (user.isGuest) "Guest" else "Driver profile") },
+            title = { Text(if (user.isGuest) "Guest" else "Edit profile") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedTextField(
+                        value = draftName,
+                        onValueChange = { draftName = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                    )
+                    Text("Colour", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        repeat(AVATAR_COLORS) { i ->
+                            val c = avatarColor(i)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(c)
+                                    .border(
+                                        width = if (user.color == i) 3.dp else 0.dp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        shape = CircleShape,
+                                    )
+                                    .clickable {
+                                        repo.setColor(user.id, i)
+                                        menuFor = repo.users.firstOrNull { it.id == user.id }
+                                    },
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 Column {
+                    TextButton(
+                        onClick = {
+                            repo.rename(user.id, draftName)
+                            menuFor = null
+                        },
+                        enabled = draftName.isNotBlank() && draftName != user.name,
+                    ) { Text("Save name") }
                     if (!user.isActive) {
                         TextButton(onClick = { repo.switchTo(user.id); menuFor = null }) { Text("Switch to") }
                     }
@@ -204,6 +245,9 @@ private fun Avatar(user: UserProfile) {
         )
     }
 }
+
+/** How many distinct avatar colours the picker offers — the size of the palette below. */
+private const val AVATAR_COLORS = 4
 
 /** Rotates through theme colors so profiles are visually distinguishable (no hardcoded hex). */
 @Composable

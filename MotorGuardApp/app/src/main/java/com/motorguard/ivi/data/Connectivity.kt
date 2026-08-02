@@ -62,6 +62,12 @@ interface UsersRepo {
     fun addUser(name: String)
     fun removeUser(id: Int)
     fun addGuest()
+
+    /** Rename a profile. The platform build needs MANAGE_USERS for this; local profiles do not. */
+    fun rename(id: Int, newName: String)
+
+    /** Pick the avatar colour, as an index into the theme's accent list. */
+    fun setColor(id: Int, color: Int)
 }
 
 /**
@@ -85,7 +91,7 @@ object Conn {
         val app = context.applicationContext
         wifi = if (useReal) RealWifiRepo(app) else MockWifiRepo()
         bt = if (useReal) RealBtRepo(app) else MockBtRepo()
-        users = if (useReal) RealUsersRepo(app) else MockUsersRepo()
+        users = if (useReal) RealUsersRepo(app) else LocalUsersRepo()
         initialized = true
     }
 }

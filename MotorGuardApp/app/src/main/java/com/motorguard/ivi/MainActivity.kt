@@ -19,6 +19,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.motorguard.ivi.data.Conn
+import com.motorguard.ivi.data.LocalStore
+import com.motorguard.ivi.ui.theme.ThemeState
 import com.motorguard.ivi.data.media.AlbumArtLoader
 import com.motorguard.ivi.media.MediaConnection
 import com.motorguard.ivi.ui.theme.AlbumThemeState
@@ -60,6 +62,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Before Conn/ThemeState are touched: both restore their saved state from it.
+        LocalStore.init(this)
+        ThemeState.restore()
         Conn.init(this)
         maybeRequestConnectivityPermissions()
         setContentView(R.layout.activity_main)

@@ -56,19 +56,18 @@ import androidx.compose.ui.unit.sp
 import com.motorguard.ivi.ui.components.MgSwitch
 import com.motorguard.ivi.ui.components.SettingRow
 import com.motorguard.ivi.ui.theme.ThemeMode
+import androidx.compose.material.icons.filled.AutoAwesome
+import com.motorguard.ivi.ui.theme.PresetAccents
 import com.motorguard.ivi.ui.theme.ThemeState
 import kotlin.math.roundToInt
 
-private val presetAccents = listOf(
-    Color(0xFF56C9EF), // blue
-    Color(0xFF38D17F), // green
-    Color(0xFFF5B942), // amber
-    Color(0xFFA48CFF), // purple
-)
+// The swatch list lives in ThemeState (as PresetAccents) so the saved value and the dots that
+// claim to be "selected" can never come from two different lists.
 
 @Composable
 fun ThemePane() {
     val isAuto = ThemeState.mode == ThemeMode.AUTO
+    val dynamic = ThemeState.dynamicColor
     val systemDark = isSystemInDarkTheme()
     val effectiveDark = when (ThemeState.mode) {
         ThemeMode.DAY -> false
@@ -133,14 +132,31 @@ fun ThemePane() {
             },
         )
 
-        // Accent color (inline row with swatches)
+        // Dynamic colour — the album-art theming, made opt-in.
+        SettingRow(
+            title = "Dynamic color",
+            subtitle = if (dynamic) {
+                "Accent follows the album art"
+            } else {
+                "Use the accent chosen below"
+            },
+            leading = Icons.Filled.AutoAwesome,
+            onClick = { ThemeState.dynamicColor = !dynamic },
+            trailing = {
+                MgSwitch(checked = dynamic, onCheckedChange = { ThemeState.dynamicColor = it })
+            },
+        )
+
+        // Accent color (inline row with swatches). Still selectable while dynamic colour is on:
+        // the choice is what the app falls back to the moment it is switched off, or the music
+        // stops, so hiding it would make that fallback look arbitrary.
         SettingRow(
             title = "Accent color",
-            subtitle = "Ambient LED sync",
+            subtitle = if (dynamic) "Used when nothing is playing" else "Ambient LED sync",
             leading = Icons.Filled.Palette,
             trailing = {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    presetAccents.forEach { c ->
+                    PresetAccents.forEach { c ->
                         SwatchDot(
                             color = c,
                             selected = ThemeState.accent == c,
@@ -148,7 +164,7 @@ fun ThemePane() {
                         )
                     }
                     CustomSwatch(
-                        selected = ThemeState.accent !in presetAccents,
+                        selected = ThemeState.accent !in PresetAccents,
                         current = ThemeState.accent,
                         onClick = { showPicker = true },
                     )
