@@ -65,6 +65,14 @@ class RealWifiRepo(private val context: Context) : WifiRepo {
             val level = WifiManager.calculateSignalLevel(r.level, 4).coerceIn(0, 3)
             _networks.add(WifiNetwork(r.SSID, secured, level))
         }
+        // Scan results are gated behind location services being on, but the network we are
+        // actually joined to is not something the driver should have to take on faith. If the
+        // scan did not list it, add it so the pane always shows the connection it is reporting.
+        connectedSsid?.let { ssid ->
+            if (_networks.none { it.ssid == ssid }) {
+                _networks.add(0, WifiNetwork(ssid, secured = true, signal = 3))
+            }
+        }
         _known.clear()
         runCatching {
             wm?.configuredNetworks?.forEach { it.SSID?.trim('"')?.let(_known::add) }

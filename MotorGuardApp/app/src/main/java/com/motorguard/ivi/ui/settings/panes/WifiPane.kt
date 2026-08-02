@@ -61,6 +61,15 @@ fun WifiPane() {
 
         if (wifi.enabled) {
             SectionCard(title = "Networks") {
+                // Android returns no scan results at all while location services are off, whatever
+                // permissions the app holds. Saying so beats an empty card that reads as a bug.
+                if (wifi.networks.isEmpty()) {
+                    SettingRow(
+                        title = "No networks found",
+                        subtitle = "Nearby Wi-Fi needs location services switched on",
+                        leading = Icons.Filled.Wifi,
+                    )
+                }
                 wifi.networks.forEachIndexed { i, net ->
                     val connected = wifi.connectedSsid == net.ssid
                     val known = net.ssid in wifi.known
