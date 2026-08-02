@@ -27,6 +27,19 @@
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
 
+    <!-- Privileged radio control. These are signature|privileged: they are granted only to a
+         platform-signed app in /system/priv-app that is also listed in privapp-permissions
+         (see aosp/privapp_permissions_com.motorguard.ivi.xml — the two files must agree, or the
+         app is blocked at boot). Without them the direct calls are refused and the toggles fall
+         back to the system screens:
+           NETWORK_SETTINGS     — WifiManager.setWifiEnabled + connect/forget on Android 10+
+           OVERRIDE_WIFI_CONFIG — edit networks this app did not create
+           BLUETOOTH_PRIVILEGED — BluetoothAdapter.enable/disable, removeBond, A2DP connect
+         On a normal (unprivileged) build they are simply not granted, which is harmless. -->
+    <uses-permission android:name="android.permission.NETWORK_SETTINGS" />
+    <uses-permission android:name="android.permission.OVERRIDE_WIFI_CONFIG" />
+    <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
+
     <!-- Driver profiles (multi-user): list/switch/add/remove Android users. MANAGE_USERS +
          INTERACT_ACROSS_USERS are signature|privileged — they only take effect on a platform-
          signed build (see privapp-permissions). Unprivileged the app falls back to mock users. -->
