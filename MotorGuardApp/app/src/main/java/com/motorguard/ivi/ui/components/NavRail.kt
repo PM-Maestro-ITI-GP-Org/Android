@@ -37,18 +37,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.motorguard.ivi.MainActivity.Tab
-import com.motorguard.ivi.ui.theme.ThemeState
+import com.motorguard.ivi.ui.theme.MotorGuard
 import com.motorguard.ivi.ui.theme.Tokens
 
-// The rail is always dark (independent of Day/Night), so it reads like the reference
-// even in light mode. Background/dim are pinned to the night palette; the accent follows
-// the user's selected accent (ThemeState) via railAccent() so the picker updates the rail.
-private val RailBg = Tokens.Night.railBg
+// The rail reads dark even in light mode, like the reference. Its background now comes from the
+// theme so it picks up the album hue with the rest of the app; the dim foreground stays pinned.
 private val RailActiveBg = Color.White.copy(alpha = 0.10f)
 private val RailDim = Tokens.Night.onBaseDim
-
-@Composable
-private fun railAccent(): Color = ThemeState.accent
 
 private data class RailItem(
     val tab: Tab,
@@ -79,7 +74,7 @@ fun NavRail(
         modifier = Modifier
             .fillMaxHeight()
             .width(92.dp)
-            .background(RailBg),
+            .background(MotorGuard.colors.railBg),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.weight(1f))
@@ -125,7 +120,7 @@ private fun RailButton(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = if (selected) railAccent() else RailDim,
+            tint = if (selected) MotorGuard.colors.accent else RailDim,
             modifier = Modifier.size(30.dp),
         )
     }
@@ -137,7 +132,7 @@ private fun BrandMark() {
         Icon(
             imageVector = Icons.Filled.Shield,
             contentDescription = "Motor Guard",
-            tint = railAccent(),
+            tint = MotorGuard.colors.accent,
             modifier = Modifier.size(26.dp),
         )
         Spacer(Modifier.height(6.dp))

@@ -15,7 +15,17 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.motorguard.ivi.data.Conn
+import com.motorguard.ivi.data.media.AlbumArtLoader
+import com.motorguard.ivi.media.MediaConnection
+import com.motorguard.ivi.ui.theme.AlbumThemeState
+import com.motorguard.ivi.ui.theme.extractAlbumSeed
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import com.motorguard.ivi.ui.components.NavRail
 import com.motorguard.ivi.ui.components.StatusBar
 import com.motorguard.ivi.ui.diagnostics.DiagnosticsFragment
@@ -41,6 +51,9 @@ class MainActivity : AppCompatActivity() {
     companion object {
         /** Voice overlay routes here: putExtra(EXTRA_TAB, Tab.MEDIA.name). */
         const val EXTRA_TAB = "com.motorguard.ivi.EXTRA_TAB"
+
+        /** Big enough for Palette to find a stable dominant colour, small enough to be cheap. */
+        private const val ARTWORK_PX = 256
     }
 
     private var selected by mutableStateOf(Tab.HOME)
@@ -67,6 +80,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (savedInstanceState == null) show(tabFromIntent(intent) ?: Tab.HOME)
+
+        followAlbumArtwork()
+    }
+
+    /**
+     * Keep the app-wide accent in step with the playing track.
+     *
+     * Driven from the single Activity rather than from a composable, because the accent applies
+     * to every surface — including ones that are not composed at the time the track changes. One
+     * observer, one artwork load, one palette extraction; [MotorGuardTheme] reads the result.
+     */
+    private fun followAlbumArtwork() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                MediaConnection.get(this@MainActivity).state
+                    .map { it.track }
+                    .distinctUntilChangedBy { it?.id }
+                    .collect { track ->
+                        val artwork = AlbumArtLoader.load(this@MainActivity, track, ARTWORK_PX)
+                        AlbumThemeState.setArtwork(artwork?.let { extractAlbumSeed(it) })
+                    }
+            }
+        }
     }
 
     /** The voice overlay brings a tab forward by re-launching us with EXTRA_TAB. */
@@ -117,6 +153,12 @@ class MainActivity : AppCompatActivity() {
         }.toTypedArray()
         ActivityCompat.requestPermissions(this, perms, 1001)
     }
+
+    /**
+     * Switch tabs from inside a fragment — the Home now-playing card opening Media, per
+     * docs/03-home.md. Fragments reach this with `(activity as? MainActivity)?.openTab(...)`.
+     */
+    fun openTab(tab: Tab) = show(tab)
 
     private fun show(tab: Tab) {
         // Re-tapping the current tab is a no-op (never reload the fragment).
