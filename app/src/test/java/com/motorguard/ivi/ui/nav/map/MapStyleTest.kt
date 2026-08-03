@@ -1,6 +1,7 @@
 package com.motorguard.ivi.ui.nav.map
 
 import com.google.gson.JsonParser
+import com.motorguard.ivi.ui.theme.Tokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,7 +20,7 @@ class MapStyleTest {
     fun `day style is valid json with the expected shape`() = assertValidStyle(dark = false)
 
     private fun assertValidStyle(dark: Boolean) {
-        val root = JsonParser.parseString(MapStyle.json(dark)).asJsonObject
+        val root = JsonParser.parseString(styleJson(dark)).asJsonObject
 
         assertEquals(8, root["version"].asInt)
         assertTrue(root["glyphs"].asString.contains("{fontstack}"))
@@ -51,7 +52,7 @@ class MapStyleTest {
         val previous = java.util.Locale.getDefault()
         try {
             java.util.Locale.setDefault(java.util.Locale.forLanguageTag("ar-EG-u-nu-arab"))
-            val json = MapStyle.json(dark = true)
+            val json = styleJson(dark = true)
             val hexes = Regex("#[0-9A-Fa-f]{6}").findAll(json).count()
             assertTrue("expected ASCII hex colours, found $hexes", hexes >= 10)
             // Nothing that looks like a colour may contain a non-ASCII digit.
@@ -64,4 +65,15 @@ class MapStyleTest {
             java.util.Locale.setDefault(previous)
         }
     }
+
+    /**
+     * Production passes the live surface and accent, so the map follows the album tint. These
+     * assertions are about the style's shape rather than its palette, so the untinted [Tokens]
+     * pair stands in — the same call with the theme sitting at its default.
+     */
+    private fun styleJson(dark: Boolean): String = MapStyle.json(
+        dark = dark,
+        base = if (dark) Tokens.Night.base else Tokens.Day.base,
+        accent = if (dark) Tokens.Night.accent else Tokens.Day.accent,
+    )
 }
