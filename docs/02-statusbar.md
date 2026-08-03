@@ -11,7 +11,7 @@ Top bar, right-aligned system indicators. Read-only at skeleton stage.
 | Signal | none (indicator) | telephony state |
 | Wi-Fi | (optional) open Settings → Wi-Fi | `WifiManager` |
 | Bluetooth | (optional) open Settings → Bluetooth | `BluetoothAdapter` |
-| Avatar | (optional) driver profile menu | user manager |
+| Avatar | none (indicator) | static |
 | Clock | none | system time, 24/12h per locale |
 
 - Indicators update from broadcasts / state flows; no polling.
