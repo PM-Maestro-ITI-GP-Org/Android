@@ -14,19 +14,6 @@ enum class BtKind { PHONE, AUDIO, WEARABLE }
 data class BtDevice(val name: String, val kind: BtKind)
 
 /**
- * An Android user (driver profile) as shown in Settings. [id] is the platform user id,
- * [initial] is a single letter for the avatar, [color] 0..n picks an accent from the theme.
- */
-data class UserProfile(
-    val id: Int,
-    val name: String,
-    val isActive: Boolean,
-    val isGuest: Boolean = false,
-    val initial: String = name.trim().firstOrNull()?.uppercase() ?: "?",
-    val color: Int = 0,
-)
-
-/**
  * Wi-Fi state + control. Implemented by [MockWifiRepo] (emulator / unprivileged) and
  * [RealWifiRepo] (WifiManager on a platform-signed build). State properties are
  * Compose-observable, so Settings recomposes on change.
@@ -54,26 +41,6 @@ interface BtRepo {
 }
 
 /**
- * Driver profiles (multi-user) state + control. Mock or real (UserManager). Listing/reading
- * users works unprivileged; switching/adding/removing users are privileged system APIs, so on
- * an unprivileged build those no-op (see [RealUsersRepo]). State is Compose-observable.
- */
-interface UsersRepo {
-    val users: List<UserProfile>
-    val active: UserProfile?
-    fun switchTo(id: Int)
-    fun addUser(name: String)
-    fun removeUser(id: Int)
-    fun addGuest()
-
-    /** Rename a profile. The platform build needs MANAGE_USERS for this; local profiles do not. */
-    fun rename(id: Int, newName: String)
-
-    /** Pick the avatar colour, as an index into the theme's accent list. */
-    fun setColor(id: Int, color: Int)
-}
-
-/**
  * App-wide connectivity provider. Picks the real system-service implementations when the build
  * enables them (bool/use_real_connectivity — overlaid to true in the platform build), otherwise
  * the mock ones. Call [init] once from MainActivity.
@@ -89,8 +56,6 @@ object Conn {
     var wifi: WifiRepo by mutableStateOf(MockWifiRepo())
         private set
     var bt: BtRepo by mutableStateOf(MockBtRepo())
-        private set
-    var users: UsersRepo by mutableStateOf(LocalUsersRepo())
         private set
 
     /** True when the real WifiManager/BluetoothAdapter implementations are in use. */
@@ -128,18 +93,15 @@ object Conn {
             if (real) {
                 wifi = RealWifiRepo(appContext)
                 bt = RealBtRepo(appContext)
-                users = RealUsersRepo(appContext)
             } else {
                 wifi = MockWifiRepo()
                 bt = MockBtRepo()
-                users = LocalUsersRepo()
             }
         }.isSuccess
         if (!ok && real) {
             useReal = false
             wifi = MockWifiRepo()
             bt = MockBtRepo()
-            users = LocalUsersRepo()
         }
     }
 }

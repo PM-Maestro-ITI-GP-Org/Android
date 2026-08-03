@@ -35,7 +35,8 @@ import java.util.Locale
 /**
  * Top status bar. Right-aligned indicators: signal · wifi · bluetooth · avatar · date ·
  * clock (see docs/02-statusbar.md). Read-only for now — wire live telephony / Wi-Fi /
- * Bluetooth / user state later. Date + clock are live.
+ * Bluetooth later. The avatar is a static glyph: there are no driver profiles to switch
+ * between. Date + clock are live.
  */
 @Composable
 fun StatusBar(modifier: Modifier = Modifier) {

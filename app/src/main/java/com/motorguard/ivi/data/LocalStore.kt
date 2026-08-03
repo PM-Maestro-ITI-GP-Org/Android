@@ -4,8 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * Everything the driver chose that should still be true after a reboot: theme, accent, and the
- * driver profiles.
+ * Everything the driver chose that should still be true after a reboot: theme and accent.
  *
  * SharedPreferences rather than DataStore on purpose. These are a handful of scalars written on
  * a tap and read once at startup; DataStore would add a dependency and make every read a
@@ -56,8 +55,6 @@ object LocalStore {
         const val THEME_MODE = "theme.mode"
         const val THEME_ACCENT = "theme.accent"
         const val THEME_DYNAMIC = "theme.dynamic"
-        const val USERS = "users.profiles"
-        const val USERS_ACTIVE = "users.active"
         const val WIFI_KNOWN = "wifi.known"
         const val USE_REAL = "conn.useReal"
         const val DIRECT_CONTROL = "conn.directOnly"
