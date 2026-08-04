@@ -1,5 +1,6 @@
-# Vendored binary — fetched, never committed (see aosp/prebuilts/README.md)
+# Vendored binaries — fetched, never committed (see aosp/prebuilts/README.md)
 aosp/prebuilts/*.aar
+aosp/prebuilts/*.jar
 
 # Soong/AOSP build output, if this dir is ever used as a build cwd
 /out/

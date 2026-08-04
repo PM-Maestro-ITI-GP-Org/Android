@@ -16,5 +16,7 @@ PRODUCT_PACKAGES += MotorGuard
 # because on an image build you rebuild instead of poking a running device.)
 
 # --- Hide the Automotive system bars (optional, for the fullscreen kiosk look) ---
-# Enable the immersive CarSystemUI overlay in the image:
-#     PRODUCT_PACKAGES += com.android.car.systemui.systembar.persistency.immersive
+# Enable the immersive CarSystemUI overlay in the image. The module name is the Soong
+# module (packages/apps/Car/SystemUI/samples/SystemBarPersistencyImmersive/Android.bp),
+# NOT the overlay package id used at runtime by `cmd overlay enable`.
+#     PRODUCT_PACKAGES += CarSystemUISystemBarPersistcyImmersive

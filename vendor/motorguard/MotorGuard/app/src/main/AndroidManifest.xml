@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.motorguard.ivi">
+
+    <!-- Map tiles / routing / search are plain HTTPS calls (ui/nav/README.md);
+         INTERNET was missing from the team manifest — without it the MapLibre
+         map cannot load any tiles. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Marks the app as an Automotive app so it shows in the AAOS launcher grid. -->
     <uses-feature

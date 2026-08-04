@@ -35,6 +35,8 @@ import java.util.Collections
 object AlbumArtLoader {
 
     /** Bitmaps are large; cap by bytes rather than count. ~8 MB holds a good few covers. */
+    private const val CACHE_BYTES = 8 * 1024 * 1024
+
     private val cache = object : LruCache<String, Bitmap>(CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
@@ -171,6 +173,4 @@ object AlbumArtLoader {
         cache.evictAll()
         misses.clear()
     }
-
-    private const val CACHE_BYTES = 8 * 1024 * 1024
 }

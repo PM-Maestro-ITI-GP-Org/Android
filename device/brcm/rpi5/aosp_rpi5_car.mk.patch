@@ -1,0 +1,18 @@
+diff --git a/aosp_rpi5_car.mk b/aosp_rpi5_car.mk
+index f9838bb..6111867 100644
+--- a/aosp_rpi5_car.mk
++++ b/aosp_rpi5_car.mk
+@@ -103,6 +103,13 @@ PRODUCT_COPY_FILES += \
+ PRODUCT_PACKAGES += \
+     android.hardware.automotive.vehicle@V3-default-service
+ 
++# Motor Guard IVI launcher
++$(call inherit-product, vendor/motorguard/MotorGuard/aosp/motorguard.mk)
++
++# Fullscreen kiosk: bake the immersive system-bar policy (bars stay swipe-revealable).
++PRODUCT_PACKAGES += \
++    CarSystemUISystemBarPersistcyImmersive
++
+ # Device identifier. This must come after all inclusions.
+ PRODUCT_DEVICE := rpi5
+ PRODUCT_NAME := aosp_rpi5_car
