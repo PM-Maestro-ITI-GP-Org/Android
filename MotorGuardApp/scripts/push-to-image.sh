@@ -2,7 +2,7 @@
 # Push Motor Guard onto an already-flashed AOSP image, without rebuilding the image.
 #
 # Why re-signing is not optional: the app asks for signature|privileged permissions
-# (NETWORK_SETTINGS, BLUETOOTH_PRIVILEGED, MANAGE_USERS...) and declares itself HOME. The
+# (NETWORK_SETTINGS, OVERRIDE_WIFI_CONFIG, BLUETOOTH_PRIVILEGED) and declares itself HOME. The
 # platform only grants those to an APK signed with the *platform key* AND sitting in
 # /system/priv-app AND listed in privapp-permissions. A Gradle APK is signed with the debug
 # key, so `adb install`-ing it gives you the UI with none of the privileges — the Wi-Fi and
