@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.os.storage.StorageManager
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import com.motorguard.ivi.data.media.MediaSourceId
@@ -35,9 +37,36 @@ internal object MediaStoreQuery {
     fun volumeNames(context: Context): Set<String> =
         runCatching { MediaStore.getExternalVolumeNames(context) }.getOrDefault(emptySet())
 
-    /** Volumes that are not the built-in storage — i.e. USB sticks and SD cards. */
-    fun removableVolumeNames(context: Context): Set<String> =
-        volumeNames(context) - MediaStore.VOLUME_EXTERNAL_PRIMARY
+    /**
+     * Volumes that are not the built-in storage — i.e. USB sticks and SD cards.
+     *
+     * Asks StorageManager first and only then falls back to MediaStore. The two do not agree at
+     * the moment a stick is plugged in: StorageManager reflects what vold has actually mounted,
+     * whereas [MediaStore.getExternalVolumeNames] lists what MediaProvider has finished *indexing*.
+     * A freshly mounted drive is mounted long before it is scanned, so a plug-in event that reads
+     * MediaStore sees nothing and the tab stays on "Insert USB drive" — which is what happened on
+     * the Pi. Reading the mount state directly makes the tab appear as soon as the drive does.
+     *
+     * `getMediaStoreVolumeName` is the officially supported bridge between the two worlds, and it
+     * arrived in API 30; older platforms keep the MediaStore-only answer.
+     */
+    fun removableVolumeNames(context: Context): Set<String> {
+        val fromStorage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                context.getSystemService(StorageManager::class.java)
+                    ?.storageVolumes
+                    ?.filter { it.isRemovable && it.state == Environment.MEDIA_MOUNTED }
+                    ?.mapNotNull { it.mediaStoreVolumeName }
+                    ?.toSet()
+                    .orEmpty()
+            }.getOrDefault(emptySet())
+        } else {
+            emptySet()
+        }
+        // Union rather than preference: a stick that vold has forgotten but MediaStore still has
+        // rows for is worth listing, and vice versa. VOLUME_EXTERNAL_PRIMARY is never removable.
+        return (fromStorage + volumeNames(context)) - MediaStore.VOLUME_EXTERNAL_PRIMARY
+    }
 
     /**
      * Query audio on [volumes]. Returns empty on a missing permission or an unreadable volume

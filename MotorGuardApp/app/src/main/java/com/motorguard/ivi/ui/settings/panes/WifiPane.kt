@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -57,6 +58,19 @@ fun WifiPane() {
                     )
                 },
             )
+        }
+
+        // A refused password is otherwise silent: the row simply never says "Connected" and the
+        // driver is left guessing whether they mistyped or the network is out of range.
+        wifi.lastError?.let { error ->
+            SectionCard {
+                SettingRow(
+                    title = error,
+                    subtitle = "Tap to dismiss, then try again",
+                    leading = Icons.Filled.Warning,
+                    onClick = { wifi.clearError() },
+                )
+            }
         }
 
         if (wifi.enabled) {

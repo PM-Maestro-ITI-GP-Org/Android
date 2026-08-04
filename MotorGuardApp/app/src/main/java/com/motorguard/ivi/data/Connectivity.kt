@@ -23,10 +23,20 @@ interface WifiRepo {
     val connectedSsid: String?
     val known: List<String>
     val networks: List<WifiNetwork>
+
+    /**
+     * Why the last join failed, or null. A wrong password is otherwise invisible: the platform
+     * saves the configuration the moment it is added and then quietly disables it, so without
+     * this the pane would show the network as "Saved" and the driver would have no idea the
+     * password was rejected.
+     */
+    val lastError: String?
+
     fun setEnabled(enabled: Boolean)
     fun connect(ssid: String, password: String? = null)
     fun disconnect()
     fun forget(ssid: String)
+    fun clearError()
 }
 
 /** Bluetooth state + control. Mock or real (BluetoothAdapter). */

@@ -12,7 +12,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
@@ -39,7 +38,16 @@ class RealBtRepo(context: Context) : BtRepo {
     override var connectedName by mutableStateOf<String?>(null)
         private set
 
-    private val _paired = mutableStateListOf<BtDevice>()
+    /**
+     * Whole-list state rather than a [androidx.compose.runtime.mutableStateListOf].
+     *
+     * A SnapshotStateList notifies on every mutation, so the old `clear()` + re-add was two
+     * observable writes with an empty list in between, and Compose could recompose against that
+     * empty middle. A connected phone emits ACL and bond broadcasts in bursts, each one calling
+     * [refresh] — which is why the paired list visibly flickered on the Pi. Assigning a finished
+     * list once cannot be observed half-applied.
+     */
+    private var _paired by mutableStateOf<List<BtDevice>>(emptyList())
     override val paired: List<BtDevice> get() = _paired
 
     init {
@@ -70,11 +78,14 @@ class RealBtRepo(context: Context) : BtRepo {
 
     private fun refresh() {
         _enabled = adapter?.isEnabled == true
-        _paired.clear()
-        adapter?.bondedDevices?.forEach { d ->
-            val name = safeName(d) ?: return@forEach
-            _paired.add(BtDevice(name, kindOf(d)))
-        }
+        val bonded = runCatching { adapter?.bondedDevices.orEmpty() }.getOrDefault(emptySet())
+            .mapNotNull { d -> safeName(d)?.let { BtDevice(it, kindOf(d)) } }
+            // bondedDevices has no defined order, so it can come back permuted between calls and
+            // rewrite every row for no reason. A stable order makes an unchanged set compare equal.
+            .sortedBy { it.name }
+        // Bursts of ACL broadcasts mostly say nothing new; assigning only on a real change keeps
+        // them from recomposing the pane.
+        if (_paired != bonded) _paired = bonded
     }
 
     private fun kindOf(d: BluetoothDevice): BtKind = when (d.bluetoothClass?.majorDeviceClass) {
@@ -146,7 +157,7 @@ class RealBtRepo(context: Context) : BtRepo {
         }
         // Drop it locally too: on an unprivileged build removeBond throws and no broadcast is
         // coming, and a "forget" that visibly does nothing is worse than one that is optimistic.
-        _paired.removeAll { it.name == name }
+        _paired = _paired.filterNot { it.name == name }
         if (connectedName == name) connectedName = null
     }
 

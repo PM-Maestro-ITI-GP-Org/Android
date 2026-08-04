@@ -30,6 +30,10 @@ class MockWifiRepo : WifiRepo {
         WifiNetwork("Neighbor_2.4", secured = true, signal = 1),
     )
 
+    // The mock has no radio to reject a password, so a join here never fails.
+    override val lastError: String? = null
+    override fun clearError() = Unit
+
     override fun setEnabled(enabled: Boolean) { _enabled = enabled }
 
     override fun connect(ssid: String, password: String?) {
