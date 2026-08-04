@@ -6,12 +6,49 @@
         android:name="android.hardware.type.automotive"
         android:required="false" />
 
-
     <!-- Voice overlay (owner D): always-on wake word + assistant session. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!--
+      Always-on capture, the working route.
+
+      The problem: AudioPolicy applies the RECORD_AUDIO foreground restriction to
+      background capture. AudioService logs "rec start ... not silenced", flips it
+      to "silenced" once the app settles into the background, and
+      AudioRecord.read() then returns 0 forever with no error at any layer. The
+      appop cannot be forced past this by hand, because its UID mode is derived
+      from procstate rather than being independently settable.
+
+      The fix: run the detector inside a microphone-type foreground service
+      (WakeWordService). A foreground service is never in the background
+      procstate, so the restriction never applies and VOICE_RECOGNITION stays
+      live. POST_NOTIFICATIONS is required because a foreground service must show
+      a notification.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Kept, but NOT the route in use.
+
+      HOTWORD capture is exempt from the foreground restriction and does deliver
+      frames, but on this board it delivers synthetic noise rather than
+      microphone audio. Measured: a C-Media dongle and a Logitech headset gave
+      statistically identical streams (sigma ~7700, peak ~3.3 sigma, flat mel
+      spectrum ~80-89 across all bins), and the level scaled by exactly sqrt(2)
+      between mono and stereo, which means independent noise per channel. A real
+      duplicated mono capsule cannot do that. The Pi 5 has no DSP hotword path
+      behind the API, so the platform hands back filler.
+
+      Left declared so the source can be re-tested on hardware that has a real
+      hotword path. It only takes effect as a priv-app also listed in
+      /system_ext/etc/permissions/privapp-permissions-motorguard.xml.
+    -->
+    <uses-permission android:name="android.permission.CAPTURE_AUDIO_HOTWORD" />
 
     <application
         android:allowBackup="true"
@@ -59,6 +96,44 @@
             android:name=".ui.voice.VoiceSessionService"
             android:permission="android.permission.BIND_VOICE_INTERACTION"
             android:exported="true" />
+
+        <!--
+          Hosts the wake-word detector. VoiceOverlayService cannot do this itself:
+          it is bound by the platform rather than started, so it cannot call
+          startForeground() on its own.
+
+          foregroundServiceType is mandatory from Android 14. Without it
+          startForeground() throws, and "microphone" is specifically the type that
+          exempts the process from the background capture restriction.
+        -->
+        <service
+            android:name=".ui.voice.WakeWordService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
+
+        <service
+            android:name=".ui.voice.OfflineRecognitionService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
+
+        <service
+            android:name=".ui.voice.PiperTtsService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.TTS_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech.tts"
+                android:resource="@xml/tts_engine" />
+        </service>
 
     </application>
 </manifest>

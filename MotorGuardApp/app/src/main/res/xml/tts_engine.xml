@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declared via <meta-data android:name="android.speech.tts"> on the service.
+  No settings activity: voice, rate and pitch are fixed for this build, and a
+  headless car target has nowhere to show a preferences screen anyway.
+-->
+<tts-engine xmlns:android="http://schemas.android.com/apk/res/android" />

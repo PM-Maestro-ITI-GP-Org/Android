@@ -14,14 +14,19 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
+        
 
         // The reasoning core is native C++ shared with the Linux build.
         ndk {
             // arm64 for the Pi/device, x86_64 so it still runs on the emulator.
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
         externalNativeBuild {
-            cmake { cppFlags += "-std=c++17" }
+            cmake {
+                cppFlags += "-std=c++17"
+                arguments += listOf("-DCMAKE_BUILD_TYPE=Release")
+                targets += "motorguardvoice"
+            }
         }
     }
 

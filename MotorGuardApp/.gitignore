@@ -9,3 +9,9 @@
 local.properties
 /app/build
 .idea/
+
+# Vendored third-party native trees — clone these, don't commit them:
+#   git clone --depth 1 https://github.com/ggerganov/whisper.cpp
+#   git clone --depth 1 https://github.com/espeak-ng/espeak-ng
+/app/src/main/cpp/whisper.cpp/
+/app/src/main/cpp/espeak-ng/
