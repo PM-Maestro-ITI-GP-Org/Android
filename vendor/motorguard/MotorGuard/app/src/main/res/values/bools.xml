@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Emulator / standalone build uses mock connectivity (unprivileged, no real radios).
-         The AOSP/platform build overlays this to true to use the real WifiManager /
-         BluetoothAdapter implementations. -->
-    <bool name="use_real_connectivity">false</bool>
-</resources>

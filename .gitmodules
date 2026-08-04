@@ -1,0 +1,4 @@
+[submodule "vendor/motorguard/MotorGuard/MotorGuard_Application/app"]
+	path = vendor/motorguard/MotorGuard/MotorGuard_Application/app
+	url = git@github.com:PM-Maestro-ITI-GP-Org/Android.git
+	branch = media-nav-settings-voice

@@ -2,25 +2,31 @@
 
 This branch is the **Soong drop-in**: Motor Guard laid out to be deployed into an
 AOSP / Raspberry Pi (KonstaKANG) tree and built with `m MotorGuard` as a platform-signed,
-privileged AAOS launcher. There is no Gradle here — `Android.bp` is the only build file.
+privileged AAOS launcher. There is no Gradle build here — `Android.bp` is the only build file.
 
-> **The app source lives on `media-nav-settings-voice`.** That branch is where you edit code
-> and iterate with Gradle + the emulator. This branch is the packaged form of the same commit.
-> Changes flow one way: dev branch → here. See *Keeping this branch in sync* below.
+> **The app source is a submodule.** `vendor/motorguard/MotorGuard/MotorGuard_Application/app/`
+> is a git submodule of `PM-Maestro-ITI-GP-Org/Android`, checked out to a branch of your choice
+> (default `media-nav-settings-voice`). That branch holds the **final application**. `deploy.sh`
+> fetches and checks out its tip, and the blue print reads the sources from
+> `app/MotorGuardApp/app/src/main/...`, ignoring the Gradle files and everything else.
+> When your friends ship a new final build on a new branch, set `APP_BRANCH` in `deploy.conf`
+> and re-run `./deploy.sh` — nothing else to change.
 
 ## Layout
 
 The tree mirrors the AOSP hierarchy so `deploy.sh` can drop it in verbatim:
 
 ```
-deploy.sh                     one-command installer: copies files + applies patch + fetches prebuilts
-vendor/motorguard/MotorGuard/ the drop-in package (Android.bp, app/, aosp/, .gitignore)
-  Android.bp                  Soong modules — the whole build (paths are relative to this file)
-  app/src/main/               the app: java/ res/ assets/ cpp/ AndroidManifest.xml
-  aosp/motorguard.mk          product makefile snippet (PRODUCT_PACKAGES += MotorGuard)
-  aosp/privapp_permissions_*  privileged-permission allow-list → /system/etc/permissions
-  aosp/res-platform/          overlay flipping use_real_connectivity → true (real radios)
-  aosp/prebuilts/fetch.sh     downloads + SHA256-verifies the 17 prebuilt AARs/jars (never committed)
+deploy.conf                    the ONLY file you edit per release: APP_BRANCH + AOSP_ROOT
+deploy.sh                      one command: select app branch → copy → patch → fetch prebuilts
+vendor/motorguard/MotorGuard/  the drop-in package (blue print + glue)
+  MotorGuard_Application/
+    app/                       git submodule → app source at app/MotorGuardApp/app/src/main/
+    Android.bp                 the blue print — all Soong modules (paths relative to this file)
+  motorguard.mk                product makefile snippet (PRODUCT_PACKAGES += MotorGuard)
+  prebuilts/fetch.sh           downloads + SHA256-verifies the 17 prebuilt AARs/jars (never committed)
+  privapp_permissions_com.motorguard.ivi.xml   privileged allow-list → /system/etc/permissions
+  res-platform/                overlay flipping use_real_connectivity → true (real radios)
 device/brcm/rpi5/aosp_rpi5_car.mk.patch   device integration patch (applied by deploy.sh)
 ```
 
@@ -45,10 +51,14 @@ instead of compiling from source.
    (A shallow `--depth=1` clone plus `remove_projects.xml` shrinks the download — see the
    raspberry-vanilla README. `adb root` on the Pi requires `userdebug`.)
 
-2. **Deploy Motor Guard into the tree** — one command, run from this repo:
+2. **Configure and deploy** — set two values in `deploy.conf`, then one command:
 
    ```bash
-   ./deploy.sh /path/to/aosp   # copies vendor/, applies the device patch, downloads prebuilts
+   # deploy.conf
+   APP_BRANCH=final-app            # branch holding the final application (friends' branch)
+   AOSP_ROOT=/path/to/aosp         # your AOSP 15 tree
+   ./deploy.sh                     # selects app branch, copies the drop-in, patches device, fetches prebuilts
+   # override on the CLI: ./deploy.sh /path/to/aosp final-app
    ```
 
    That does the equivalent of the manual steps in the *Manual install* section below.
@@ -84,15 +94,16 @@ instead of compiling from source.
 ## Manual install (what deploy.sh automates)
 
 ```bash
-cp -r vendor/motorguard/MotorGuard /path/to/aosp/vendor/motorguard/
-git -C /path/to/aosp/device/brcm/rpi5 apply /path/to/this/repo/device/brcm/rpi5/aosp_rpi5_car.mk.patch
-/path/to/aosp/vendor/motorguard/MotorGuard/aosp/prebuilts/fetch.sh
+git clone --recurse-submodules -b media-nav-settings-voice_forAAOS git@github.com:PM-Maestro-ITI-GP-Org/Android.git dropin
+cp -r dropin/vendor/motorguard/MotorGuard /path/to/aosp/vendor/motorguard/
+git -C /path/to/aosp/device/brcm/rpi5 apply dropin/device/brcm/rpi5/aosp_rpi5_car.mk.patch
+/path/to/aosp/vendor/motorguard/MotorGuard/prebuilts/fetch.sh
 ```
 
 The device patch adds to `device/brcm/rpi5/aosp_rpi5_car.mk`:
 
 ```make
-$(call inherit-product, vendor/motorguard/MotorGuard/aosp/motorguard.mk)
+$(call inherit-product, vendor/motorguard/MotorGuard/motorguard.mk)
 PRODUCT_PACKAGES += \
     CarSystemUISystemBarPersistcyImmersive
 ```
@@ -100,13 +111,15 @@ PRODUCT_PACKAGES += \
 ## Voice subsystem (Vega) prerequisites
 
 - **Prebuilts** — the 17 AARs/jars (ONNX Runtime, media3, MapLibre, okhttp/okio, …) are never
-  committed; `aosp/prebuilts/fetch.sh` downloads each and SHA256-verifies it (idempotent:
+  committed; `prebuilts/fetch.sh` downloads each and SHA256-verifies it (idempotent:
   re-running skips files that already match). Without them soong fails to resolve
   `ai.onnxruntime.*`, `androidx.media3.*` and `org.maplibre.*`.
-- **SQLite** — `app/src/main/cpp/sqlite3.c` + `sqlite3.h` (the official amalgamation) are
-  committed and compiled straight in, because the platform does not expose libsqlite to apps.
-- **Wake-word models** — the `*.onnx` files under `app/src/main/assets/wakeword/` are committed
-  and kept uncompressed via `aaptflags: ["-0 .onnx"]`.
+- **SQLite** — `app/MotorGuardApp/app/src/main/cpp/sqlite3.c` + `sqlite3.h` (the official
+  amalgamation) are committed in the app submodule and compiled straight in, because the
+  platform does not expose libsqlite to apps.
+- **Wake-word models** — the `*.onnx` files under
+  `app/MotorGuardApp/app/src/main/assets/wakeword/` are kept uncompressed via
+  `aaptflags: ["-0 .onnx"]` (ONNX Runtime mmaps them).
 
 ## Why it has to be built this way
 
@@ -117,15 +130,19 @@ three of: the app being platform-signed, shipping in `/system/priv-app`, and bei
 privapp allow-list. `adb install` gives you none of that.
 
 `Conn.init()` reads `bool/use_real_connectivity`. The Gradle build leaves it `false` (mock repos);
-`aosp/res-platform` flips it `true` in this build, selecting `RealWifiRepo` / `RealBtRepo`. There
-is also a runtime override in Settings ▸ System, added because the Gradle APK cannot carry this
-overlay.
+`res-platform` flips it `true` in this build, selecting `RealWifiRepo` / `RealBtRepo`. There is
+also a runtime override in Settings ▸ System, added because the Gradle APK cannot carry this overlay.
 
 > **The manifest and the allow-list must stay in sync.** A privileged permission needs to be BOTH
 > requested in `AndroidManifest.xml` and allow-listed in
-> `aosp/privapp_permissions_com.motorguard.ivi.xml`. If a permission is allow-listed but not
-> requested it silently does nothing; if one is requested but not allow-listed the platform
-> **refuses to boot the app at all**. Change one, change the other.
+> `privapp_permissions_com.motorguard.ivi.xml`. If a permission is allow-listed but not requested
+> it silently does nothing; if one is requested but not allow-listed the platform **refuses to boot
+> the app at all**. Change one, change the other.
+>
+> **Layout contract for app branches:** the blue print hardcodes `MotorGuardApp/app/src/main/...`
+> inside the submodule. A branch that moves the app breaks the AOSP build until the paths in
+> `MotorGuard_Application/Android.bp` are updated. The app-branch manifest must carry
+> `package="com.motorguard.ivi"` on the root element (Gradle does not need it; AOSP does).
 
 ## Status — verified
 
@@ -144,15 +161,25 @@ overlay.
   now-playing (the `BluetoothSessionMirror` was never written — the Bluetooth media tab shows a
   connection indicator and no track/artwork/controls).
 
-## Keeping this branch in sync
+## Switching to a new final app branch
 
-This branch is `media-nav-settings-voice` with the Gradle build system removed and `Android.bp`
-laid out under `vendor/motorguard/MotorGuard/`. To pull in later app changes:
+When your friends finish a new final application on a branch (e.g. `final-app`):
 
 ```bash
-git checkout media-nav-settings-voice_forAAOS && git merge media-nav-settings-voice
+# 1. Edit deploy.conf — the ONLY file that changes:
+#      APP_BRANCH=final-app
+#      AOSP_ROOT=/path/to/aosp
+# 2. Run:
+./deploy.sh
+# 3. Build:
+cd /path/to/aosp && source build/envsetup.sh && lunch aosp_rpi5_car-bp1a-userdebug && m MotorGuard -j6
 ```
 
-Expect conflicts wherever a file moved (`MotorGuardApp/app/…` → `vendor/motorguard/MotorGuard/app/…`);
-resolve by keeping this branch's layout. If `app/build.gradle.kts` changes a dependency on the dev
-branch, mirror it into `static_libs` in `Android.bp` — nothing checks that for you.
+`deploy.sh` fetches the branch and checks out its tip into the `app/` submodule (no commit
+needed in the superproject), copies the drop-in, applies the device patch and fetches the
+prebuilts. Re-run it any time your friends push to the same branch to pick up their latest.
+
+> **What the branch must satisfy:** the app lives at `MotorGuardApp/app/` (Gradle project as on
+> `media-nav-settings-voice`), its manifest has `package="com.motorguard.ivi"`, and any new
+> AndroidX/Gradle dependencies are mirrored into `static_libs` in `MotorGuard_Application/Android.bp`
+> (nothing checks that for you). `deploy.sh` verifies the manifest path and aborts otherwise.

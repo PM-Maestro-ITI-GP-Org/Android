@@ -7,7 +7,7 @@ index f9838bb..6111867 100644
      android.hardware.automotive.vehicle@V3-default-service
  
 +# Motor Guard IVI launcher
-+$(call inherit-product, vendor/motorguard/MotorGuard/aosp/motorguard.mk)
++$(call inherit-product, vendor/motorguard/MotorGuard/motorguard.mk)
 +
 +# Fullscreen kiosk: bake the immersive system-bar policy (bars stay swipe-revealable).
 +PRODUCT_PACKAGES += \

@@ -1,0 +1,32 @@
+diff --git a/MotorGuardApp/app/src/main/AndroidManifest.xml b/MotorGuardApp/app/src/main/AndroidManifest.xml
+index b2be74d..b278505 100644
+--- a/MotorGuardApp/app/src/main/AndroidManifest.xml
++++ b/MotorGuardApp/app/src/main/AndroidManifest.xml
+@@ -1,5 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="com.motorguard.ivi">
+ 
+     <!-- Marks the app as an Automotive app so it shows in the AAOS launcher grid. -->
+     <uses-feature
+diff --git a/MotorGuardApp/app/src/main/java/com/motorguard/ivi/data/media/AlbumArtLoader.kt b/MotorGuardApp/app/src/main/java/com/motorguard/ivi/data/media/AlbumArtLoader.kt
+index ec0e1c1..fac4a54 100644
+--- a/MotorGuardApp/app/src/main/java/com/motorguard/ivi/data/media/AlbumArtLoader.kt
++++ b/MotorGuardApp/app/src/main/java/com/motorguard/ivi/data/media/AlbumArtLoader.kt
+@@ -35,6 +35,8 @@ import java.util.Collections
+ object AlbumArtLoader {
+ 
+     /** Bitmaps are large; cap by bytes rather than count. ~8 MB holds a good few covers. */
++    private const val CACHE_BYTES = 8 * 1024 * 1024
++
+     private val cache = object : LruCache<String, Bitmap>(CACHE_BYTES) {
+         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+     }
+@@ -171,6 +173,4 @@ object AlbumArtLoader {
+         cache.evictAll()
+         misses.clear()
+     }
+-
+-    private const val CACHE_BYTES = 8 * 1024 * 1024
+ }

@@ -1,0 +1,332 @@
+// Motor Guard — AAOS launcher, built inside the AOSP / Raspberry Pi tree and
+// platform-signed. This repo IS the drop-in: copy it whole into your device or
+// vendor tree as vendor/motorguard/MotorGuard/. Every path below is already
+// relative to this file, so nothing needs adjusting.
+//
+// Two ways to build it — pick ONE:
+//   (A) android_app  — compile from source in the tree (this file's default).
+//   (B) android_app_import — bundle a Gradle-built, platform-re-signed APK (bottom).
+//       Use (B) if your tree's AndroidX/Compose prebuilts don't match; it's the most
+//       reliable path for a Compose app.
+
+// ---------------------------------------------------------------------------
+// (A) Build from source.
+// ---------------------------------------------------------------------------
+android_app {
+    name: "MotorGuard",
+
+    srcs: ["app/MotorGuardApp/app/src/main/java/**/*.kt"],
+    resource_dirs: [
+        "app/MotorGuardApp/app/src/main/res",
+        // Overlay that flips bool/use_real_connectivity -> true for the real build.
+        "../res-platform",
+    ],
+    manifest: "app/MotorGuardApp/app/src/main/AndroidManifest.xml",
+
+    // Voice wake-word models (openWakeWord *.onnx). ORT mmaps them, so they must
+    // NOT be compressed in the APK (mirrors android.androidResources.noCompress
+    // "onnx" in build.gradle.kts).
+    asset_dirs: ["app/MotorGuardApp/app/src/main/assets"],
+    aaptflags: ["-0 .onnx"],
+
+    // The native reasoning/voice core (see cc_library_shared below) and the
+    // ONNX Runtime prebuilt (android_library_import below) — the two pieces the
+    // Vega voice subsystem added on top of the pure-Compose launcher.
+    jni_libs: ["libmotorguardvoice"],
+
+    // System APIs (WifiManager/BluetoothAdapter control) + platform signing so the app
+    // can be HOME and hold privileged permissions.
+    platform_apis: true,
+    certificate: "platform",
+    privileged: true,
+
+    // Replace the stock Car launcher: CarLauncher is NOT installed, and Motor Guard
+    // (which declares the HOME intent-filter) becomes the default launcher from first
+    // boot — no runtime set-home-activity needed. Confirm the module name in your tree
+    // (usually "CarLauncher"; packages/apps/Car/Launcher).
+    overrides: ["CarLauncher"],
+
+    static_libs: [
+        "androidx-constraintlayout_constraintlayout",
+        "androidx.core_core-ktx",
+        "androidx.appcompat_appcompat",
+        "androidx.fragment_fragment-ktx",
+        "androidx.lifecycle_lifecycle-runtime-ktx",
+        "androidx.activity_activity-compose",
+        "androidx.annotation_annotation",
+        "androidx.palette_palette",
+        "androidx.savedstate_savedstate",
+        "androidx.lifecycle_lifecycle-viewmodel",
+        "androidx.lifecycle_lifecycle-viewmodel-ktx",
+        "androidx.lifecycle_lifecycle-viewmodel-compose",
+        "androidx.lifecycle_lifecycle-runtime-compose",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.foundation_foundation",
+        "androidx.compose.animation_animation",
+        "androidx.compose.animation_animation-core",
+        "androidx.compose.ui_ui",
+        "androidx.compose.ui_ui-tooling-preview",
+        "androidx.compose.material3_material3",
+        "androidx.compose.material_material",
+        "androidx.compose.material_material-icons-extended",
+        "kotlinx-coroutines-core",
+        "kotlinx-coroutines-android",
+        "kotlinx-coroutines-guava",
+        // ONNX Runtime (ai.onnxruntime.*) — not in AOSP prebuilts, vendored as an
+        // AAR via the android_library_import below. You must drop the .aar in first.
+        "motorguard-onnxruntime",
+        // media3 1.4.1 (ExoPlayer + MediaLibraryService) — vendored AARs, see the
+        // android_library_import modules below.
+        "androidx.media3_media3-common",
+        "androidx.media3_media3-exoplayer",
+        "androidx.media3_media3-session",
+        // MapLibre Native 11.8.0 (nav map) — vendored AARs, see the import below.
+        "motorguard-maplibre",
+    ],
+
+    // Jetpack Compose compiler plugin: applied AUTOMATICALLY by Soong when
+    // androidx.compose.runtime_runtime is in static_libs (build/soong/java/base.go
+    // useCompose + kotlinPluginTag). Do NOT list it in `plugins:` — that property only
+    // accepts java_plugin modules, and the compose compiler is a java_import_host here.
+    optimize: {
+        enabled: false,
+    },
+
+    // Ships in /system/priv-app so `privileged: true` + the allow-list below apply.
+    // required grants the privileged-permission allow-list file at build time.
+    required: ["privapp_permissions_com.motorguard.ivi"],
+}
+
+// The privileged-permission allow-list, installed to /system/etc/permissions.
+prebuilt_etc {
+    name: "privapp_permissions_com.motorguard.ivi",
+    sub_dir: "permissions",
+    src: "../privapp_permissions_com.motorguard.ivi.xml",
+    filename_from_src: true,
+}
+
+// ---------------------------------------------------------------------------
+// Native voice/reasoning core — the Soong equivalent of app/MotorGuardApp/app/src/main/cpp/
+// CMakeLists.txt (Soong does NOT run CMake). Produces libmotorguardvoice.so,
+// loaded by VoiceEngine.kt via System.loadLibrary("motorguardvoice").
+// sqlite3.c is the official amalgamation compiled straight in (the NDK/platform
+// does not expose libsqlite to apps).
+// ---------------------------------------------------------------------------
+cc_library_shared {
+    name: "libmotorguardvoice",
+
+    srcs: [
+        "app/MotorGuardApp/app/src/main/cpp/native-lib.cpp",
+        "app/MotorGuardApp/app/src/main/cpp/sqlite3.c",
+        "app/MotorGuardApp/app/src/main/cpp/assistant-core/src/*.cpp",
+    ],
+    local_include_dirs: [
+        "app/MotorGuardApp/app/src/main/cpp",                        // seed_data.h, sqlite3.h, adapters/
+        "app/MotorGuardApp/app/src/main/cpp/assistant-core/include", // assistant/*.hpp
+    ],
+    header_libs: ["jni_headers"], // jni.h (libnativehelper/include_jni)
+
+    cflags: [
+        "-DSQLITE_OMIT_LOAD_EXTENSION",
+        "-DSQLITE_THREADSAFE=1",
+    ],
+    cppflags: ["-std=c++17", "-fexceptions"], // try/catch in native-lib.cpp (overrides -fno-exceptions)
+
+    shared_libs: ["liblog"],
+
+    // Platform-variant build (matches the platform_apis app it ships in). If you
+    // instead build the app against a numbered sdk_version, add sdk_version +
+    // stl: "c++_static" here so the lib is self-contained.
+}
+
+// ONNX Runtime for Android (ai.onnxruntime.*). AOSP has no onnxruntime prebuilt,
+// so vendor the official AAR and import it. Download onnxruntime-android-1.19.2.aar
+// (the version pinned in build.gradle.kts) from Maven Central and drop it at the
+// path below; extract_jni pulls its bundled libonnxruntime*.so into the app.
+android_library_import {
+    name: "motorguard-onnxruntime",
+    aars: ["../prebuilts/onnxruntime-android-1.19.2.aar"],
+    sdk_version: "current",
+    extract_jni: true,
+}
+
+// ---------------------------------------------------------------------------
+// kotlinx-coroutines-guava 1.8.1 — bridges Guava ListenableFuture (returned by the
+// media3 session callbacks) to coroutines. JVM-only artifact (no AAR), fetched from
+// Maven Central. Brings `guava` onto the app classpath transitively.
+// ---------------------------------------------------------------------------
+java_import {
+    name: "kotlinx-coroutines-guava",
+    jars: ["../prebuilts/kotlinx-coroutines-guava-1.8.1.jar"],
+    sdk_version: "current",
+    static_libs: ["guava"],
+}
+
+// ---------------------------------------------------------------------------
+// media3 1.4.1 (ExoPlayer + MediaLibraryService session) — not in AOSP prebuilts,
+// vendored AARs from Google Maven (dl.google.com/android/maven2). Each import lists
+// its REAL transitive deps so the compile classpath matches the Gradle build.
+// androidx.media 1.7.0-alpha02, collection, core, annotation, exifinterface and
+// concurrent-futures all exist in the tree prebuilts.
+// ---------------------------------------------------------------------------
+android_library_import {
+    name: "androidx.media3_media3-common",
+    aars: ["../prebuilts/media3-common-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: [
+        "androidx.annotation_annotation",
+        "androidx.collection_collection",
+        "androidx.concurrent_concurrent-futures",
+        "androidx.media_media",
+        "guava",
+    ],
+}
+
+android_library_import {
+    name: "androidx.media3_media3-database",
+    aars: ["../prebuilts/media3-database-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: ["androidx.media3_media3-common"],
+}
+
+android_library_import {
+    name: "androidx.media3_media3-datasource",
+    aars: ["../prebuilts/media3-datasource-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: ["androidx.media3_media3-common"],
+}
+
+android_library_import {
+    name: "androidx.media3_media3-decoder",
+    aars: ["../prebuilts/media3-decoder-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: ["androidx.media3_media3-common"],
+}
+
+android_library_import {
+    name: "androidx.media3_media3-extractor",
+    aars: ["../prebuilts/media3-extractor-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: [
+        "androidx.media3_media3-common",
+        "androidx.media3_media3-datasource",
+    ],
+}
+
+android_library_import {
+    name: "androidx.media3_media3-container",
+    aars: ["../prebuilts/media3-container-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: ["androidx.media3_media3-common"],
+}
+
+android_library_import {
+    name: "androidx.media3_media3-exoplayer",
+    aars: ["../prebuilts/media3-exoplayer-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: [
+        "androidx.media3_media3-common",
+        "androidx.media3_media3-container",
+        "androidx.media3_media3-database",
+        "androidx.media3_media3-datasource",
+        "androidx.media3_media3-decoder",
+        "androidx.media3_media3-extractor",
+        "androidx.annotation_annotation",
+        "androidx.collection_collection",
+        "androidx.core_core",
+        "androidx.exifinterface_exifinterface",
+    ],
+}
+
+android_library_import {
+    name: "androidx.media3_media3-session",
+    aars: ["../prebuilts/media3-session-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: [
+        "androidx.media3_media3-common",
+        "androidx.media3_media3-datasource",
+        "androidx.collection_collection",
+        "androidx.core_core",
+        "androidx.media_media",
+    ],
+}
+
+// ---------------------------------------------------------------------------
+// MapLibre Native (org.maplibre.android.*) — the nav map. android-sdk 11.8.0
+// bundles libmaplibre.so (extract_jni). Deps mirrored from the POM; tree libs
+// (gson, okhttp, androidx.*) are used where available, everything else is
+// vendored into ../prebuilts/ (see README).
+// ---------------------------------------------------------------------------
+android_library_import {
+    name: "motorguard-maplibre",
+    aars: ["../prebuilts/android-sdk-11.8.0.aar"],
+    sdk_version: "current",
+    extract_jni: true, // jni/arm64-v8a/libmaplibre.so
+    static_libs: [
+        "motorguard-maplibre-geojson",
+        "motorguard-maplibre-gestures",
+        "motorguard-maplibre-turf",
+        "motorguard-maplibre-timber",
+        "motorguard-okhttp",
+        "androidx.annotation_annotation",
+        "androidx.fragment_fragment",
+        "androidx.interpolator_interpolator",
+    ],
+}
+
+java_import {
+    name: "motorguard-okhttp",
+    jars: ["../prebuilts/okhttp-4.12.0.jar"],
+    static_libs: [
+        "motorguard-okio",
+        "kotlin-stdlib",
+    ],
+}
+
+java_import {
+    name: "motorguard-okio",
+    jars: ["../prebuilts/okio-jvm-3.6.0.jar"],
+}
+
+java_import {
+    name: "motorguard-maplibre-geojson",
+    jars: ["../prebuilts/android-sdk-geojson-6.0.1.jar"],
+    static_libs: ["gson"],
+}
+
+java_import {
+    name: "motorguard-maplibre-turf",
+    jars: ["../prebuilts/android-sdk-turf-6.0.1.jar"],
+    static_libs: ["motorguard-maplibre-geojson"],
+}
+
+android_library_import {
+    name: "motorguard-maplibre-gestures",
+    aars: ["../prebuilts/maplibre-android-gestures-0.0.3.aar"],
+    sdk_version: "current",
+    static_libs: [
+        "kotlin-stdlib",
+        "androidx.annotation_annotation",
+        "androidx.core_core-ktx",
+    ],
+}
+
+android_library_import {
+    name: "motorguard-maplibre-timber",
+    aars: ["../prebuilts/timber-5.0.1.aar"],
+    sdk_version: "current",
+}
+
+// ---------------------------------------------------------------------------
+// (B) Prebuilt APK alternative (build the APK with Gradle first: ./gradlew assembleRelease
+//     then drop app-release.apk here). Comment out module (A) if you use this.
+// ---------------------------------------------------------------------------
+// android_app_import {
+//     name: "MotorGuard",
+//     apk: "app-release.apk",
+//     certificate: "platform",
+//     privileged: true,
+//     overrides: ["CarLauncher"],
+//     dex_preopt: { enabled: false },
+//     required: ["privapp_permissions_com.motorguard.ivi"],
+// }
