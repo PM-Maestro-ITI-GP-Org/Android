@@ -33,14 +33,14 @@ class VideoMediaSource(private val context: Context) : MediaLibrarySource {
         emit(
             SourceAvailability(
                 id = id,
-                available = MediaStoreQuery.hasPermission(context),
-                emptyMessage = "Allow access to media to browse videos",
+                available = MediaStoreQuery.hasVideoPermission(context),
+                emptyMessage = "Allow access to videos to browse them",
             ),
         )
     }
 
     override suspend fun tracks(): List<Track> = withContext(Dispatchers.IO) {
-        if (!MediaStoreQuery.hasPermission(context)) return@withContext emptyList()
+        if (!MediaStoreQuery.hasVideoPermission(context)) return@withContext emptyList()
 
         val volumes = setOf(MediaStore.VOLUME_EXTERNAL_PRIMARY) +
             MediaStoreQuery.removableVolumeNames(context)

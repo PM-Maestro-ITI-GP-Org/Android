@@ -30,8 +30,23 @@ internal object MediaStoreQuery {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
 
+    /**
+     * The video counterpart. API 33 split storage access *by media type*, so holding
+     * READ_MEDIA_AUDIO grants nothing over the video collection — a distinction that costs an
+     * afternoon if you miss it, because the query is not refused loudly, it just returns no rows.
+     */
+    val videoPermission: String
+        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+
     fun hasPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
+
+    fun hasVideoPermission(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(context, videoPermission) == PackageManager.PERMISSION_GRANTED
 
     /** Every mounted volume MediaStore knows about, including removable ones. */
     fun volumeNames(context: Context): Set<String> =

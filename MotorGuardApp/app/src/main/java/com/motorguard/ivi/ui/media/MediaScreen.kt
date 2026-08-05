@@ -94,17 +94,20 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
     val context = LocalContext.current
     val sources = remember { MediaSourceManager.get(context) }
 
-    // --- runtime audio-read permission ------------------------------------------------------
-    var permissionGranted by remember { mutableStateOf(context.hasAudioPermission()) }
+    // --- runtime media-read permissions -------------------------------------------------------
+    // Audio and video are separate grants from API 33 on, and asking for only the first is why
+    // the Videos tab came up empty on a device that had videos. Requested together so the driver
+    // sees one prompt rather than two.
+    var permissionGranted by remember { mutableStateOf(context.hasMediaPermissions()) }
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        permissionGranted = granted
-        // The library query returns empty without it, so the list has to be re-read on grant.
-        if (granted) viewModel.refresh()
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        permissionGranted = results.values.all { it }
+        // The library query returns empty without them, so the list has to be re-read on grant.
+        if (results.values.any { it }) viewModel.refresh()
     }
     LaunchedEffect(Unit) {
-        if (!permissionGranted) permissionLauncher.launch(audioPermission())
+        if (!permissionGranted) permissionLauncher.launch(mediaPermissions())
     }
 
     val artwork = rememberAlbumArt(state.playback.track)
@@ -502,13 +505,17 @@ private fun emptyLibraryMessage(source: MediaSourceId): String = when (source) {
     MediaSourceId.VIDEO -> "No videos on this device or drive"
 }
 
-/** Storage permissions were split by media type in API 33. */
-private fun audioPermission(): String =
+/**
+ * Storage permissions were split by media type in API 33: audio and video are separate grants,
+ * and one does not imply the other. Below 33 a single storage permission covers both.
+ */
+private fun mediaPermissions(): Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Manifest.permission.READ_MEDIA_AUDIO
+        arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_MEDIA_VIDEO)
     } else {
-        Manifest.permission.READ_EXTERNAL_STORAGE
+        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
 
-private fun Context.hasAudioPermission(): Boolean =
-    ContextCompat.checkSelfPermission(this, audioPermission()) == PackageManager.PERMISSION_GRANTED
+private fun Context.hasMediaPermissions(): Boolean = mediaPermissions().all {
+    ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+}

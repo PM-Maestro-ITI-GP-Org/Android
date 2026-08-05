@@ -75,6 +75,10 @@
     <!-- Reading the on-device / USB library. The storage permission was split by media type in
          API 33, so both spellings are needed to cover minSdk 29 upwards. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- API 33 split storage access by media type, so the audio permission grants nothing over
+         the video collection. Without this the Videos tab queries successfully and simply gets
+         no rows back — it does not throw, which is what makes the omission hard to spot. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
