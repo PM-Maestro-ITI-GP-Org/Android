@@ -50,16 +50,39 @@ class MediaConnection private constructor(context: Context) {
     private val _state = MutableStateFlow(PlaybackSnapshot())
     val state: StateFlow<PlaybackSnapshot> = _state.asStateFlow()
 
+    /**
+     * The phone, when Bluetooth is the active source.
+     *
+     * Bluetooth is the one source whose audio we do not own, so its state cannot come from our
+     * player — see [BluetoothSessionMirror]. Keeping it beside the controller rather than behind
+     * some common abstraction is deliberate: the two really are different things, and the only
+     * place that difference matters is [publish] and the transport methods.
+     */
+    private val bluetooth = BluetoothSessionMirror.get(appContext)
+
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = publish()
     }
+
+    private val isBluetooth: Boolean
+        get() = MediaSourceManager.get(appContext).active.value == MediaSourceId.BLUETOOTH
 
     init {
         scope.launch { connect() }
         scope.launch {
             // The active source is owned by MediaSourceManager, not by the player, so it has to
             // be folded in separately.
-            MediaSourceManager.get(appContext).active.collect { publish() }
+            MediaSourceManager.get(appContext).active.collect { id ->
+                // Re-attaching on entry is what makes the tab work for a phone paired after boot,
+                // when the first attempt at startup had nothing to attach to.
+                if (id == MediaSourceId.BLUETOOTH) bluetooth.connect()
+                publish()
+            }
+        }
+        scope.launch {
+            // The mirror updates on the phone's schedule, not ours, so its snapshots have to be
+            // forwarded as they arrive rather than only when our own player emits an event.
+            bluetooth.state.collect { if (isBluetooth) _state.value = it }
         }
     }
 
@@ -79,21 +102,34 @@ class MediaConnection private constructor(context: Context) {
 
     // ---------------------------------------------------------------- transport
 
-    fun playPause() = withController {
-        if (isPlaying) pause() else play()
+    // Each of these goes to the phone instead of our player while Bluetooth is the source. The
+    // buttons are the same buttons; only the thing on the other end of them changes.
+
+    fun playPause() {
+        if (isBluetooth) return bluetooth.playPause()
+        withController { if (isPlaying) pause() else play() }
     }
 
     /**
      * Restart the current track, or step back if we are already near its start — the behaviour
      * docs/04-media.md specifies, and the one every physical head unit has.
      */
-    fun previous() = withController {
-        if (currentPosition > RESTART_THRESHOLD_MS) seekTo(0) else seekToPrevious()
+    fun previous() {
+        if (isBluetooth) return bluetooth.previous()
+        withController {
+            if (currentPosition > RESTART_THRESHOLD_MS) seekTo(0) else seekToPrevious()
+        }
     }
 
-    fun next() = withController { seekToNext() }
+    fun next() {
+        if (isBluetooth) return bluetooth.next()
+        withController { seekToNext() }
+    }
 
-    fun seekTo(positionMs: Long) = withController { seekTo(positionMs) }
+    fun seekTo(positionMs: Long) {
+        if (isBluetooth) return bluetooth.seekTo(positionMs)
+        withController { seekTo(positionMs) }
+    }
 
     fun toggleShuffle() = withController { shuffleModeEnabled = !shuffleModeEnabled }
 
@@ -134,6 +170,14 @@ class MediaConnection private constructor(context: Context) {
         val manager = MediaSourceManager.get(appContext)
         val sourceId = manager.active.value
         val kind = manager.source(sourceId).playbackKind
+
+        // Our player holds nothing while the phone is the source, so publishing from it here
+        // would blank the card between the mirror's own emissions.
+        if (sourceId == MediaSourceId.BLUETOOTH) {
+            _state.value = bluetooth.state.value
+            positionTicker?.cancel()
+            return
+        }
 
         if (active == null) {
             _state.value = PlaybackSnapshot(source = sourceId, playbackKind = kind)
