@@ -14,6 +14,7 @@ import com.motorguard.ivi.data.media.QueueSummary
 import com.motorguard.ivi.data.media.SourceAvailability
 import com.motorguard.ivi.data.media.Track
 import com.motorguard.ivi.data.media.UsbEvents
+import com.motorguard.ivi.data.media.sources.RadioMediaSource
 import com.motorguard.ivi.media.MediaConnection
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -41,6 +42,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     private var loadJob: Job? = null
     private var rescanJob: Job? = null
+    private var searchJob: Job? = null
     private var mediaStoreObserver: ContentObserver? = null
 
     init {
@@ -54,7 +56,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             sources.active.collect { id ->
-                _state.update { it.copy(activeSource = id) }
+                // A search is scoped to the Radio tab; carrying the term across to the library
+                // would leave a filter applied that the driver can no longer see.
+                searchJob?.cancel()
+                _state.update { it.copy(activeSource = id, searchQuery = "") }
                 loadTracks(id)
             }
         }
@@ -94,6 +99,37 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun dismissNotice() = _state.update { it.copy(notice = null) }
+
+    /**
+     * Search the station directory.
+     *
+     * Debounced rather than fired per keystroke: this is a network call per character otherwise,
+     * against a volunteer-run directory, and the results would race each other back out of order.
+     * The field is updated immediately so typing stays responsive; only the query is delayed.
+     */
+    fun searchStations(query: String) {
+        _state.update { it.copy(searchQuery = query) }
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            val source = sources.source(MediaSourceId.RADIO) as? RadioMediaSource ?: return@launch
+            _state.update { it.copy(loading = true) }
+            val results = runCatching { source.search(query) }.getOrDefault(emptyList())
+            _state.update {
+                // A result that arrives after the driver has moved to another tab must not
+                // replace that tab's list.
+                if (it.activeSource != MediaSourceId.RADIO) it
+                else it.copy(
+                    tracks = results,
+                    loading = false,
+                    queue = QueueSummary(
+                        if (query.isBlank()) "Radio" else "“$query”",
+                        if (results.isEmpty()) "No stations" else "${results.size} stations",
+                    ),
+                )
+            }
+        }
+    }
 
     /**
      * Re-read the list whenever MediaStore's audio table changes.
@@ -196,6 +232,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         /** Long enough to let a burst of indexing notifications finish arriving. */
         const val SCAN_SETTLE_MS = 1_200L
+
+        /** Long enough to stop mid-word, short enough to feel like live search. */
+        const val SEARCH_DEBOUNCE_MS = 400L
     }
 }
 
@@ -208,6 +247,8 @@ data class MediaUiState(
     val queue: QueueSummary = QueueSummary("Library", ""),
     /** Transient banner — a drive appearing or going away. Null when there is nothing to say. */
     val notice: MediaNotice? = null,
+    /** What is typed in the Radio tab's station search. */
+    val searchQuery: String = "",
 ) {
     fun availabilityOf(id: MediaSourceId): SourceAvailability? = availability.firstOrNull { it.id == id }
 }

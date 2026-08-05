@@ -32,7 +32,7 @@ class MediaSourceManager private constructor(context: Context) {
         LocalMediaSource(appContext),
         UsbMediaSource(appContext),
         BluetoothMediaSource(appContext),
-        RadioMediaSource(),
+        RadioMediaSource(appContext),
     )
 
     private val _active = MutableStateFlow(MediaSourceId.LOCAL)

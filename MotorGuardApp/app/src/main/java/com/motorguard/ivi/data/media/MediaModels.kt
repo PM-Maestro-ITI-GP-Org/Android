@@ -29,6 +29,17 @@ enum class PlaybackKind {
 
     /** A hardware tuner: no queue, no seeking, no duration. */
     TUNER,
+
+    /**
+     * A live stream we do open ourselves — internet radio.
+     *
+     * Neither of the others fits. It is our ExoPlayer holding the socket, so it is not
+     * [EXTERNAL_SESSION]; but a live stream has no duration and no meaningful position, so
+     * treating it as [LOCAL_PLAYER] hands the driver a scrubber that cannot do anything.
+     * Skipping *is* meaningful — it moves to the next station — which is what separates this
+     * from [TUNER], where nothing can be skipped at all.
+     */
+    STREAM,
 }
 
 /**

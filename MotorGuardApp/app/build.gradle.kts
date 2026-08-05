@@ -88,6 +88,10 @@ dependencies {
     // Pure-JVM tests for the navigation maths and the generated map style.
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.google.code.gson:gson:2.11.0")
+    // The platform's org.json is stubbed out in unit tests (every method throws), so the real
+    // implementation has to be on the test classpath for the radio-directory parser to be
+    // testable at all. Test-only — the app keeps using the platform's copy.
+    testImplementation("org.json:json:20240303")
 
     // Navigation stack — all OSS, no Google Play Services (this is an AOSP build).
     // Map rendering: MapLibre Native (BSD-2). Tiles + routing + search are plain HTTPS

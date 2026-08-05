@@ -31,11 +31,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,8 +55,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -142,6 +151,7 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
             QueuePane(
                 state = state,
                 onPlayTrack = viewModel::playTrack,
+                onSearch = viewModel::searchStations,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -308,6 +318,57 @@ private fun NowPlayingPane(
 /** What the title, subtitle, scrubber and 76 dp transport row need below the cover. */
 private val CONTROLS_HEIGHT = 165.dp
 
+/**
+ * Station search.
+ *
+ * Search-as-you-type, debounced in the ViewModel — the alternative is a submit button, and a
+ * driver should not have to hunt for one. Single line and IME "search" so the on-screen keyboard
+ * closes on the enter key rather than inserting a newline into the query.
+ */
+@Composable
+private fun StationSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier.fillMaxWidth(),
+        singleLine = true,
+        placeholder = { Text("Search stations", fontSize = 15.sp) },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = null,
+                tint = MotorGuard.colors.onBaseDim,
+                modifier = Modifier.size(20.dp),
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Clear search",
+                        tint = MotorGuard.colors.onBaseDim,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        },
+        shape = RoundedCornerShape(14.dp),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MotorGuard.colors.accent,
+            unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
+            cursorColor = MotorGuard.colors.accent,
+        ),
+    )
+}
+
 /** Below this the pane switches to reduced spacing and a smaller title. */
 private val COMFORTABLE_HEIGHT = 420.dp
 
@@ -322,6 +383,7 @@ private val MAX_ART = 232.dp
 private fun QueuePane(
     state: MediaUiState,
     onPlayTrack: (Int) -> Unit,
+    onSearch: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MotorGuard.colors
@@ -352,6 +414,16 @@ private fun QueuePane(
                         color = colors.onBaseDim,
                     )
                 }
+            }
+
+            // Radio is a directory of thousands of stations, so it is the one source where
+            // browsing a list is useless without a way to narrow it.
+            if (state.activeSource == MediaSourceId.RADIO && unavailable == null) {
+                StationSearchField(
+                    query = state.searchQuery,
+                    onQueryChange = onSearch,
+                    modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 12.dp),
+                )
             }
 
             // The content area takes the leftover height so the header keeps its own. Same
@@ -407,7 +479,7 @@ private fun emptyLibraryMessage(source: MediaSourceId): String = when (source) {
     MediaSourceId.LOCAL -> "No music on this device"
     MediaSourceId.USB -> "No music on the drive"
     MediaSourceId.BLUETOOTH -> "Bluetooth shows the phone's current track only"
-    MediaSourceId.RADIO -> "No stations"
+    MediaSourceId.RADIO -> "No stations found — try another search"
 }
 
 /** Storage permissions were split by media type in API 33. */

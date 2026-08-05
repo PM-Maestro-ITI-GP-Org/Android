@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP is permitted, for internet radio and nothing else.
+
+  Android has blocked cleartext by default since targetSdk 28, and that default is the right
+  one for everything this app talks to itself: the tile, routing, search and station-directory
+  endpoints are all hardcoded https:// in NavConfig and RadioBrowser, and they stay encrypted
+  whatever this file says — permitting cleartext does not downgrade a URL that is already TLS.
+
+  What it is for is the station streams. Those URLs come from the radio-browser directory at
+  runtime and roughly seven in ten are plain http://; a great many small broadcasters have never
+  put a certificate in front of their Icecast server. Blocking them means the Radio tab lists
+  stations that fail the moment they are tapped, which is worse than useless in a car.
+
+  There is no tighter way to express this: cleartext exceptions have to name a domain, and the
+  set of station hosts is the whole directory and not knowable at build time.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

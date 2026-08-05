@@ -194,7 +194,12 @@ class MediaConnection private constructor(context: Context) {
             queueIndex = active.currentMediaItemIndex,
             source = sourceId,
             playbackKind = kind,
-            canSeek = kind != PlaybackKind.TUNER && active.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
+            // A live stream has no position to seek to, but skipping to the next station is
+            // exactly what the skip buttons should do — which is why the two are not the same
+            // question.
+            canSeek = kind != PlaybackKind.TUNER &&
+                kind != PlaybackKind.STREAM &&
+                active.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
             canSkip = kind != PlaybackKind.TUNER,
         )
 
