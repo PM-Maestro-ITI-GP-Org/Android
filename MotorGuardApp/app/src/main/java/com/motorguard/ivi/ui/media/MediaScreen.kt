@@ -7,6 +7,10 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,9 +33,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +68,7 @@ import com.motorguard.ivi.ui.media.components.TransportBar
 import com.motorguard.ivi.ui.media.components.rememberAlbumArt
 import com.motorguard.ivi.ui.nav.NavMotion
 import com.motorguard.ivi.ui.theme.MotorGuard
+import kotlinx.coroutines.delay
 
 /**
  * The Media surface: now-playing on the left, the queue on the right, matching
@@ -105,6 +112,12 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
 
+        UsbNotice(
+            notice = state.notice,
+            onOpenUsb = { viewModel.selectSource(MediaSourceId.USB) },
+            onDismiss = viewModel::dismissNotice,
+        )
+
         Spacer(Modifier.height(14.dp))
 
         Row(
@@ -136,6 +149,71 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
         }
     }
 }
+
+/**
+ * The "a drive appeared" banner.
+ *
+ * Slides in over the source tabs rather than replacing anything, and offers the switch instead of
+ * performing it — see [MediaViewModel.onUsbEvent] for why a head unit must not change what is
+ * playing on its own. Auto-dismisses so a driver who is not looking does not come back to a
+ * stale message.
+ */
+@Composable
+private fun UsbNotice(
+    notice: MediaNotice?,
+    onOpenUsb: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    LaunchedEffect(notice) {
+        if (notice != null) {
+            delay(NOTICE_DURATION_MS)
+            onDismiss()
+        }
+    }
+
+    AnimatedVisibility(
+        visible = notice != null,
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically(),
+    ) {
+        // Held after dismissal so the exit animation has something to draw.
+        val shown = remember(notice) { notice }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MotorGuard.colors.accent.copy(alpha = 0.14f))
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Usb,
+                contentDescription = null,
+                tint = MotorGuard.colors.accent,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(14.dp))
+            Text(
+                text = when (shown) {
+                    is MediaNotice.UsbMounted -> "${shown.label} connected"
+                    MediaNotice.UsbRemoved -> "USB drive removed"
+                    null -> ""
+                },
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            if (shown is MediaNotice.UsbMounted) {
+                TextButton(onClick = { onOpenUsb(); onDismiss() }) {
+                    Text("Open", color = MotorGuard.colors.accent, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+private const val NOTICE_DURATION_MS = 6_000L
 
 @Composable
 private fun NowPlayingPane(

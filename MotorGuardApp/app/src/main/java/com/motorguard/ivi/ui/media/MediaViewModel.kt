@@ -1,6 +1,10 @@
 package com.motorguard.ivi.ui.media
 
 import android.app.Application
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.motorguard.ivi.data.media.MediaSourceId
@@ -9,8 +13,10 @@ import com.motorguard.ivi.data.media.PlaybackSnapshot
 import com.motorguard.ivi.data.media.QueueSummary
 import com.motorguard.ivi.data.media.SourceAvailability
 import com.motorguard.ivi.data.media.Track
+import com.motorguard.ivi.data.media.UsbEvents
 import com.motorguard.ivi.media.MediaConnection
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +40,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<MediaUiState> = _state.asStateFlow()
 
     private var loadJob: Job? = null
+    private var rescanJob: Job? = null
+    private var mediaStoreObserver: ContentObserver? = null
 
     init {
         viewModelScope.launch {
@@ -50,6 +58,80 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 loadTracks(id)
             }
         }
+        viewModelScope.launch {
+            UsbEvents.stream(getApplication()).collect { event -> onUsbEvent(event) }
+        }
+        observeMediaStore()
+    }
+
+    /**
+     * Tell the driver a drive appeared, and go and find what is on it.
+     *
+     * The source is deliberately *not* switched: the driver may be mid-track on something else,
+     * and a head unit that changes what is playing because a passenger charged their phone is a
+     * worse bug than the one being fixed. The banner offers the switch instead.
+     */
+    private fun onUsbEvent(event: UsbEvents.Event) {
+        when (event) {
+            is UsbEvents.Event.Mounted -> {
+                val name = event.label?.takeIf { it.isNotBlank() } ?: "USB drive"
+                _state.update { it.copy(notice = MediaNotice.UsbMounted(name)) }
+                sources.refreshAvailability()
+                refresh()
+            }
+
+            UsbEvents.Event.Removed -> {
+                sources.refreshAvailability()
+                _state.update {
+                    // A queue of URIs on a drive that is gone resolves to nothing, so it is
+                    // cleared rather than left to fail track by track.
+                    val cleared = if (it.activeSource == MediaSourceId.USB) emptyList() else it.tracks
+                    it.copy(notice = MediaNotice.UsbRemoved, tracks = cleared)
+                }
+                refresh()
+            }
+        }
+    }
+
+    fun dismissNotice() = _state.update { it.copy(notice = null) }
+
+    /**
+     * Re-read the list whenever MediaStore's audio table changes.
+     *
+     * This is what makes a freshly plugged stick actually show its music. vold mounts the drive
+     * long before MediaProvider has indexed it, so the query fired on the mount broadcast lands
+     * on an empty table and the tab sits there saying nothing — which is the bug as the driver
+     * experiences it. Indexing then completes and notifies here, and the list fills in. It also
+     * covers files copied onto the head unit while the app is open.
+     */
+    private fun observeMediaStore() {
+        val resolver = getApplication<Application>().contentResolver
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                // Indexing a drive emits a burst of notifications, one per file; re-querying on
+                // each would be dozens of scans of the same volume.
+                rescanJob?.cancel()
+                rescanJob = viewModelScope.launch {
+                    delay(SCAN_SETTLE_MS)
+                    loadTracks(_state.value.activeSource)
+                }
+            }
+        }
+        runCatching {
+            resolver.registerContentObserver(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                /* notifyForDescendants = */ true,
+                observer,
+            )
+        }
+        mediaStoreObserver = observer
+    }
+
+    override fun onCleared() {
+        mediaStoreObserver?.let { observer ->
+            runCatching { getApplication<Application>().contentResolver.unregisterContentObserver(observer) }
+        }
+        super.onCleared()
     }
 
     /**
@@ -110,6 +192,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
         return QueueSummary(title, "$songs · $length")
     }
+
+    private companion object {
+        /** Long enough to let a burst of indexing notifications finish arriving. */
+        const val SCAN_SETTLE_MS = 1_200L
+    }
 }
 
 data class MediaUiState(
@@ -119,6 +206,14 @@ data class MediaUiState(
     val activeSource: MediaSourceId = MediaSourceId.LOCAL,
     val loading: Boolean = false,
     val queue: QueueSummary = QueueSummary("Library", ""),
+    /** Transient banner — a drive appearing or going away. Null when there is nothing to say. */
+    val notice: MediaNotice? = null,
 ) {
     fun availabilityOf(id: MediaSourceId): SourceAvailability? = availability.firstOrNull { it.id == id }
+}
+
+/** Something worth interrupting the driver with, briefly. */
+sealed interface MediaNotice {
+    data class UsbMounted(val label: String) : MediaNotice
+    data object UsbRemoved : MediaNotice
 }
