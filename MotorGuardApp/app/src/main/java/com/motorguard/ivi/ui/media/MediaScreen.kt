@@ -57,8 +57,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,6 +74,7 @@ import com.motorguard.ivi.ui.media.components.Scrubber
 import com.motorguard.ivi.ui.media.components.SourceTabs
 import com.motorguard.ivi.ui.media.components.TrackRow
 import com.motorguard.ivi.ui.media.components.TransportBar
+import com.motorguard.ivi.ui.media.components.VideoPane
 import com.motorguard.ivi.ui.media.components.rememberAlbumArt
 import com.motorguard.ivi.ui.nav.NavMotion
 import com.motorguard.ivi.ui.theme.MotorGuard
@@ -140,17 +141,35 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
                 .weight(1f),
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            NowPlayingPane(
-                state = state,
-                artwork = artwork,
-                viewModel = viewModel,
-                modifier = Modifier
-                    .weight(1.05f)
-                    .fillMaxHeight(),
-            )
+            // Video replaces the now-playing card rather than sitting beside it: the two are
+            // both "what is playing", and a cover thumbnail next to a running film is noise.
+            if (state.activeSource == MediaSourceId.VIDEO) {
+                VideoPane(
+                    track = state.selectedVideo,
+                    isMoving = state.isMoving,
+                    modifier = Modifier
+                        .weight(1.05f)
+                        .fillMaxHeight(),
+                )
+            } else {
+                NowPlayingPane(
+                    state = state,
+                    artwork = artwork,
+                    viewModel = viewModel,
+                    modifier = Modifier
+                        .weight(1.05f)
+                        .fillMaxHeight(),
+                )
+            }
             QueuePane(
                 state = state,
-                onPlayTrack = viewModel::playTrack,
+                onPlayTrack = {
+                    if (state.activeSource == MediaSourceId.VIDEO) {
+                        viewModel.playVideo(it)
+                    } else {
+                        viewModel.playTrack(it)
+                    }
+                },
                 onSearch = viewModel::searchStations,
                 modifier = Modifier
                     .weight(1f)
@@ -480,6 +499,7 @@ private fun emptyLibraryMessage(source: MediaSourceId): String = when (source) {
     MediaSourceId.USB -> "No music on the drive"
     MediaSourceId.BLUETOOTH -> "Bluetooth shows the phone's current track only"
     MediaSourceId.RADIO -> "No stations found — try another search"
+    MediaSourceId.VIDEO -> "No videos on this device or drive"
 }
 
 /** Storage permissions were split by media type in API 33. */

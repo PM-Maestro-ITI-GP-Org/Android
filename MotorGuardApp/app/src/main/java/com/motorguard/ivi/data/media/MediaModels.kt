@@ -17,7 +17,7 @@ import android.net.Uri
  */
 
 /** Which source a track came from, and which tab owns it. */
-enum class MediaSourceId { LOCAL, USB, BLUETOOTH, RADIO }
+enum class MediaSourceId { LOCAL, USB, BLUETOOTH, RADIO, VIDEO }
 
 /** How audio is actually produced for a source. */
 enum class PlaybackKind {
@@ -40,6 +40,17 @@ enum class PlaybackKind {
      * from [TUNER], where nothing can be skipped at all.
      */
     STREAM,
+
+    /**
+     * A video file, played by a **local** player rather than the background service.
+     *
+     * Video is the one source that cannot go through the shared session. Rendering needs a
+     * surface, and `MediaController` refuses `COMMAND_SET_VIDEO_SURFACE` — a controller talks to
+     * a session in another process and there is no surface to hand it. That constraint happens
+     * to match the desired behaviour exactly: video should stop when the driver leaves the
+     * screen, where music should not.
+     */
+    VIDEO,
 }
 
 /**

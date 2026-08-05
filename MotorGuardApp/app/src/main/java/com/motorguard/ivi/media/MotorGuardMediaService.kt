@@ -21,6 +21,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.motorguard.ivi.MainActivity
 import com.motorguard.ivi.data.media.MediaSourceId
 import com.motorguard.ivi.data.media.MediaSourceManager
+import com.motorguard.ivi.data.media.PlaybackKind
 import com.motorguard.ivi.data.media.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -134,10 +135,14 @@ class MotorGuardMediaService : MediaLibraryService() {
             val manager = MediaSourceManager.get(this@MotorGuardMediaService)
 
             if (parentId == ROOT_ID) {
-                // One browsable node per source tab.
+                // One browsable node per source tab — except video, which this service cannot
+                // render (no surface, see PlaybackKind.VIDEO). Offering it to the car's media UI
+                // or to the voice assistant would advertise something that plays as silence.
                 return@future LibraryResult.ofItemList(
                     ImmutableList.copyOf(
-                        manager.sources.map { browsableItem(sourceNodeId(it.id), it.label) },
+                        manager.sources
+                            .filterNot { it.playbackKind == PlaybackKind.VIDEO }
+                            .map { browsableItem(sourceNodeId(it.id), it.label) },
                     ),
                     params,
                 )

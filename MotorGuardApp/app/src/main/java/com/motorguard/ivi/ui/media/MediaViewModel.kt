@@ -7,6 +7,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.motorguard.ivi.data.media.DrivingState
 import com.motorguard.ivi.data.media.MediaSourceId
 import com.motorguard.ivi.data.media.MediaSourceManager
 import com.motorguard.ivi.data.media.PlaybackSnapshot
@@ -66,7 +67,24 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             UsbEvents.stream(getApplication()).collect { event -> onUsbEvent(event) }
         }
+        viewModelScope.launch {
+            DrivingState.isMoving(getApplication()).collect { moving ->
+                _state.update { it.copy(isMoving = moving) }
+            }
+        }
         observeMediaStore()
+    }
+
+    /**
+     * Select a video to play.
+     *
+     * Separate from [playTrack] because video does not run through the shared session at all —
+     * see [com.motorguard.ivi.data.media.PlaybackKind.VIDEO]. The chosen item is held in state
+     * and the pane's own player opens it.
+     */
+    fun playVideo(index: Int) {
+        val track = _state.value.tracks.getOrNull(index) ?: return
+        _state.update { it.copy(selectedVideo = track) }
     }
 
     /**
@@ -249,6 +267,10 @@ data class MediaUiState(
     val notice: MediaNotice? = null,
     /** What is typed in the Radio tab's station search. */
     val searchQuery: String = "",
+    /** The video the Videos tab is playing. Held here, not in the shared session. */
+    val selectedVideo: Track? = null,
+    /** True while the car is above walking pace — video is blocked. */
+    val isMoving: Boolean = false,
 ) {
     fun availabilityOf(id: MediaSourceId): SourceAvailability? = availability.firstOrNull { it.id == id }
 }

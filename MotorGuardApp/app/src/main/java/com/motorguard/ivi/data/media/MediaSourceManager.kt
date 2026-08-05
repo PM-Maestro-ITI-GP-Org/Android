@@ -5,6 +5,7 @@ import com.motorguard.ivi.data.media.sources.BluetoothMediaSource
 import com.motorguard.ivi.data.media.sources.LocalMediaSource
 import com.motorguard.ivi.data.media.sources.RadioMediaSource
 import com.motorguard.ivi.data.media.sources.UsbMediaSource
+import com.motorguard.ivi.data.media.sources.VideoMediaSource
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,7 @@ class MediaSourceManager private constructor(context: Context) {
         UsbMediaSource(appContext),
         BluetoothMediaSource(appContext),
         RadioMediaSource(appContext),
+        VideoMediaSource(appContext),
     )
 
     private val _active = MutableStateFlow(MediaSourceId.LOCAL)
