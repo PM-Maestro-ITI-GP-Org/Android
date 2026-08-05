@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -122,6 +124,55 @@ fun RowDivider() {
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
         modifier = Modifier.padding(horizontal = 18.dp),
     )
+}
+
+/**
+ * A one-line "what is happening right now" strip, with an optional action on the right.
+ *
+ * Wi-Fi and Bluetooth both needed this and neither had it: a scan that produced nothing looked
+ * exactly like a scan that had never started. The spinner is the honest part — it is driven by
+ * [busy] rather than by a timer, so it stops when the radio actually stops.
+ */
+@Composable
+fun StatusLine(
+    text: String,
+    modifier: Modifier = Modifier,
+    busy: Boolean = false,
+    error: Boolean = false,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    val tint = when {
+        error -> MaterialTheme.colorScheme.error
+        busy -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (busy) {
+            CircularProgressIndicator(
+                strokeWidth = 2.dp,
+                color = tint,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            color = tint,
+            modifier = Modifier.weight(1f),
+        )
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction) {
+                Text(text = actionLabel, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
 }
 
 /** Accent-tinted switch. */

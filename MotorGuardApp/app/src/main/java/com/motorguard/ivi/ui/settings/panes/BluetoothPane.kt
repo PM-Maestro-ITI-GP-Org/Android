@@ -7,8 +7,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -16,6 +18,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.motorguard.ivi.data.BtActivity
 import com.motorguard.ivi.data.BtDevice
 import com.motorguard.ivi.data.BtKind
 import com.motorguard.ivi.data.Conn
@@ -30,12 +34,30 @@ import com.motorguard.ivi.ui.components.MgSwitch
 import com.motorguard.ivi.ui.components.RowDivider
 import com.motorguard.ivi.ui.components.SectionCard
 import com.motorguard.ivi.ui.components.SettingRow
+import com.motorguard.ivi.ui.components.StatusLine
 
+/**
+ * Bluetooth settings, written around the fact that the car is the **sink**.
+ *
+ * The pane leads with "Discoverable" rather than with a device list because that is the flow
+ * that actually happens in a car: the driver makes the head unit visible and pairs from the
+ * phone, where the passkey dialog and the keyboard already are. Scanning outward is kept for
+ * speakers and for re-finding a phone that is already bonded, but it is the second option, not
+ * the first.
+ */
 @Composable
 fun BluetoothPane() {
     val bt = Conn.bt
     var menuFor by remember { mutableStateOf<BtDevice?>(null) }
     var renameFor by remember { mutableStateOf<BtDevice?>(null) }
+
+    // Discovery is expensive and saturates the radio, so it is tied to the pane being on screen
+    // — "list refreshes while the pane is open" from docs/06-settings.md — and always stopped on
+    // the way out, including when the driver switches sub-tabs mid-scan.
+    DisposableEffect(bt, bt.enabled) {
+        if (bt.enabled) bt.startScan()
+        onDispose { bt.stopScan() }
+    }
 
     Column(
         modifier = Modifier
@@ -59,30 +81,105 @@ fun BluetoothPane() {
         }
 
         if (bt.enabled) {
-            SectionCard(title = "Paired devices") {
-                bt.paired.forEachIndexed { i, device ->
-                    val connected = bt.connectedName == device.name
+            // What the radio is doing. Sits directly under the toggle so it is the first thing
+            // read after switching Bluetooth on.
+            StatusLine(
+                text = bt.activity.describe(),
+                busy = bt.activity is BtActivity.Scanning ||
+                    bt.activity is BtActivity.Pairing ||
+                    bt.activity is BtActivity.Connecting,
+                error = bt.activity is BtActivity.Failed,
+                actionLabel = if (bt.activity is BtActivity.Scanning) "Stop" else "Scan",
+                onAction = { if (bt.activity is BtActivity.Scanning) bt.stopScan() else bt.startScan() },
+            )
+
+            SectionCard(title = "Connect a phone") {
+                SettingRow(
+                    title = "Discoverable",
+                    subtitle = if (bt.discoverable) {
+                        "Visible as “${bt.localName}” — pair from your phone now"
+                    } else {
+                        "Turn on, then pick “${bt.localName}” on your phone"
+                    },
+                    leading = Icons.Filled.Visibility,
+                    onClick = { bt.requestDiscoverable(!bt.discoverable) },
+                    trailing = {
+                        MgSwitch(
+                            checked = bt.discoverable,
+                            onCheckedChange = { bt.requestDiscoverable(it) },
+                        )
+                    },
+                )
+            }
+
+            if (bt.paired.isNotEmpty()) {
+                SectionCard(title = "Paired devices") {
+                    bt.paired.forEachIndexed { i, device ->
+                        val connected = bt.connectedName == device.name
+                        val connecting = (bt.activity as? BtActivity.Connecting)?.name == device.name
+                        SettingRow(
+                            title = device.name,
+                            subtitle = when {
+                                connecting -> "Connecting…"
+                                connected -> "Connected"
+                                else -> "Paired"
+                            },
+                            leading = device.kind.icon(),
+                            onClick = { bt.toggleConnect(device.address) },
+                            onLongClick = { menuFor = device },
+                            trailing = {
+                                Text(
+                                    text = when {
+                                        connecting -> "Connecting…"
+                                        connected -> "Connected"
+                                        else -> "Tap to connect"
+                                    },
+                                    color = if (connected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                    },
+                                )
+                            },
+                        )
+                        if (i < bt.paired.lastIndex) RowDivider()
+                    }
+                }
+            }
+
+            SectionCard(title = "Available devices") {
+                if (bt.discovered.isEmpty()) {
                     SettingRow(
-                        title = device.name,
-                        subtitle = when {
-                            connected -> "Connected"
-                            else -> "Paired"
+                        title = if (bt.activity is BtActivity.Scanning) {
+                            "Searching for devices…"
+                        } else {
+                            "No devices found"
                         },
-                        leading = device.kind.icon(),
-                        onClick = { bt.toggleConnect(device.name) },
-                        onLongClick = { menuFor = device },
-                        trailing = {
-                            Text(
-                                text = if (connected) "Connected" else "Tap to connect",
-                                color = if (connected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                },
-                            )
+                        subtitle = if (bt.activity is BtActivity.Scanning) {
+                            null
+                        } else {
+                            "Tap Scan to search again"
                         },
+                        leading = Icons.AutoMirrored.Filled.BluetoothSearching,
+                        enabled = false,
                     )
-                    if (i < bt.paired.lastIndex) RowDivider()
+                } else {
+                    bt.discovered.forEachIndexed { i, device ->
+                        val pairing = (bt.activity as? BtActivity.Pairing)?.name == device.name
+                        SettingRow(
+                            title = device.name,
+                            subtitle = if (pairing) "Pairing…" else device.address,
+                            leading = device.kind.icon(),
+                            onClick = { bt.pair(device.address) },
+                            trailing = {
+                                Text(
+                                    text = if (pairing) "Pairing…" else "Tap to pair",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                )
+                            },
+                        )
+                        if (i < bt.discovered.lastIndex) RowDivider()
+                    }
                 }
             }
         }
@@ -97,11 +194,11 @@ fun BluetoothPane() {
             text = { Text(if (connected) "Connected" else "Paired") },
             confirmButton = {
                 Column {
-                    TextButton(onClick = { bt.toggleConnect(device.name); menuFor = null }) {
+                    TextButton(onClick = { bt.toggleConnect(device.address); menuFor = null }) {
                         Text(if (connected) "Disconnect" else "Connect")
                     }
                     TextButton(onClick = { renameFor = device; menuFor = null }) { Text("Rename") }
-                    TextButton(onClick = { bt.unpair(device.name); menuFor = null }) {
+                    TextButton(onClick = { bt.unpair(device.address); menuFor = null }) {
                         Text("Unpair", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -112,7 +209,6 @@ fun BluetoothPane() {
         )
     }
 
-    // Rename dialog (mock).
     renameFor?.let { device ->
         var name by remember { mutableStateOf(device.name) }
         AlertDialog(
@@ -130,7 +226,7 @@ fun BluetoothPane() {
                 TextButton(
                     enabled = name.isNotBlank(),
                     onClick = {
-                        bt.rename(device.name, name)
+                        bt.rename(device.address, name)
                         renameFor = null
                     },
                 ) { Text("Save") }
@@ -140,6 +236,15 @@ fun BluetoothPane() {
             },
         )
     }
+}
+
+/** The status line's sentence. Kept next to the pane so the wording stays with the layout. */
+private fun BtActivity.describe(): String = when (this) {
+    is BtActivity.Idle -> "Ready"
+    is BtActivity.Scanning -> "Scanning for nearby devices…"
+    is BtActivity.Pairing -> "Pairing with $name — confirm on the device"
+    is BtActivity.Connecting -> "Connecting to $name…"
+    is BtActivity.Failed -> if (name.isBlank()) reason else "$name: $reason"
 }
 
 private fun BtKind.icon(): ImageVector = when (this) {

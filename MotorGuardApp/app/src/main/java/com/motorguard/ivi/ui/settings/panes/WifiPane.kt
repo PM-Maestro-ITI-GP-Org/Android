@@ -19,6 +19,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,12 +33,20 @@ import com.motorguard.ivi.ui.components.MgSwitch
 import com.motorguard.ivi.ui.components.RowDivider
 import com.motorguard.ivi.ui.components.SectionCard
 import com.motorguard.ivi.ui.components.SettingRow
+import com.motorguard.ivi.ui.components.StatusLine
 
 @Composable
 fun WifiPane() {
     val wifi = Conn.wifi
     var passwordFor by remember { mutableStateOf<WifiNetwork?>(null) }
     var menuFor by remember { mutableStateOf<WifiNetwork?>(null) }
+
+    // A pane opened onto a stale list is the other half of the "is it scanning?" problem, so
+    // arriving here kicks off a fresh scan the status line can then report on.
+    DisposableEffect(wifi, wifi.enabled) {
+        if (wifi.enabled) wifi.startScan()
+        onDispose { }
+    }
 
     Column(
         modifier = Modifier
@@ -74,6 +83,20 @@ fun WifiPane() {
         }
 
         if (wifi.enabled) {
+            // Same role as the Bluetooth pane's line: says whether the radio is busy, so an empty
+            // list can be read as "found nothing" rather than "broken".
+            StatusLine(
+                text = when {
+                    wifi.connectingSsid != null -> "Connecting to ${wifi.connectingSsid}…"
+                    wifi.scanning -> "Scanning for networks…"
+                    wifi.networks.isEmpty() -> "No networks found"
+                    else -> "${wifi.networks.size} networks nearby"
+                },
+                busy = wifi.scanning || wifi.connectingSsid != null,
+                actionLabel = if (wifi.scanning) null else "Scan",
+                onAction = { wifi.startScan() },
+            )
+
             SectionCard(title = "Networks") {
                 // Android returns no scan results at all while location services are off, whatever
                 // permissions the app holds. Saying so beats an empty card that reads as a bug.

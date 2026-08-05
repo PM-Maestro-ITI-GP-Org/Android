@@ -11,7 +11,36 @@ data class WifiNetwork(val ssid: String, val secured: Boolean, val signal: Int)
 
 enum class BtKind { PHONE, AUDIO, WEARABLE }
 
-data class BtDevice(val name: String, val kind: BtKind)
+/**
+ * One Bluetooth device, keyed by [address] rather than by name.
+ *
+ * Discovery is what forces the address to be the identity: a scan routinely turns up several
+ * devices sharing a name ("iPhone"), and some report no name at all until they are queried — so
+ * a name-keyed list cannot say which row the driver tapped. [name] falls back to the address
+ * when the radio has not produced one yet, so a row is never blank.
+ */
+data class BtDevice(
+    val address: String,
+    val name: String,
+    val kind: BtKind,
+    /** False for a device that only turned up in a scan and has not been paired. */
+    val bonded: Boolean = true,
+)
+
+/**
+ * What the Bluetooth radio is doing right now.
+ *
+ * The pane had no way to say "scanning" — the list simply sat empty and the driver could not
+ * tell a finished, empty scan from one that had not started. Every long-running operation gets
+ * a case here so there is always something honest to put on the status line.
+ */
+sealed interface BtActivity {
+    data object Idle : BtActivity
+    data object Scanning : BtActivity
+    data class Pairing(val name: String) : BtActivity
+    data class Connecting(val name: String) : BtActivity
+    data class Failed(val name: String, val reason: String) : BtActivity
+}
 
 /**
  * Wi-Fi state + control. Implemented by [MockWifiRepo] (emulator / unprivileged) and
@@ -32,22 +61,71 @@ interface WifiRepo {
      */
     val lastError: String?
 
+    /**
+     * True while a scan is in flight.
+     *
+     * A Wi-Fi scan takes seconds and produces nothing until it finishes, so without this the
+     * pane cannot tell "still looking" from "looked, found nothing" — and both render as an
+     * empty list.
+     */
+    val scanning: Boolean
+
+    /** The network a join is in progress for, or null. */
+    val connectingSsid: String?
+
     fun setEnabled(enabled: Boolean)
+
+    /** Ask for a fresh scan. Results arrive asynchronously into [networks]. */
+    fun startScan()
+
     fun connect(ssid: String, password: String? = null)
     fun disconnect()
     fun forget(ssid: String)
     fun clearError()
 }
 
-/** Bluetooth state + control. Mock or real (BluetoothAdapter). */
+/**
+ * Bluetooth state + control. Mock or real (BluetoothAdapter).
+ *
+ * The head unit is the **sink**, not the source: the driver's phone connects *to* the car and
+ * the car plays its audio. That inverts the usual phone-app assumptions, and two members here
+ * exist because of it — [discoverable], since a phone can only pick the car out of its own
+ * list if the car is advertising, and [localName], which is the name the driver has to look
+ * for on the phone. Outbound connects are still supported ([toggleConnect]) for the case where
+ * the phone is already bonded and the driver wants to reconnect from the car side.
+ */
 interface BtRepo {
     val enabled: Boolean
     val connectedName: String?
     val paired: List<BtDevice>
+
+    /** Nearby devices seen by the current/last scan that are not already bonded. */
+    val discovered: List<BtDevice>
+
+    /** Scanning / pairing / connecting, for the pane's status line. */
+    val activity: BtActivity
+
+    /** True while the car is advertising itself, so a phone can find it. */
+    val discoverable: Boolean
+
+    /** The name the car shows up as on the phone. */
+    val localName: String
+
     fun setEnabled(enabled: Boolean)
-    fun toggleConnect(name: String)
-    fun unpair(name: String)
-    fun rename(oldName: String, newName: String)
+    fun startScan()
+    fun stopScan()
+
+    /**
+     * Advertise the car for a while so a phone can find and pair with it. Not permanent by
+     * design — a head unit that is discoverable forever is a standing invitation to anyone in
+     * the car park.
+     */
+    fun requestDiscoverable(on: Boolean)
+
+    fun pair(address: String)
+    fun toggleConnect(address: String)
+    fun unpair(address: String)
+    fun rename(address: String, newName: String)
 }
 
 /**

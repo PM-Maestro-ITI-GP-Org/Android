@@ -17,9 +17,13 @@
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
 
-    <!-- Bluetooth (API 31+). Legacy perms for older platforms. -->
+    <!-- Bluetooth (API 31+). Legacy perms for older platforms.
+         ADVERTISE is what lets the head unit make itself discoverable, which is the direction
+         that matters here: the driver's phone connects *to* the car, so the car has to be
+         visible in the phone's own pairing list. -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />

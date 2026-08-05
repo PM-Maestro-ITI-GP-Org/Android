@@ -51,6 +51,12 @@ class RealWifiRepo(private val context: Context) : WifiRepo {
     override var lastError by mutableStateOf<String?>(null)
         private set
 
+    override var scanning by mutableStateOf(false)
+        private set
+
+    /** Mirrors [pending], exposed for the pane's status line. */
+    override val connectingSsid: String? get() = pending?.ssid
+
     override fun clearError() { lastError = null }
 
     /**
@@ -77,14 +83,35 @@ class RealWifiRepo(private val context: Context) : WifiRepo {
         }
         context.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
-                if (intent?.action == WifiManager.SUPPLICANT_STATE_CHANGED_ACTION) {
-                    onSupplicantState(intent)
+                when (intent?.action) {
+                    WifiManager.SUPPLICANT_STATE_CHANGED_ACTION -> onSupplicantState(intent)
+                    WifiManager.SCAN_RESULTS_AVAILABLE_ACTION -> {
+                        scanning = false
+                        handler.removeCallbacksAndMessages(SCAN_TOKEN)
+                    }
                 }
                 refresh()
             }
         }, filter)
         refresh()
-        runCatching { wm?.startScan() }
+        startScan()
+    }
+
+    /**
+     * Ask the platform for a fresh scan.
+     *
+     * `startScan` is throttled — four calls per two minutes for a foreground app, and it returns
+     * false once the budget is spent — so a refused scan clears the flag immediately rather than
+     * leaving a spinner running against a scan that was never started. The timeout covers the
+     * other case: a scan that is accepted and then never delivers SCAN_RESULTS_AVAILABLE.
+     */
+    override fun startScan() {
+        if (wm?.isWifiEnabled != true) return
+        val started = runCatching { wm.startScan() }.getOrDefault(false)
+        scanning = started
+        if (!started) return
+        handler.removeCallbacksAndMessages(SCAN_TOKEN)
+        handler.postAtTime({ scanning = false }, SCAN_TOKEN, android.os.SystemClock.uptimeMillis() + SCAN_TIMEOUT_MS)
     }
 
     private fun currentSsid(): String? {
@@ -314,6 +341,10 @@ class RealWifiRepo(private val context: Context) : WifiRepo {
         /** Long enough for DHCP on a slow AP, short enough that a failure is still felt as one. */
         const val JOIN_TIMEOUT_MS = 25_000L
 
+        /** A scan that has produced nothing by now is not going to. */
+        const val SCAN_TIMEOUT_MS = 12_000L
+
         val TIMEOUT_TOKEN = Any()
+        val SCAN_TOKEN = Any()
     }
 }
