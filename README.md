@@ -28,10 +28,10 @@ vendor/motorguard/MotorGuard/  the drop-in package (blue print + glue)
                                committed; skips files already present — deploy.sh preserves them)
     privapp_permissions_com.motorguard.ivi.xml   privileged allow-list → /system/etc/permissions
     res-platform/              overlay flipping use_real_connectivity → true (real radios)
-device/brcm/rpi5/
-  aosp_rpi5_car.mk.patch     device integration patch (applied by deploy.sh)
-  BoardConfig.mk.patch       display fix: force HDMI0 hotplug + EDID override (QDTECH MPI7002)
-  vendor.prop.patch          adb over ethernet (service.adb.tcp.port=5555)
+ device/brcm/rpi5/
+   aosp_rpi5_car.mk.patch     device integration patch (applied by deploy.sh)
+   BoardConfig.mk.patch       display note: use the connected monitor's native EDID (no override)
+   vendor.prop.patch          adb over ethernet (HWC mode follows the monitor's native EDID, e.g. 1920x1080)
 ```
 
 `Android.bp` defines the `MotorGuard` app, `libmotorguardvoice` (the native voice/reasoning
@@ -116,18 +116,17 @@ PRODUCT_PACKAGES += \
     CarSystemUISystemBarPersistcyImmersive
 ```
 
-`BoardConfig.mk` (display): force HDMI0 hotplug + built-in EDID override — the QDTECH MPI7002
-panel does not answer on the DDC/EDID bus of the Pi 5 (`BSC_A no ACK`), so vc4-kms-v3d would
-expose no display mode. `edid/1024x768.bin` is compiled into the kernel:
+`BoardConfig.mk` (display): the connected monitor's native EDID is used as-is. Monitors
+with working DDC/EDID (e.g. 1920x1080 panels) are driven at their native resolution, so no
+`force_hotplug` / `drm.edid_firmware` override is applied (a custom firmware EDID would be
+needed only for DDC-less panels like the QDTECH MPI7002).
 
-```
-BOARD_KERNEL_CMDLINE += vc4.force_hotplug=0x01 drm.edid_firmware=HDMI-A-1:edid/1024x768.bin
-```
-
-`vendor.prop` (debug): enables adb over ethernet:
+`vendor.prop` (debug): adb over ethernet; the HWC mode (`vendor.hwc.drm.force_mode`)
+defaults to the monitor's native resolution baked at build time (1920x1080):
 
 ```
 service.adb.tcp.port=5555
+vendor.hwc.drm.force_mode=1920x1080
 ```
 
 ## Voice subsystem (Vega) prerequisites

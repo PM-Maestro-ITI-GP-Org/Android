@@ -1,5 +1,5 @@
 diff --git a/aosp_rpi5_car.mk b/aosp_rpi5_car.mk
-index f9838bb..6111867 100644
+index f9838bb..3c37b43 100644
 --- a/aosp_rpi5_car.mk
 +++ b/aosp_rpi5_car.mk
 @@ -103,6 +103,13 @@ PRODUCT_COPY_FILES += \

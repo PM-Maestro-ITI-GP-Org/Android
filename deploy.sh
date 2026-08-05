@@ -119,7 +119,7 @@ apply_device_patch() {
 }
 
 apply_device_patch "aosp_rpi5_car.mk.patch" "aosp_rpi5_car.mk" "CarSystemUISystemBarPersistcyImmersive"
-apply_device_patch "BoardConfig.mk.patch" "BoardConfig.mk" "vc4.force_hotplug"
+apply_device_patch "BoardConfig.mk.patch" "BoardConfig.mk" "connected monitor's native EDID"
 apply_device_patch "vendor.prop.patch" "vendor.prop" "service.adb.tcp.port=5555"
 
 echo "== 5/5 fetch prebuilt AARs/jars"
