@@ -1,6 +1,6 @@
-# Vendored binaries — fetched, never committed (see prebuilts/README.md)
-prebuilts/*.aar
-prebuilts/*.jar
+# Vendored binaries — fetched, never committed (see MotorGuard_Application/prebuilts/README.md)
+MotorGuard_Application/prebuilts/*.aar
+MotorGuard_Application/prebuilts/*.jar
 
 # Soong/AOSP build output, if this dir is ever used as a build cwd
 /out/

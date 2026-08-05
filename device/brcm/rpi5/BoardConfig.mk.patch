@@ -1,0 +1,14 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index a93cb46..32f8635 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -58,6 +58,9 @@ TARGET_NO_RECOVERY := true
+ BOARD_SEPOLICY_DIRS += device/brcm/rpi5/sepolicy
+ BOARD_KERNEL_CMDLINE += androidboot.selinux=permissive
+ 
++# Display: force hotplug + EDID override for QDTECH MPI7002 (panel DDC/EDID not read on Pi 5)
++BOARD_KERNEL_CMDLINE += vc4.force_hotplug=0x01 drm.edid_firmware=HDMI-A-1:edid/1024x768.bin
++
+ # Treble
+ TARGET_COPY_OUT_VENDOR := vendor
+ 

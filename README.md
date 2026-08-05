@@ -20,14 +20,18 @@ The tree mirrors the AOSP hierarchy so `deploy.sh` can drop it in verbatim:
 deploy.conf                    the ONLY file you edit per release: APP_BRANCH + AOSP_ROOT
 deploy.sh                      one command: select app branch → copy → patch → fetch prebuilts
 vendor/motorguard/MotorGuard/  the drop-in package (blue print + glue)
+  motorguard.mk                product makefile snippet (PRODUCT_PACKAGES += MotorGuard)
   MotorGuard_Application/
     app/                       git submodule → app source at app/MotorGuardApp/app/src/main/
     Android.bp                 the blue print — all Soong modules (paths relative to this file)
-  motorguard.mk                product makefile snippet (PRODUCT_PACKAGES += MotorGuard)
-  prebuilts/fetch.sh           downloads + SHA256-verifies the 17 prebuilt AARs/jars (never committed)
-  privapp_permissions_com.motorguard.ivi.xml   privileged allow-list → /system/etc/permissions
-  res-platform/                overlay flipping use_real_connectivity → true (real radios)
-device/brcm/rpi5/aosp_rpi5_car.mk.patch   device integration patch (applied by deploy.sh)
+    prebuilts/fetch.sh         downloads + SHA256-verifies the 17 prebuilt AARs/jars (never
+                               committed; skips files already present — deploy.sh preserves them)
+    privapp_permissions_com.motorguard.ivi.xml   privileged allow-list → /system/etc/permissions
+    res-platform/              overlay flipping use_real_connectivity → true (real radios)
+device/brcm/rpi5/
+  aosp_rpi5_car.mk.patch     device integration patch (applied by deploy.sh)
+  BoardConfig.mk.patch       display fix: force HDMI0 hotplug + EDID override (QDTECH MPI7002)
+  vendor.prop.patch          adb over ethernet (service.adb.tcp.port=5555)
 ```
 
 `Android.bp` defines the `MotorGuard` app, `libmotorguardvoice` (the native voice/reasoning
@@ -97,10 +101,14 @@ instead of compiling from source.
 git clone --recurse-submodules -b media-nav-settings-voice_forAAOS git@github.com:PM-Maestro-ITI-GP-Org/Android.git dropin
 cp -r dropin/vendor/motorguard/MotorGuard /path/to/aosp/vendor/motorguard/
 git -C /path/to/aosp/device/brcm/rpi5 apply dropin/device/brcm/rpi5/aosp_rpi5_car.mk.patch
-/path/to/aosp/vendor/motorguard/MotorGuard/prebuilts/fetch.sh
+git -C /path/to/aosp/device/brcm/rpi5 apply dropin/device/brcm/rpi5/BoardConfig.mk.patch
+git -C /path/to/aosp/device/brcm/rpi5 apply dropin/device/brcm/rpi5/vendor.prop.patch
+/path/to/aosp/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts/fetch.sh
 ```
 
-The device patch adds to `device/brcm/rpi5/aosp_rpi5_car.mk`:
+The device patches touch `device/brcm/rpi5/`:
+
+`aosp_rpi5_car.mk`:
 
 ```make
 $(call inherit-product, vendor/motorguard/MotorGuard/motorguard.mk)
@@ -108,11 +116,25 @@ PRODUCT_PACKAGES += \
     CarSystemUISystemBarPersistcyImmersive
 ```
 
+`BoardConfig.mk` (display): force HDMI0 hotplug + built-in EDID override — the QDTECH MPI7002
+panel does not answer on the DDC/EDID bus of the Pi 5 (`BSC_A no ACK`), so vc4-kms-v3d would
+expose no display mode. `edid/1024x768.bin` is compiled into the kernel:
+
+```
+BOARD_KERNEL_CMDLINE += vc4.force_hotplug=0x01 drm.edid_firmware=HDMI-A-1:edid/1024x768.bin
+```
+
+`vendor.prop` (debug): enables adb over ethernet:
+
+```
+service.adb.tcp.port=5555
+```
+
 ## Voice subsystem (Vega) prerequisites
 
 - **Prebuilts** — the 17 AARs/jars (ONNX Runtime, media3, MapLibre, okhttp/okio, …) are never
-  committed; `prebuilts/fetch.sh` downloads each and SHA256-verifies it (idempotent:
-  re-running skips files that already match). Without them soong fails to resolve
+  committed; `MotorGuard_Application/prebuilts/fetch.sh` downloads each and SHA256-verifies it
+  (idempotent: re-running skips files that already match). Without them soong fails to resolve
   `ai.onnxruntime.*`, `androidx.media3.*` and `org.maplibre.*`.
 - **SQLite** — `app/MotorGuardApp/app/src/main/cpp/sqlite3.c` + `sqlite3.h` (the official
   amalgamation) are committed in the app submodule and compiled straight in, because the

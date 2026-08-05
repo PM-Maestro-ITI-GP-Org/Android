@@ -1,7 +1,7 @@
 # Motor Guard product bits. Include from your device product makefile, e.g. in
 # device/<vendor>/rpi5/aosp_rpi5_car.mk (KonstaKANG):
 #
-#     $(call inherit-product, vendor/motorguard/MotorGuard/aosp/motorguard.mk)
+#     $(call inherit-product, vendor/motorguard/MotorGuard/motorguard.mk)
 #
 # (adjust the path to wherever you drop this tree).
 

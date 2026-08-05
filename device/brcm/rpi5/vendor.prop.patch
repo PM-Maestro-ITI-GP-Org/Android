@@ -1,0 +1,14 @@
+diff --git a/vendor.prop b/vendor.prop
+index 97a2abd..4e9bdf5 100644
+--- a/vendor.prop
++++ b/vendor.prop
+@@ -66,6 +66,9 @@ persist.device_config.mglru_native.lru_gen_config=core
+ # Virtualization
+ ro.boot.hypervisor.vm.supported=1
+ 
++# Debugging (adb over ethernet)
++service.adb.tcp.port=5555
++
+ # Wifi
+ ro.boot.wificountrycode=00
+ wifi.interface=wlan0

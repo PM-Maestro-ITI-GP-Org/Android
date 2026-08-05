@@ -66,32 +66,67 @@ fi
 
 echo "== 3/5 install drop-in into $AOSP_ROOT"
 mkdir -p "$AOSP_ROOT/vendor/motorguard"
+
+# Preserve already-fetched prebuilts across deploys. The artifacts are never committed and
+# re-downloading all of them every deploy is slow; fetch.sh re-verifies SHA256 anyway and
+# skips whatever is already present.
+PREBUILT_BAK=""
+if [ -d "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts" ]; then
+  PREBUILT_BAK="$AOSP_ROOT/vendor/motorguard/MotorGuard.prebuilts.bak"
+  rm -rf "$PREBUILT_BAK"
+  mv "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts" "$PREBUILT_BAK"
+fi
+
 rm -rf "$AOSP_ROOT/vendor/motorguard/MotorGuard"
 cp -r "$ROOT/vendor/motorguard/MotorGuard" "$AOSP_ROOT/vendor/motorguard/"
 rm -f "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/app/.git"
+
+if [ -n "$PREBUILT_BAK" ] && [ -d "$PREBUILT_BAK" ]; then
+  rm -rf "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts"
+  mv "$PREBUILT_BAK" "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts"
+  echo "  preserved existing prebuilts (fetch.sh will skip verified files)"
+fi
+
+# The app branch still ships an obsolete self-contained MotorGuardApp/aosp/Android.bp
+# (the pre-drop-in layout). The drop-in blue print (MotorGuard_Application/Android.bp)
+# supersedes it; Soong would otherwise see both and fail on duplicate module names.
+STALE_BP="$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/app/MotorGuardApp/aosp/Android.bp"
+if [ -f "$STALE_BP" ]; then
+  mv "$STALE_BP" "$STALE_BP.disabled"
+  echo "  disabled obsolete MotorGuardApp/aosp/Android.bp (superseded by new blue print)"
+fi
+
 echo "  installed (app from branch $APP_BRANCH + build fixes)"
 
-echo "== 4/5 apply device integration patch"
-PATCH_SRC="$ROOT/device/brcm/rpi5/aosp_rpi5_car.mk.patch"
-PATCH_TARGET="$AOSP_ROOT/device/brcm/rpi5/aosp_rpi5_car.mk"
-if [ -f "$PATCH_TARGET" ] && grep -q "CarSystemUISystemBarPersistcyImmersive" "$PATCH_TARGET"; then
-  echo "  already applied"
-elif git -C "$AOSP_ROOT/device/brcm/rpi5" apply --check "$PATCH_SRC" >/dev/null 2>&1; then
-  git -C "$AOSP_ROOT/device/brcm/rpi5" apply "$PATCH_SRC"
-  echo "  applied (git apply)"
-elif patch -p1 -d "$AOSP_ROOT/device/brcm/rpi5" --dry-run < "$PATCH_SRC" >/dev/null 2>&1; then
-  patch -p1 -d "$AOSP_ROOT/device/brcm/rpi5" < "$PATCH_SRC"
-  echo "  applied (patch -p1)"
-else
-  echo "ERROR: could not apply $PATCH_SRC to $PATCH_TARGET" >&2
-  exit 1
-fi
+echo "== 4/5 apply device integration patches"
+
+apply_device_patch() {
+  local pname="$1" target="$2" marker="$3"
+  local src="$ROOT/device/brcm/rpi5/$pname"
+  local tgt="$AOSP_ROOT/device/brcm/rpi5/$target"
+  if [ -f "$tgt" ] && grep -qF "$marker" "$tgt"; then
+    echo "  $pname: already applied"
+  elif git -C "$AOSP_ROOT/device/brcm/rpi5" apply --check "$src" >/dev/null 2>&1; then
+    git -C "$AOSP_ROOT/device/brcm/rpi5" apply "$src"
+    echo "  $pname: applied (git apply)"
+  elif patch -p1 -d "$AOSP_ROOT/device/brcm/rpi5" --dry-run < "$src" >/dev/null 2>&1; then
+    patch -p1 -d "$AOSP_ROOT/device/brcm/rpi5" < "$src"
+    echo "  $pname: applied (patch -p1)"
+  else
+    echo "ERROR: could not apply $src to $tgt" >&2
+    exit 1
+  fi
+}
+
+apply_device_patch "aosp_rpi5_car.mk.patch" "aosp_rpi5_car.mk" "CarSystemUISystemBarPersistcyImmersive"
+apply_device_patch "BoardConfig.mk.patch" "BoardConfig.mk" "vc4.force_hotplug"
+apply_device_patch "vendor.prop.patch" "vendor.prop" "service.adb.tcp.port=5555"
 
 echo "== 5/5 fetch prebuilt AARs/jars"
 if [ "$SKIP_FETCH" = "1" ]; then
   echo "  skipped (--no-fetch)"
 else
-  "$AOSP_ROOT/vendor/motorguard/MotorGuard/prebuilts/fetch.sh"
+  "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts/fetch.sh"
 fi
 
 cat <<EOF

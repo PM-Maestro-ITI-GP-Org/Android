@@ -19,7 +19,7 @@ android_app {
     resource_dirs: [
         "app/MotorGuardApp/app/src/main/res",
         // Overlay that flips bool/use_real_connectivity -> true for the real build.
-        "../res-platform",
+        "res-platform",
     ],
     manifest: "app/MotorGuardApp/app/src/main/AndroidManifest.xml",
 
@@ -101,7 +101,7 @@ android_app {
 prebuilt_etc {
     name: "privapp_permissions_com.motorguard.ivi",
     sub_dir: "permissions",
-    src: "../privapp_permissions_com.motorguard.ivi.xml",
+    src: "privapp_permissions_com.motorguard.ivi.xml",
     filename_from_src: true,
 }
 
@@ -145,7 +145,7 @@ cc_library_shared {
 // path below; extract_jni pulls its bundled libonnxruntime*.so into the app.
 android_library_import {
     name: "motorguard-onnxruntime",
-    aars: ["../prebuilts/onnxruntime-android-1.19.2.aar"],
+    aars: ["prebuilts/onnxruntime-android-1.19.2.aar"],
     sdk_version: "current",
     extract_jni: true,
 }
@@ -157,7 +157,7 @@ android_library_import {
 // ---------------------------------------------------------------------------
 java_import {
     name: "kotlinx-coroutines-guava",
-    jars: ["../prebuilts/kotlinx-coroutines-guava-1.8.1.jar"],
+    jars: ["prebuilts/kotlinx-coroutines-guava-1.8.1.jar"],
     sdk_version: "current",
     static_libs: ["guava"],
 }
@@ -171,7 +171,7 @@ java_import {
 // ---------------------------------------------------------------------------
 android_library_import {
     name: "androidx.media3_media3-common",
-    aars: ["../prebuilts/media3-common-1.4.1.aar"],
+    aars: ["prebuilts/media3-common-1.4.1.aar"],
     sdk_version: "current",
     static_libs: [
         "androidx.annotation_annotation",
@@ -184,28 +184,28 @@ android_library_import {
 
 android_library_import {
     name: "androidx.media3_media3-database",
-    aars: ["../prebuilts/media3-database-1.4.1.aar"],
+    aars: ["prebuilts/media3-database-1.4.1.aar"],
     sdk_version: "current",
     static_libs: ["androidx.media3_media3-common"],
 }
 
 android_library_import {
     name: "androidx.media3_media3-datasource",
-    aars: ["../prebuilts/media3-datasource-1.4.1.aar"],
+    aars: ["prebuilts/media3-datasource-1.4.1.aar"],
     sdk_version: "current",
     static_libs: ["androidx.media3_media3-common"],
 }
 
 android_library_import {
     name: "androidx.media3_media3-decoder",
-    aars: ["../prebuilts/media3-decoder-1.4.1.aar"],
+    aars: ["prebuilts/media3-decoder-1.4.1.aar"],
     sdk_version: "current",
     static_libs: ["androidx.media3_media3-common"],
 }
 
 android_library_import {
     name: "androidx.media3_media3-extractor",
-    aars: ["../prebuilts/media3-extractor-1.4.1.aar"],
+    aars: ["prebuilts/media3-extractor-1.4.1.aar"],
     sdk_version: "current",
     static_libs: [
         "androidx.media3_media3-common",
@@ -215,14 +215,14 @@ android_library_import {
 
 android_library_import {
     name: "androidx.media3_media3-container",
-    aars: ["../prebuilts/media3-container-1.4.1.aar"],
+    aars: ["prebuilts/media3-container-1.4.1.aar"],
     sdk_version: "current",
     static_libs: ["androidx.media3_media3-common"],
 }
 
 android_library_import {
     name: "androidx.media3_media3-exoplayer",
-    aars: ["../prebuilts/media3-exoplayer-1.4.1.aar"],
+    aars: ["prebuilts/media3-exoplayer-1.4.1.aar"],
     sdk_version: "current",
     static_libs: [
         "androidx.media3_media3-common",
@@ -240,7 +240,7 @@ android_library_import {
 
 android_library_import {
     name: "androidx.media3_media3-session",
-    aars: ["../prebuilts/media3-session-1.4.1.aar"],
+    aars: ["prebuilts/media3-session-1.4.1.aar"],
     sdk_version: "current",
     static_libs: [
         "androidx.media3_media3-common",
@@ -255,11 +255,11 @@ android_library_import {
 // MapLibre Native (org.maplibre.android.*) — the nav map. android-sdk 11.8.0
 // bundles libmaplibre.so (extract_jni). Deps mirrored from the POM; tree libs
 // (gson, okhttp, androidx.*) are used where available, everything else is
-// vendored into ../prebuilts/ (see README).
+// vendored into prebuilts/ (see README).
 // ---------------------------------------------------------------------------
 android_library_import {
     name: "motorguard-maplibre",
-    aars: ["../prebuilts/android-sdk-11.8.0.aar"],
+    aars: ["prebuilts/android-sdk-11.8.0.aar"],
     sdk_version: "current",
     extract_jni: true, // jni/arm64-v8a/libmaplibre.so
     static_libs: [
@@ -276,7 +276,7 @@ android_library_import {
 
 java_import {
     name: "motorguard-okhttp",
-    jars: ["../prebuilts/okhttp-4.12.0.jar"],
+    jars: ["prebuilts/okhttp-4.12.0.jar"],
     static_libs: [
         "motorguard-okio",
         "kotlin-stdlib",
@@ -285,24 +285,24 @@ java_import {
 
 java_import {
     name: "motorguard-okio",
-    jars: ["../prebuilts/okio-jvm-3.6.0.jar"],
+    jars: ["prebuilts/okio-jvm-3.6.0.jar"],
 }
 
 java_import {
     name: "motorguard-maplibre-geojson",
-    jars: ["../prebuilts/android-sdk-geojson-6.0.1.jar"],
+    jars: ["prebuilts/android-sdk-geojson-6.0.1.jar"],
     static_libs: ["gson"],
 }
 
 java_import {
     name: "motorguard-maplibre-turf",
-    jars: ["../prebuilts/android-sdk-turf-6.0.1.jar"],
+    jars: ["prebuilts/android-sdk-turf-6.0.1.jar"],
     static_libs: ["motorguard-maplibre-geojson"],
 }
 
 android_library_import {
     name: "motorguard-maplibre-gestures",
-    aars: ["../prebuilts/maplibre-android-gestures-0.0.3.aar"],
+    aars: ["prebuilts/maplibre-android-gestures-0.0.3.aar"],
     sdk_version: "current",
     static_libs: [
         "kotlin-stdlib",
@@ -313,7 +313,7 @@ android_library_import {
 
 android_library_import {
     name: "motorguard-maplibre-timber",
-    aars: ["../prebuilts/timber-5.0.1.aar"],
+    aars: ["prebuilts/timber-5.0.1.aar"],
     sdk_version: "current",
 }
 

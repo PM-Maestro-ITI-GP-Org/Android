@@ -1,10 +1,10 @@
 # Vendored prebuilts
 
 All files here are fetched, never committed (~20 MB total). See `.gitignore`
-(`prebuilts/*.aar`). None of these artifacts exist in the AOSP prebuilts
+(`MotorGuard_Application/prebuilts/*.aar`). None of these artifacts exist in the AOSP prebuilts
 (`prebuilts/sdk/current/androidx/m2repository` has no media3, no onnxruntime, and
 `external/kotlinx.coroutines` has no guava variant), so they are imported with
-`android_library_import` / `java_import` modules in `../MotorGuard_Application/Android.bp`.
+`android_library_import` / `java_import` modules in `../Android.bp`.
 
 ## ONNX Runtime — `onnxruntime-android-1.19.2.aar` (~15 MB)
 
