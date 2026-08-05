@@ -105,10 +105,12 @@ class VideoMediaSource(private val context: Context) : MediaLibrarySource {
 
     private fun id() = id
 
+    /** Integer division alone rendered a 167 kB clip as "0 MB", so small files get their own unit. */
     private fun Long.asFileSize(): String = when {
         this <= 0L -> ""
         this >= 1_000_000_000L -> String.format(java.util.Locale.ROOT, "%.1f GB", this / 1e9)
-        else -> "${this / 1_000_000} MB"
+        this >= 1_000_000L -> "${this / 1_000_000} MB"
+        else -> "${this / 1_000} kB"
     }
 
     private companion object {

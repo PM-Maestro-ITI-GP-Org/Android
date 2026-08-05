@@ -210,7 +210,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     tracks = tracks,
                     loading = false,
-                    queue = summarize(sources.source(id).label, tracks),
+                    queue = summarize(sources.source(id).label, tracks, id),
                 )
             }
         }
@@ -232,7 +232,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
      * "Today's Top Hits · 38 songs · 2h 21m". Names the album when the whole list is one, which
      * is the common case for a USB stick holding a single record.
      */
-    private fun summarize(sourceLabel: String, tracks: List<Track>): QueueSummary {
+    private fun summarize(
+        sourceLabel: String,
+        tracks: List<Track>,
+        source: MediaSourceId,
+    ): QueueSummary {
         if (tracks.isEmpty()) return QueueSummary(sourceLabel, "No tracks")
 
         val albums = tracks.map { it.album }.filter { it.isNotBlank() }.distinct()
@@ -241,10 +245,22 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val totalMs = tracks.sumOf { it.durationMs }
         val hours = TimeUnit.MILLISECONDS.toHours(totalMs)
         val minutes = TimeUnit.MILLISECONDS.toMinutes(totalMs) % 60
-        val length = if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
-        val songs = if (tracks.size == 1) "1 song" else "${tracks.size} songs"
+        val seconds = TimeUnit.MILLISECONDS.toSeconds(totalMs) % 60
+        val length = when {
+            hours > 0 -> "${hours}h ${minutes}m"
+            minutes > 0 -> "${minutes}m"
+            // Short clips summed to a flat "0m", which reads as broken rather than brief.
+            else -> "${seconds}s"
+        }
 
-        return QueueSummary(title, "$songs · $length")
+        // "2 songs" over a list of films is the sort of detail that makes a UI feel unfinished.
+        val noun = when (source) {
+            MediaSourceId.VIDEO -> if (tracks.size == 1) "1 video" else "${tracks.size} videos"
+            MediaSourceId.RADIO -> if (tracks.size == 1) "1 station" else "${tracks.size} stations"
+            else -> if (tracks.size == 1) "1 song" else "${tracks.size} songs"
+        }
+
+        return QueueSummary(title, "$noun · $length")
     }
 
     private companion object {
