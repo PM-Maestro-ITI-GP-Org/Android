@@ -1,7 +1,11 @@
 package com.motorguard.ivi.media
 
+import android.bluetooth.BluetoothDevice
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -64,6 +68,28 @@ class BluetoothSessionMirror private constructor(context: Context) {
     }
 
     init {
+        // A phone connecting is the moment there is something to mirror. Without this the only
+        // attempt is the bounded retry below, which has long since given up by the time the
+        // driver pairs their phone — and the now-playing card then stays blank for the rest of
+        // the session while music is audibly playing.
+        runCatching {
+            appContext.registerReceiver(
+                object : BroadcastReceiver() {
+                    override fun onReceive(c: Context?, intent: Intent?) {
+                        when (intent?.action) {
+                            BluetoothDevice.ACTION_ACL_CONNECTED -> connect()
+                            // The stack's session outlives the peer but reports nothing useful,
+                            // so the attachment is dropped rather than left showing a dead track.
+                            BluetoothDevice.ACTION_ACL_DISCONNECTED -> release()
+                        }
+                    }
+                },
+                IntentFilter().apply {
+                    addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+                    addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+                },
+            )
+        }
         connect()
     }
 

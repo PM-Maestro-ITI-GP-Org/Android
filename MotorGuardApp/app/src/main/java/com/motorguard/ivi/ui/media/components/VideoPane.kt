@@ -37,9 +37,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.motorguard.ivi.data.media.MediaSourceId
+import com.motorguard.ivi.data.media.PlaybackKind
+import com.motorguard.ivi.data.media.PlaybackSnapshot
 import com.motorguard.ivi.data.media.Track
+import com.motorguard.ivi.media.VideoPlayback
 import com.motorguard.ivi.ui.theme.MotorGuard
+import kotlinx.coroutines.delay
 
 /**
  * The video surface, with its own player.
@@ -78,8 +84,39 @@ fun VideoPane(
             .build()
     }
 
-    DisposableEffect(Unit) {
-        onDispose { player.release() }
+    // Report to the rest of the app, so the Home now-playing card and the transport bar know a
+    // video is what is currently making sound. See [VideoPlayback].
+    DisposableEffect(player) {
+        val controls = object : VideoPlayback.Controls {
+            override fun playPause() {
+                if (player.isPlaying) player.pause() else player.play()
+            }
+
+            override fun seekTo(positionMs: Long) = player.seekTo(positionMs)
+        }
+        VideoPlayback.attach(controls)
+
+        val listener = object : Player.Listener {
+            override fun onEvents(p: Player, events: Player.Events) {
+                VideoPlayback.update(snapshotOf(p, track))
+            }
+        }
+        player.addListener(listener)
+
+        onDispose {
+            player.removeListener(listener)
+            VideoPlayback.detach(controls)
+            player.release()
+        }
+    }
+
+    // The player reports position only when something else changes, so the card's progress would
+    // otherwise freeze mid-film.
+    LaunchedEffect(player) {
+        while (true) {
+            delay(POSITION_TICK_MS)
+            if (player.isPlaying) VideoPlayback.update(snapshotOf(player, track))
+        }
     }
 
     LaunchedEffect(track?.id) {
@@ -130,6 +167,34 @@ fun VideoPane(
         }
     }
 }
+
+/**
+ * The pane's player as a [PlaybackSnapshot].
+ *
+ * [PlaybackKind.VIDEO] rather than LOCAL_PLAYER so the transport bar knows these buttons go to
+ * the pane's player and not to the session — the same distinction the Bluetooth mirror draws.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private fun snapshotOf(player: Player, track: Track?): PlaybackSnapshot? {
+    if (track == null) return null
+    return PlaybackSnapshot(
+        track = track.copy(
+            durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L)
+                ?: track.durationMs,
+        ),
+        isPlaying = player.isPlaying,
+        positionMs = player.currentPosition.coerceAtLeast(0L),
+        durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L)
+            ?: track.durationMs,
+        source = MediaSourceId.VIDEO,
+        playbackKind = PlaybackKind.VIDEO,
+        canSeek = true,
+        // One item at a time: the pane opens what the driver picked, it is not a queue.
+        canSkip = false,
+    )
+}
+
+private const val POSITION_TICK_MS = 500L
 
 /** Shown while the car is moving. Says why, so it does not read as a failure. */
 @Composable

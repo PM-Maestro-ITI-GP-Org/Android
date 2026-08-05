@@ -64,8 +64,25 @@ class MediaConnection private constructor(context: Context) {
         override fun onEvents(player: Player, events: Player.Events) = publish()
     }
 
+    /**
+     * Should this snapshot come from the phone rather than from our player?
+     *
+     * True when the Bluetooth *tab* is selected, and — the part that matters for the Home widget
+     * — also whenever the phone is actually playing while our own player is idle. Bluetooth
+     * audio comes out of the car's speakers whether or not the Media screen happens to be on
+     * that tab, so gating purely on the selected source left the Home now-playing card blank
+     * while music was audibly playing. Home shows what is audible.
+     *
+     * Our own playback still wins when it exists: two things cannot hold audio focus at once,
+     * and if the local player has a track then that is what the driver started most recently.
+     */
     private val isBluetooth: Boolean
-        get() = MediaSourceManager.get(appContext).active.value == MediaSourceId.BLUETOOTH
+        get() {
+            if (MediaSourceManager.get(appContext).active.value == MediaSourceId.BLUETOOTH) return true
+            val local = controller
+            val localIdle = local == null || (!local.isPlaying && local.currentMediaItem == null)
+            return localIdle && bluetooth.state.value.isPlaying
+        }
 
     init {
         scope.launch { connect() }
@@ -82,7 +99,12 @@ class MediaConnection private constructor(context: Context) {
         scope.launch {
             // The mirror updates on the phone's schedule, not ours, so its snapshots have to be
             // forwarded as they arrive rather than only when our own player emits an event.
-            bluetooth.state.collect { if (isBluetooth) _state.value = it }
+            // publish() decides which side wins; forwarding blindly here would let a stale phone
+            // snapshot overwrite local playback.
+            bluetooth.state.collect { publish() }
+        }
+        scope.launch {
+            VideoPlayback.state.collect { publish() }
         }
     }
 
@@ -106,6 +128,7 @@ class MediaConnection private constructor(context: Context) {
     // buttons are the same buttons; only the thing on the other end of them changes.
 
     fun playPause() {
+        if (VideoPlayback.state.value != null) return VideoPlayback.playPause()
         if (isBluetooth) return bluetooth.playPause()
         withController { if (isPlaying) pause() else play() }
     }
@@ -127,6 +150,7 @@ class MediaConnection private constructor(context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
+        if (VideoPlayback.state.value != null) return VideoPlayback.seekTo(positionMs)
         if (isBluetooth) return bluetooth.seekTo(positionMs)
         withController { seekTo(positionMs) }
     }
@@ -171,9 +195,20 @@ class MediaConnection private constructor(context: Context) {
         val sourceId = manager.active.value
         val kind = manager.source(sourceId).playbackKind
 
+        // Precedence, highest first. Anything producing audio outside the session has to be
+        // considered here or the now-playing card misreports: video owns a local player, and
+        // Bluetooth is the phone's own session. Only if neither is sounding does our own
+        // controller get to speak.
+        VideoPlayback.state.value?.let { video ->
+            _state.value = video
+            positionTicker?.cancel()
+            return
+        }
+
         // Our player holds nothing while the phone is the source, so publishing from it here
-        // would blank the card between the mirror's own emissions.
-        if (sourceId == MediaSourceId.BLUETOOTH) {
+        // would blank the card between the mirror's own emissions. [isBluetooth] also covers the
+        // phone playing while the Media tab sits on another source — see its KDoc.
+        if (isBluetooth) {
             _state.value = bluetooth.state.value
             positionTicker?.cancel()
             return

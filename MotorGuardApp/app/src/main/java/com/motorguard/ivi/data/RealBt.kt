@@ -248,20 +248,41 @@ class RealBtRepo(context: Context) : BtRepo {
             BluetoothAdapter.SCAN_MODE_CONNECTABLE
         }
 
+        // The timeout has to be set *first*. Since API 33 setScanMode no longer takes a duration;
+        // it uses whatever setDiscoverableTimeout last stored, and on a freshly booted unit that
+        // is unset — which is one of the ways the call below reports failure.
+        if (on) {
+            runCatching {
+                a.javaClass
+                    .getMethod("setDiscoverableTimeout", java.time.Duration::class.java)
+                    .invoke(a, java.time.Duration.ofSeconds(DISCOVERABLE_SECONDS.toLong()))
+            }
+        }
+
         val applied = runCatching {
-            val m = runCatching {
+            val legacy = runCatching {
                 a.javaClass.getMethod("setScanMode", Int::class.java, Long::class.java)
             }.getOrNull()
-            if (m != null) {
-                m.invoke(a, mode, DISCOVERABLE_SECONDS * 1000L)
+            if (legacy != null) {
+                legacy.invoke(a, mode, DISCOVERABLE_SECONDS * 1000L) as? Boolean ?: true
             } else {
-                a.javaClass.getMethod("setScanMode", Int::class.java).invoke(a, mode)
+                // Since API 33 this returns a BluetoothStatusCodes int rather than throwing, so
+                // "no exception" is not success. Reading the result is the whole point: without
+                // it a refused call left the switch looking as though it had worked, which is
+                // exactly how this shipped broken the first time.
+                val result = a.javaClass.getMethod("setScanMode", Int::class.java).invoke(a, mode)
+                (result as? Int) == STATUS_SUCCESS
             }
-            true
         }.getOrDefault(false)
 
-        if (applied) {
-            discoverable = isDiscoverableNow()
+        // Believe the adapter, not the return value: whatever was reported, the mode either
+        // changed or it did not.
+        discoverable = isDiscoverableNow()
+        if (on && !discoverable) {
+            activity = BtActivity.Failed("", "Could not make the car discoverable")
+        }
+
+        if (applied || discoverable) {
             // The platform drops back to CONNECTABLE on its own when the window expires, but no
             // broadcast is guaranteed for it, so the flag is re-read at the deadline too.
             if (on) main.postDelayed({ discoverable = isDiscoverableNow() }, DISCOVERABLE_SECONDS * 1000L)
@@ -403,6 +424,9 @@ class RealBtRepo(context: Context) : BtRepo {
 
         /** Long enough to find the car on a phone, short enough not to advertise all day. */
         const val DISCOVERABLE_SECONDS = 300
+
+        /** `BluetoothStatusCodes.SUCCESS`, which is `@SystemApi` and so not linkable here. */
+        const val STATUS_SUCCESS = 0
 
         const val CONNECT_TIMEOUT_MS = 12_000L
     }
