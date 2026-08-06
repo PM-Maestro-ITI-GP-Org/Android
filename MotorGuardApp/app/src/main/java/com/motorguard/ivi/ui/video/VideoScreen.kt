@@ -61,7 +61,7 @@ fun VideoScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var fullscreen by remember { mutableStateOf(false) }
-    var youtube by remember { mutableStateOf(false) }
+    var youtube by remember { mutableStateOf(YouTubeSession.showYouTube) }
 
     // Leaving a video full-screen and navigating away would strand the chrome hidden, so the
     // host is always told the truth about the current mode, including on the way out.
@@ -86,7 +86,7 @@ fun VideoScreen(
     ) {
         SourceToggle(
             youtube = youtube,
-            onSelect = { youtube = it },
+            onSelect = { youtube = it; YouTubeSession.showYouTube = it },
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
         Spacer(Modifier.height(14.dp))

@@ -1,10 +1,7 @@
 package com.motorguard.ivi.ui.video
 
 import android.annotation.SuppressLint
-import android.view.ViewGroup
-import android.webkit.WebChromeClient
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,33 +58,15 @@ fun YouTubePane(
     }
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    val webView = remember {
-        WebView(context).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            )
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            // YouTube refuses to start playback from script unless this is off, which on a
-            // touchscreen means every video needs two taps instead of one.
-            settings.mediaPlaybackRequiresUserGesture = false
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = true
-            // Keep navigation inside the pane: without this, a link hands off to an external
-            // browser that does not exist on this image, and the tap appears to do nothing.
-            webViewClient = WebViewClient()
-            // Required for HTML5 fullscreen inside the page to work at all.
-            webChromeClient = WebChromeClient()
-            loadUrl(HOME_URL)
-        }
-    }
+    // Held by [YouTubeSession], not by this composable: destroying it here is what threw away
+    // the sign-in and the current video every time the tab was left.
+    val webView = remember { YouTubeSession.acquire(context) }
 
     DisposableEffect(webView) {
+        YouTubeSession.resume(webView)
         onDispose {
-            // Leaving the tab must stop the audio, exactly as leaving local video does.
-            webView.loadUrl("about:blank")
-            webView.destroy()
+            // Detach and pause rather than destroy — playback stops, the session survives.
+            YouTubeSession.release(webView)
         }
     }
 
@@ -97,7 +76,12 @@ fun YouTubePane(
             .background(Color.Black),
     ) {
         AndroidView(
-            factory = { webView },
+            // The same instance is reattached across visits, so any previous parent has to be
+            // let go of first or Android refuses to add it.
+            factory = { ctx ->
+                (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+                webView
+            },
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -135,5 +119,3 @@ private fun Blocked(modifier: Modifier = Modifier) {
     }
 }
 
-/** The mobile site: laid out for a touchscreen, and far lighter than the desktop one. */
-private const val HOME_URL = "https://m.youtube.com/"
