@@ -61,6 +61,7 @@ fun VideoScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var fullscreen by remember { mutableStateOf(false) }
+    var youtube by remember { mutableStateOf(false) }
 
     // Leaving a video full-screen and navigating away would strand the chrome hidden, so the
     // host is always told the truth about the current mode, including on the way out.
@@ -72,6 +73,7 @@ fun VideoScreen(
     if (fullscreen) {
         FullscreenPlayer(
             state = state,
+            youtube = youtube,
             onExit = { fullscreen = false },
         )
         return
@@ -82,6 +84,13 @@ fun VideoScreen(
             .fillMaxSize()
             .padding(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 22.dp),
     ) {
+        SourceToggle(
+            youtube = youtube,
+            onSelect = { youtube = it },
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+        Spacer(Modifier.height(14.dp))
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -93,14 +102,21 @@ fun VideoScreen(
                     .weight(1.35f)
                     .fillMaxHeight(),
             ) {
-                VideoPane(
-                    track = state.selected,
-                    isMoving = state.isMoving,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                if (youtube) {
+                    YouTubePane(
+                        isMoving = state.isMoving,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    VideoPane(
+                        track = state.selected,
+                        isMoving = state.isMoving,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
                 // Only offered when there is something to expand — a full-screen button over an
                 // empty pane is a promise the screen cannot keep.
-                if (state.selected != null && !state.isMoving) {
+                if ((youtube || state.selected != null) && !state.isMoving) {
                     FullscreenButton(
                         expanded = false,
                         onClick = { fullscreen = true },
@@ -111,13 +127,15 @@ fun VideoScreen(
                 }
             }
 
-            VideoLibrary(
-                state = state,
-                onPlay = viewModel::play,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-            )
+            if (!youtube) {
+                VideoLibrary(
+                    state = state,
+                    onPlay = viewModel::play,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                )
+            }
         }
     }
 }
@@ -132,6 +150,7 @@ fun VideoScreen(
 @Composable
 private fun FullscreenPlayer(
     state: VideoUiState,
+    youtube: Boolean,
     onExit: () -> Unit,
 ) {
     var controlsVisible by remember { mutableStateOf(true) }
@@ -152,11 +171,15 @@ private fun FullscreenPlayer(
             .clickable { controlsVisible = !controlsVisible },
         contentAlignment = Alignment.Center,
     ) {
-        VideoPane(
-            track = state.selected,
-            isMoving = state.isMoving,
-            modifier = Modifier.fillMaxSize(),
-        )
+        if (youtube) {
+            YouTubePane(isMoving = state.isMoving, modifier = Modifier.fillMaxSize())
+        } else {
+            VideoPane(
+                track = state.selected,
+                isMoving = state.isMoving,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         AnimatedVisibility(
             visible = controlsVisible || state.isMoving,
@@ -284,3 +307,48 @@ private fun Centered(message: String) {
 }
 
 private const val CONTROLS_TIMEOUT_MS = 3_000L
+
+/**
+ * Local library ↔ YouTube.
+ *
+ * Two sources of the same thing — moving pictures — so they belong in one switcher, the way the
+ * Media screen groups its audio sources. Deliberately not in the navigation rail: the rail is
+ * for destinations, and YouTube is a place to get video from, not a separate activity.
+ */
+@Composable
+private fun SourceToggle(
+    youtube: Boolean,
+    onSelect: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MotorGuard.colors
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
+            .background(colors.glassBorder.copy(alpha = 0.35f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ToggleChip("Library", selected = !youtube) { onSelect(false) }
+        ToggleChip("YouTube", selected = youtube) { onSelect(true) }
+    }
+}
+
+@Composable
+private fun ToggleChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = MotorGuard.colors
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) colors.accent.copy(alpha = 0.18f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 26.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = label,
+            fontSize = 16.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) colors.accent else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
