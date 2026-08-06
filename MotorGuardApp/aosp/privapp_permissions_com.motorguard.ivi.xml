@@ -10,5 +10,8 @@
         <permission name="android.permission.OVERRIDE_WIFI_CONFIG"/>
         <permission name="android.permission.LOCAL_MAC_ADDRESS"/>
         <permission name="android.permission.BLUETOOTH_PRIVILEGED"/>
+        <!-- Exempts the app from Android 15's audio hardening, which otherwise refuses
+             setStreamVolume/adjustStreamVolume with "Preventing volume method N". -->
+        <permission name="android.permission.MODIFY_AUDIO_SETTINGS_PRIVILEGED"/>
     </privapp-permissions>
 </permissions>

@@ -149,8 +149,42 @@ class BluetoothSessionMirror private constructor(context: Context) {
         if (currentPosition > RESTART_THRESHOLD_MS) seekTo(0) else seekToPrevious()
     }
 
-    /** Many phones expose no AVRCP position control, so this is a request, not a guarantee. */
-    fun seekTo(positionMs: Long) = withBrowser { seekTo(positionMs) }
+    /**
+     * Move within the current track.
+     *
+     * AVRCP has no widely-implemented absolute-seek command, and phones say so: this one
+     * advertises FAST_FORWARD and REWIND but not SEEK_TO, which left the scrubber inert. So when
+     * absolute seek is refused, the distance is walked with the peer's own fast-forward and
+     * rewind steps instead.
+     *
+     * That is approximate by nature — each step moves by whatever increment the session
+     * defines, not by the exact amount asked for — but it is the difference between a scrubber
+     * that works and one that does nothing.
+     */
+    fun seekTo(positionMs: Long) {
+        val active = browser ?: return
+        runCatching {
+            if (active.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
+                active.seekTo(positionMs)
+                return
+            }
+
+            val delta = positionMs - active.currentPosition
+            val forward = delta > 0
+            val increment = if (forward) active.seekForwardIncrement else active.seekBackIncrement
+            if (increment <= 0L) return
+
+            val canStep = active.isCommandAvailable(
+                if (forward) Player.COMMAND_SEEK_FORWARD else Player.COMMAND_SEEK_BACK,
+            )
+            if (!canStep) return
+
+            // Bounded: a drag from one end of a long track to the other must not turn into
+            // hundreds of AVRCP commands queued at the phone.
+            val steps = (kotlin.math.abs(delta) / increment).toInt().coerceIn(0, MAX_SEEK_STEPS)
+            repeat(steps) { if (forward) active.seekForward() else active.seekBack() }
+        }
+    }
 
     private inline fun withBrowser(block: MediaBrowser.() -> Unit) {
         runCatching { browser?.let(block) }
@@ -172,10 +206,15 @@ class BluetoothSessionMirror private constructor(context: Context) {
             durationMs = active.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
             source = MediaSourceId.BLUETOOTH,
             playbackKind = PlaybackKind.EXTERNAL_SESSION,
+            // Seekable if the peer offers absolute seek *or* the fast-forward/rewind steps
+            // [seekTo] falls back to — otherwise the scrubber would be greyed out on a phone
+            // that can in fact be moved through its track.
             // Asked of the session rather than assumed: AVRCP 1.3 peers support neither, 1.6
             // peers usually support both, and offering a scrubber that silently does nothing is
             // worse than not offering one.
-            canSeek = active.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
+            canSeek = active.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) ||
+                active.isCommandAvailable(Player.COMMAND_SEEK_FORWARD) ||
+                active.isCommandAvailable(Player.COMMAND_SEEK_BACK),
             canSkip = active.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT),
         )
 
@@ -199,7 +238,13 @@ class BluetoothSessionMirror private constructor(context: Context) {
      * there to prevent.
      */
     private fun MediaItem.toTrack(durationMs: Long) = Track(
-        id = mediaId.ifBlank { "bt-current" },
+        // Derived from the metadata, never from mediaId. The AVRCP controller reports a fixed
+        // id — "currsong" — for whatever is playing, so using it made every track on the phone
+        // look like the same track: the artwork cache is keyed by track id, and the cover stayed
+        // on the first song of the session while the title changed underneath it.
+        id = "bt:" + listOf(
+            mediaMetadata.title, mediaMetadata.artist, mediaMetadata.albumTitle,
+        ).joinToString("|") { it?.toString().orEmpty() },
         title = mediaMetadata.title?.toString().orEmpty().ifBlank { "Unknown title" },
         artist = mediaMetadata.artist?.toString().orEmpty(),
         album = mediaMetadata.albumTitle?.toString().orEmpty(),
@@ -221,6 +266,9 @@ class BluetoothSessionMirror private constructor(context: Context) {
 
         private const val RESTART_THRESHOLD_MS = 3_000L
         private const val POSITION_TICK_MS = 500L
+        /** Enough to cross a long track, few enough not to flood the peer with commands. */
+        private const val MAX_SEEK_STEPS = 40
+
         private const val RETRY_MS = 4_000L
         private const val MAX_ATTEMPTS = 15
 

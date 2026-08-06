@@ -15,12 +15,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Navigation
 import androidx.compose.material.icons.outlined.Settings
@@ -55,6 +57,7 @@ private data class RailItem(
 private val items = listOf(
     RailItem(Tab.HOME, "Home", Icons.Filled.Home, Icons.Outlined.Home),
     RailItem(Tab.MEDIA, "Media", Icons.Filled.MusicNote, Icons.Outlined.MusicNote),
+    RailItem(Tab.VIDEO, "Videos", Icons.Filled.Movie, Icons.Outlined.Movie),
     RailItem(Tab.NAV, "Navigation", Icons.Filled.Navigation, Icons.Outlined.Navigation),
     RailItem(Tab.DIAGNOSTICS, "Diagnostics", Icons.Filled.DirectionsCar, Icons.Outlined.DirectionsCar),
     RailItem(Tab.SETTINGS, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),

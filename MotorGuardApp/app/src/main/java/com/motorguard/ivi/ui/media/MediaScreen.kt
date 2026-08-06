@@ -120,7 +120,10 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
             .padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 22.dp),
     ) {
         SourceTabs(
-            sources = sources.sources,
+            // Videos moved to the navigation rail: it is a different thing to do with the
+            // screen, not another place music comes from. The source still exists for the
+            // MediaStore query behind the Videos destination.
+            sources = sources.sources.filter { it.id != MediaSourceId.VIDEO },
             active = state.activeSource,
             availableIds = state.availability.filter { it.available }.map { it.id }.toSet(),
             onSelect = viewModel::selectSource,
@@ -300,7 +303,14 @@ private fun NowPlayingPane(
             val narrow = maxWidth < NARROW_PANE
 
             Column(
-                modifier = Modifier.fillMaxSize(),
+                // Bottom padding reserves the volume row's space. The volume bar is *not* in
+                // this Column: with Arrangement.Center, content taller than the pane spills past
+                // both edges — still drawn, but outside the parent's bounds, where Compose stops
+                // hit-testing and stops reporting semantics. That is precisely what happened when
+                // the volume bar was added here; it rendered perfectly and ignored every touch.
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = VOLUME_ROW_HEIGHT),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -354,23 +364,34 @@ private fun NowPlayingPane(
                     compact = tight || narrow,
                 )
 
-                // Volume lives below the transport rather than beside it: it applies to whatever
-                // is playing, including the phone over Bluetooth, so it is not a per-track
-                // control and should not sit among the ones that are.
-                Spacer(Modifier.height(if (tight) 8.dp else 18.dp))
-                VolumeBar(
-                    compact = tight || narrow,
-                    modifier = Modifier
-                        .widthIn(max = 380.dp)
-                        .fillMaxWidth(0.82f),
-                )
             }
+
+            // Volume lives below the transport rather than beside it: it applies to whatever is
+            // playing, including the phone over Bluetooth, so it is not a per-track control and
+            // should not sit among the ones that are. Aligned to the box rather than appended to
+            // the centred Column, so it is always within bounds and therefore always touchable.
+            VolumeBar(
+                compact = tight || narrow,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .widthIn(max = 380.dp)
+                    .fillMaxWidth(0.82f),
+            )
         }
     }
 }
 
-/** What the title, subtitle, scrubber and 76 dp transport row need below the cover. */
+/**
+ * What the title, subtitle, scrubber and 76 dp transport row need below the cover.
+ *
+ * A budget, not a description: the cover is sized from whatever is left after it, so anything
+ * added to the centred Column that is not counted here pushes content past the pane's bounds,
+ * where Compose draws but does not hit-test.
+ */
 private val CONTROLS_HEIGHT = 165.dp
+
+/** Space reserved at the bottom of the pane for the volume row, which sits outside the Column. */
+private val VOLUME_ROW_HEIGHT = 56.dp
 
 /**
  * Station search.

@@ -33,6 +33,7 @@ import com.motorguard.ivi.ui.components.StatusBar
 import com.motorguard.ivi.ui.diagnostics.DiagnosticsFragment
 import com.motorguard.ivi.ui.home.HomeFragment
 import com.motorguard.ivi.ui.media.MediaFragment
+import com.motorguard.ivi.ui.video.VideoFragment
 import com.motorguard.ivi.ui.nav.NavFragment
 import com.motorguard.ivi.ui.settings.SettingsFragment
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
@@ -48,7 +49,7 @@ import com.motorguard.ivi.ui.voice.VoiceTrigger
  */
 class MainActivity : AppCompatActivity() {
 
-    enum class Tab { HOME, MEDIA, NAV, DIAGNOSTICS, SETTINGS }
+    enum class Tab { HOME, MEDIA, VIDEO, NAV, DIAGNOSTICS, SETTINGS }
 
     companion object {
         /** Voice overlay routes here: putExtra(EXTRA_TAB, Tab.MEDIA.name). */
@@ -87,6 +88,19 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState == null) show(tabFromIntent(intent) ?: Tab.HOME)
 
         followAlbumArtwork()
+    }
+
+    /**
+     * Hide the rail and status bar so a full-screen video gets the whole panel.
+     *
+     * Done here rather than inside the fragment because both views belong to the Activity's
+     * layout — a fragment cannot reach them, and a full-screen mode that leaves a navigation
+     * rail down the side is not one.
+     */
+    fun setChromeVisible(visible: Boolean) {
+        val mode = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<ComposeView>(R.id.nav_rail)?.visibility = mode
+        findViewById<ComposeView>(R.id.status_bar)?.visibility = mode
     }
 
     /**
@@ -193,6 +207,7 @@ class MainActivity : AppCompatActivity() {
         val fragment: Fragment = when (tab) {
             Tab.HOME -> HomeFragment()
             Tab.MEDIA -> MediaFragment()
+            Tab.VIDEO -> VideoFragment()
             Tab.NAV -> NavFragment()
             Tab.DIAGNOSTICS -> DiagnosticsFragment()
             Tab.SETTINGS -> SettingsFragment()

@@ -48,6 +48,13 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Android 15 added an audio "hardening" gate: AudioService.HardeningEnforcer refuses
+         setStreamVolume and adjustStreamVolume from ordinary apps, logging
+         "Preventing volume method 100/103 for <package>" and silently doing nothing. A head
+         unit whose own volume slider is ignored is not much of a head unit, and this is the
+         permission that exempts us. signature|privileged, so it also needs the privapp
+         allow-list entry — the two files must agree or the app is blocked at boot. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS_PRIVILEGED" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- Navigation: map tiles, routing (Valhalla) and search (Photon) are plain HTTPS calls.
