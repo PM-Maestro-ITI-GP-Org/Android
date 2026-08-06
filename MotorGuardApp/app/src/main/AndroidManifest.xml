@@ -150,6 +150,22 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
+        <!-- Notifications, surfaced by the app itself.
+             Motor Guard is the launcher and hides the system bars, and on AAOS both the heads-up
+             notification and the Notification Center are drawn by CarSystemUI *in those bars* —
+             so with them hidden a posted notification has nowhere to appear. Reading them needs
+             a listener service, which must also be allow-listed before it binds:
+               adb shell cmd notification allow_listener \
+                 com.motorguard.ivi/com.motorguard.ivi.data.notifications.NotificationRelayService -->
+        <service
+            android:name=".data.notifications.NotificationRelayService"
+            android:exported="false"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- The player. Exported and advertising both the media3 and the legacy MediaBrowser
              actions so the car's own media UI, the voice assistant and any other controller can
              browse and control it without this app's Activity being alive. -->
