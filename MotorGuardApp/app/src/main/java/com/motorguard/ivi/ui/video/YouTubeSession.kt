@@ -76,17 +76,36 @@ object YouTubeSession {
         return view
     }
 
-    /** Detach from the screen without losing the page. Stops playback and background timers. */
-    fun release(view: WebView) {
-        (view.parent as? ViewGroup)?.removeView(view)
+    /**
+     * How many places currently have the view on screen.
+     *
+     * Counted rather than assumed, because Compose composes the *new* holder before disposing
+     * the old one. Going inline → full screen therefore runs attach() then detach(), and a
+     * detach that paused unconditionally would pause the view the new holder had just adopted —
+     * which is exactly why full screen came up black.
+     */
+    private var attachments = 0
+
+    /** Coming into view. */
+    fun attach(view: WebView) {
+        attachments++
+        view.onResume()
+        view.resumeTimers()
+    }
+
+    /**
+     * Leaving a holder. Only really pauses once nothing is showing it any more.
+     *
+     * Note it does *not* detach the view from its parent: Compose's AndroidView already removes
+     * its child on dispose, and doing it here as well is what stole the view from the holder
+     * that was taking over.
+     */
+    fun detach(view: WebView) {
+        attachments--
+        if (attachments > 0) return
+        attachments = 0
         view.onPause()
         view.pauseTimers()
         runCatching { CookieManager.getInstance().flush() }
-    }
-
-    /** Coming back into view. */
-    fun resume(view: WebView) {
-        view.onResume()
-        view.resumeTimers()
     }
 }

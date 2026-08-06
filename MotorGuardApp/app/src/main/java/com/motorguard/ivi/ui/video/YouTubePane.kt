@@ -63,10 +63,10 @@ fun YouTubePane(
     val webView = remember { YouTubeSession.acquire(context) }
 
     DisposableEffect(webView) {
-        YouTubeSession.resume(webView)
+        YouTubeSession.attach(webView)
         onDispose {
-            // Detach and pause rather than destroy — playback stops, the session survives.
-            YouTubeSession.release(webView)
+            // Pause rather than destroy — playback stops, the session survives.
+            YouTubeSession.detach(webView)
         }
     }
 

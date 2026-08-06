@@ -155,10 +155,14 @@ private fun FullscreenPlayer(
 ) {
     var controlsVisible by remember { mutableStateOf(true) }
 
-    // Auto-hide, then reveal on tap. A control that never leaves defeats full-screen; one that
-    // cannot come back traps the driver in it.
-    androidx.compose.runtime.LaunchedEffect(controlsVisible) {
-        if (controlsVisible) {
+    // Auto-hide, then reveal on tap — but never over the WebView.
+    //
+    // "Tap to bring the control back" relies on the tap reaching this Box, and a WebView
+    // consumes its own touches: on the YouTube pane the reveal never fires, so once the exit
+    // button faded there was no way out of full screen at all. Better a small button always in
+    // the corner than a trap.
+    androidx.compose.runtime.LaunchedEffect(controlsVisible, youtube) {
+        if (controlsVisible && !youtube) {
             kotlinx.coroutines.delay(CONTROLS_TIMEOUT_MS)
             controlsVisible = false
         }
@@ -182,7 +186,7 @@ private fun FullscreenPlayer(
         }
 
         AnimatedVisibility(
-            visible = controlsVisible || state.isMoving,
+            visible = youtube || controlsVisible || state.isMoving,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomEnd),
