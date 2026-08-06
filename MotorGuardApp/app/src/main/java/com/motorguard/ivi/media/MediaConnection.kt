@@ -104,6 +104,9 @@ class MediaConnection private constructor(context: Context) {
             bluetooth.state.collect { publish() }
         }
         scope.launch {
+            com.motorguard.ivi.ui.web.WebPlayback.state.collect { publish() }
+        }
+        scope.launch {
             VideoPlayback.state.collect { publish() }
         }
     }
@@ -201,6 +204,14 @@ class MediaConnection private constructor(context: Context) {
         // controller get to speak.
         VideoPlayback.state.value?.let { video ->
             _state.value = video
+            positionTicker?.cancel()
+            return
+        }
+
+        // A web page playing is just as audible as anything else, and until this was folded in
+        // the now-playing card sat blank while Spotify played through the WebView.
+        com.motorguard.ivi.ui.web.WebPlayback.state.value?.let { web ->
+            _state.value = web
             positionTicker?.cancel()
             return
         }

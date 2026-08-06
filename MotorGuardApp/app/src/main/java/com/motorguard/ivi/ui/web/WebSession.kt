@@ -25,8 +25,19 @@ import android.webkit.WebViewClient
 @SuppressLint("StaticFieldLeak")
 class WebSession(
     private val homeUrl: String,
+    /** Which media source this page reports as, for the now-playing card. */
+    private val sourceId: com.motorguard.ivi.data.media.MediaSourceId,
     /** Overrides the WebView's own UA where a site refuses it. See [Spotify]. */
     private val userAgent: String? = null,
+    /**
+     * Whether leaving the tab should stop the page.
+     *
+     * True for video, where walking away from a film should stop it. False for music: Spotify is
+     * a media source like any other, and a source that stopped the moment the driver looked at
+     * the map would be useless — it also has to keep playing for the now-playing card to have
+     * anything to show.
+     */
+    private val pauseOnLeave: Boolean = true,
 ) {
 
     private var webView: WebView? = null
@@ -65,7 +76,14 @@ class WebSession(
             settings.loadWithOverviewMode = true
             // Keep navigation inside the pane: a hand-off would go to a browser this image does
             // not have, and the tap would appear to do nothing.
-            webViewClient = WebViewClient()
+            // Injects the metadata watcher on every navigation, because a single-page app
+            // replaces its player without ever firing another page load.
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    view?.evaluateJavascript(WATCHER_JS, null)
+                }
+            }
+            addJavascriptInterface(Bridge(sourceId), "MotorGuard")
             // HTML5 fullscreen inside the page needs this to work at all.
             webChromeClient = WebChromeClient()
             userAgent?.let { settings.userAgentString = it }
@@ -77,6 +95,26 @@ class WebSession(
 
         webView = view
         return view
+    }
+
+    /**
+     * The page's own report of what it is playing.
+     *
+     * `@JavascriptInterface` is the only channel out of a WebView, and it is a real security
+     * boundary — the page can call anything annotated here. So this exposes exactly one method
+     * that accepts only strings and a boolean, and does nothing but forward them.
+     */
+    private class Bridge(private val sourceId: com.motorguard.ivi.data.media.MediaSourceId) {
+        @android.webkit.JavascriptInterface
+        fun nowPlaying(title: String?, artist: String?, album: String?, playing: Boolean) {
+            WebPlayback.report(
+                source = sourceId,
+                title = title.orEmpty(),
+                artist = artist.orEmpty(),
+                album = album.orEmpty(),
+                playing = playing,
+            )
+        }
     }
 
     /** Coming into view. */
@@ -97,16 +135,60 @@ class WebSession(
         attachments--
         if (attachments > 0) return
         attachments = 0
-        view.onPause()
-        view.pauseTimers()
+        if (pauseOnLeave) {
+            view.onPause()
+            view.pauseTimers()
+            // Stopped, so it must stop claiming the now-playing card too.
+            WebPlayback.clear(sourceId)
+        }
         // Cookies carry the login across a process restart and are only written when flushed —
         // a head unit is powered off, not closed politely.
         runCatching { CookieManager.getInstance().flush() }
     }
 
     companion object {
+        /**
+         * Watches the page's Media Session metadata and reports changes back.
+         *
+         * Polled rather than event-driven: the Media Session API fires no change event, and
+         * both sites are single-page apps that swap tracks without any navigation. One second is
+         * far below what a driver notices and costs nothing measurable.
+         *
+         * Only *changes* cross the bridge, so a paused page is silent rather than chattering
+         * once a second.
+         */
+        private val WATCHER_JS = """
+            (function () {
+              if (window.__mgWatch) return;
+              window.__mgWatch = true;
+              var last = '';
+              setInterval(function () {
+                try {
+                  var ms = navigator.mediaSession;
+                  var m = ms && ms.metadata;
+                  var vids = document.getElementsByTagName('video');
+                  var v = vids.length ? vids[0] : null;
+                  // Fall back to the <video> element and the document title: YouTube's mobile
+                  // site does not always populate the Media Session API, but there is always a
+                  // media element and a title once something is playing.
+                  var t = (m && m.title) || (v && !v.paused ? document.title.replace(/ - YouTube$/, '') : '');
+                  var a = (m && m.artist) || '';
+                  var al = (m && m.album) || '';
+                  var playing = (ms && ms.playbackState === 'playing') || (v ? !v.paused : false);
+                  var key = t + '|' + a + '|' + al + '|' + playing;
+                  if (key === last) return;
+                  last = key;
+                  MotorGuard.nowPlaying(t, a, al, !!playing);
+                } catch (e) { /* a page mid-navigation is not an error worth reporting */ }
+              }, 1000);
+            })();
+        """
+
         /** The mobile site: laid out for a touchscreen and far lighter than the desktop one. */
-        val YouTube = WebSession("https://m.youtube.com/")
+        val YouTube = WebSession(
+            "https://m.youtube.com/",
+            sourceId = com.motorguard.ivi.data.media.MediaSourceId.VIDEO,
+        )
 
         /**
          * Spotify's web player.
@@ -117,12 +199,15 @@ class WebSession(
          */
         val Spotify = WebSession(
             "https://open.spotify.com/",
+            sourceId = com.motorguard.ivi.data.media.MediaSourceId.SPOTIFY,
             // Spotify refuses the stock WebView agent outright — it renders "Unsupported
             // browser" and nothing else, because the string carries the "; wv" marker that
             // identifies an embedded view. The engine underneath *is* Chrome 128, so claiming
             // Chrome is accurate about capability rather than a disguise.
             userAgent = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/128.0.6613.88 Mobile Safari/537.36",
+            // Music keeps playing when the driver navigates away, like every other audio source.
+            pauseOnLeave = false,
         )
     }
 }

@@ -44,6 +44,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.media.components.VideoPane
 import com.motorguard.ivi.ui.theme.MotorGuard
+import com.motorguard.ivi.ui.web.WebPane
+import com.motorguard.ivi.ui.web.WebSession
 
 /**
  * The Videos surface: player on the left, library on the right, and a full-screen mode.
@@ -61,7 +63,7 @@ fun VideoScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var fullscreen by remember { mutableStateOf(false) }
-    var youtube by remember { mutableStateOf(YouTubeSession.showYouTube) }
+    var youtube by remember { mutableStateOf(WebSession.YouTube.selected) }
 
     // Leaving a video full-screen and navigating away would strand the chrome hidden, so the
     // host is always told the truth about the current mode, including on the way out.
@@ -86,7 +88,7 @@ fun VideoScreen(
     ) {
         SourceToggle(
             youtube = youtube,
-            onSelect = { youtube = it; YouTubeSession.showYouTube = it },
+            onSelect = { youtube = it; WebSession.YouTube.selected = it },
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
         Spacer(Modifier.height(14.dp))
@@ -103,8 +105,10 @@ fun VideoScreen(
                     .fillMaxHeight(),
             ) {
                 if (youtube) {
-                    YouTubePane(
-                        isMoving = state.isMoving,
+                    WebPane(
+                        session = WebSession.YouTube,
+                        blocked = state.isMoving,
+                        blockedMessage = "YouTube resumes when the car is stopped",
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
@@ -176,7 +180,12 @@ private fun FullscreenPlayer(
         contentAlignment = Alignment.Center,
     ) {
         if (youtube) {
-            YouTubePane(isMoving = state.isMoving, modifier = Modifier.fillMaxSize())
+            WebPane(
+                session = WebSession.YouTube,
+                blocked = state.isMoving,
+                blockedMessage = "YouTube resumes when the car is stopped",
+                modifier = Modifier.fillMaxSize(),
+            )
         } else {
             VideoPane(
                 track = state.selected,
