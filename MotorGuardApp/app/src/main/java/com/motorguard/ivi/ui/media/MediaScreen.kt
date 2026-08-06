@@ -80,6 +80,8 @@ import com.motorguard.ivi.ui.media.components.VideoPane
 import com.motorguard.ivi.ui.media.components.rememberAlbumArt
 import com.motorguard.ivi.ui.nav.NavMotion
 import com.motorguard.ivi.ui.theme.MotorGuard
+import com.motorguard.ivi.ui.web.WebPane
+import com.motorguard.ivi.ui.web.WebSession
 import kotlinx.coroutines.delay
 
 /**
@@ -138,6 +140,21 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
         )
 
         Spacer(Modifier.height(14.dp))
+
+        if (state.activeSource == MediaSourceId.SPOTIFY) {
+            // The page brings its own library, search and transport, so it gets the whole row —
+            // a queue card beside it would duplicate what is already on screen, and our controls
+            // cannot reach into it anyway (see PlaybackKind.WEB).
+            WebPane(
+                session = WebSession.Spotify,
+                blocked = state.isMoving,
+                blockedMessage = "Spotify resumes when the car is stopped",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            )
+            return@Column
+        }
 
         Row(
             // weight(1f), NOT fillMaxSize(). A Column measures its children with an unbounded
@@ -648,6 +665,9 @@ private fun emptyLibraryMessage(source: MediaSourceId): String = when (source) {
     MediaSourceId.BLUETOOTH -> "Bluetooth shows the phone's current track only"
     MediaSourceId.RADIO -> "No stations found — try another search"
     MediaSourceId.VIDEO -> "No videos on this device or drive"
+    // Never reached — the Spotify source replaces this pane entirely — but the compiler is
+    // right to insist, and a new source should not be able to slip through silently.
+    MediaSourceId.SPOTIFY -> "Spotify plays in its own page"
 }
 
 /**
