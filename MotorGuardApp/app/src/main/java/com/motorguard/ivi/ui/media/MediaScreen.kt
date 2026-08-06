@@ -444,6 +444,91 @@ private fun StationSearchField(
     )
 }
 
+/**
+ * What the Bluetooth tab shows instead of a track list.
+ *
+ * There is no list to show: AVRCP 1.4 defines a browse tree but Android exposes no public API
+ * for it, so a head unit gets the *current* track and nothing more. Rather than leave the pane
+ * empty under a "Connect a phone" message that stays up even while a phone is playing, it
+ * reports the connection, what is playing, and why the library is not here.
+ */
+@Composable
+private fun BluetoothPanel(state: MediaUiState) {
+    val colors = MotorGuard.colors
+    val bt = com.motorguard.ivi.data.Conn.bt
+    val device = bt.connectedName
+    val track = state.playback.track
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 18.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.Bluetooth,
+                contentDescription = null,
+                tint = if (device != null) colors.accent else colors.onBaseDim,
+                modifier = Modifier.size(26.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = device ?: "No phone connected",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (device != null) "Connected" else "Pair from your phone in Settings",
+                    fontSize = 13.sp,
+                    color = colors.onBaseDim,
+                )
+            }
+        }
+
+        if (track != null) {
+            Spacer(Modifier.height(26.dp))
+            Text(
+                text = "NOW PLAYING",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+                color = colors.onBaseDim,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = track.title,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (track.subtitle.isNotBlank()) {
+                Text(
+                    text = track.subtitle,
+                    fontSize = 14.sp,
+                    color = colors.onBaseDim,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(26.dp))
+        Text(
+            text = "Your phone's library can't be browsed over Bluetooth — " +
+                "choose tracks on the phone, and control them from here.",
+            fontSize = 13.sp,
+            color = colors.onBaseDim,
+        )
+    }
+}
+
 /** Below this the pane switches to reduced spacing and a smaller title. */
 private val COMFORTABLE_HEIGHT = 420.dp
 
@@ -505,6 +590,13 @@ private fun QueuePane(
             // reason as the row above: inside a Column, fillMaxSize is not a bound.
             Box(modifier = Modifier.weight(1f)) {
                 when {
+                    // Bluetooth has no browsable library by design — AVRCP gives the current
+                    // track and nothing else — so the pane would otherwise sit permanently empty
+                    // under "Connect a phone" even with a phone connected and playing. Use the
+                    // space to say what is connected and why there is no list.
+                    state.activeSource == MediaSourceId.BLUETOOTH ->
+                        BluetoothPanel(state = state)
+
                     unavailable != null -> EmptyState(message = unavailable.emptyMessage)
                     state.loading -> EmptyState(message = "Scanning…")
                     state.tracks.isEmpty() -> EmptyState(message = emptyLibraryMessage(state.activeSource))

@@ -38,16 +38,30 @@ interface ArtworkProvider {
  */
 class ITunesArtworkProvider : ArtworkProvider {
 
+    /**
+     * Album first, then the track.
+     *
+     * Album is still the better key when it works — one lookup serves a whole record. But it is
+     * not reliable on its own, and a single attempt was why covers appeared for some tracks and
+     * not others: an album search for "Sub Urban If Nevermore (Anhedonia)" returns *nothing*,
+     * while a track search for "Sub Urban Hiraeth" returns the cover immediately. Singles, EPs
+     * and anything with unusual punctuation in the title miss the album catalogue routinely.
+     *
+     * So a miss on the album falls through to artist + title rather than giving up.
+     */
     override suspend fun findArtwork(artist: String, album: String, title: String): ByteArray? {
-        // Album beats track title: one lookup then serves every track on the record, and album
-        // names match the store's catalogue far more reliably than individual song titles.
-        val term = listOf(artist, album.ifBlank { title })
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .trim()
+        if (album.isNotBlank()) {
+            search(term(artist, album), entity = "album")?.let { return it }
+        }
+        return search(term(artist, title), entity = "musicTrack")
+    }
+
+    private fun term(artist: String, work: String): String =
+        listOf(artist, work).filter { it.isNotBlank() }.joinToString(" ").trim()
+
+    private fun search(term: String, entity: String): ByteArray? {
         if (term.length < MIN_TERM) return null
 
-        val entity = if (album.isNotBlank()) "album" else "musicTrack"
         val url = buildString {
             append(MediaConfig.artworkSearchUrl)
             append("?term=").append(URLEncoder.encode(term, "UTF-8"))

@@ -52,9 +52,15 @@ object AlbumArtLoader {
         cache.get(key)?.let { return it }
 
         return withContext(Dispatchers.IO) {
-            val bitmap = loadThumbnail(context, track, sizePx)
-                ?: decodeUri(context, track.artworkUri, sizePx)
-                ?: loadRemote(context, track, sizePx)
+            val thumb = loadThumbnail(context, track, sizePx)
+            val embedded = if (thumb == null) decodeUri(context, track.artworkUri, sizePx) else null
+            val remote = if (thumb == null && embedded == null) loadRemote(context, track, sizePx) else null
+            val bitmap = thumb ?: embedded ?: remote
+            android.util.Log.d(
+                "MGArt",
+                "load id=${track.id} artist='${track.artist}' album='${track.album}' " +
+                    "thumb=${thumb != null} embedded=${embedded != null} remote=${remote != null}",
+            )
             bitmap?.also { cache.put(key, it) }
         }
     }
@@ -113,9 +119,11 @@ object AlbumArtLoader {
             }.getOrNull()
 
             if (bytes == null || bytes.isEmpty()) {
+                android.util.Log.d("MGArt", "remote miss for '$albumKey'")
                 misses.add(albumKey)
                 return@withLock null
             }
+            android.util.Log.d("MGArt", "remote hit for '$albumKey' (${bytes.size} bytes)")
             runCatching { file.writeBytes(bytes) }
             decodeFile(file, sizePx) ?: BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         }

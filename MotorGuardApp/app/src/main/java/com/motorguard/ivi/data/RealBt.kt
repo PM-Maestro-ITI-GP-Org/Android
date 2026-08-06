@@ -141,6 +141,10 @@ class RealBtRepo(context: Context) : BtRepo {
 
     private fun deviceName(intent: Intent): String? = device(intent)?.let { displayName(it) }
 
+    /** Wrapped for the refresh path, where a throwing name lookup must not kill the poll. */
+    private fun safeDisplayName(d: BluetoothDevice): String =
+        runCatching { displayName(d) }.getOrDefault(d.address)
+
     /** Never blank: an unnamed device still has to be tappable, so it shows its address. */
     private fun displayName(d: BluetoothDevice): String =
         runCatching { d.name }.getOrNull()?.takeIf { it.isNotBlank() } ?: d.address
@@ -156,6 +160,30 @@ class RealBtRepo(context: Context) : BtRepo {
 
     private fun refresh() {
         _enabled = adapter?.isEnabled == true
+
+        // Ask the adapter who is connected rather than relying only on ACL broadcasts.
+        //
+        // Those broadcasts are the *change*, not the state: a phone that connected before this
+        // repo existed — the ordinary case, since the car pairs on boot and the app starts after
+        // — never produced one we could hear, so connectedName stayed null and every surface
+        // reading it said "No phone connected" while music was audibly playing.
+        if (_enabled) {
+            val live = runCatching {
+                adapter?.bondedDevices?.firstOrNull { device ->
+                    // isConnected() is @hide but has been on BluetoothDevice for years, and it is
+                    // the only per-device answer that does not need a profile proxy.
+                    device.javaClass.getMethod("isConnected").invoke(device) as? Boolean == true
+                }
+            }.getOrNull()
+            val liveName = live?.let { safeDisplayName(it) }
+            if (liveName != null) {
+                if (connectedName != liveName) connectedName = liveName
+            } else if (connectedName != null) {
+                connectedName = null
+            }
+        } else if (connectedName != null) {
+            connectedName = null
+        }
         val bonded = runCatching { adapter?.bondedDevices.orEmpty() }.getOrDefault(emptySet())
             .map { d -> BtDevice(d.address, displayName(d), kindOf(d), bonded = true) }
             // bondedDevices has no defined order, so it can come back permuted between calls and
