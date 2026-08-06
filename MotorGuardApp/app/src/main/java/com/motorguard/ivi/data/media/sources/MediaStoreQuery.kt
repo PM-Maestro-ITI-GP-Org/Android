@@ -136,7 +136,8 @@ internal object MediaStoreQuery {
                         id = "$volume:$id",
                         title = cursor.getString(titleCol)?.takeIf { it.isNotBlank() } ?: "Unknown title",
                         artist = cursor.getString(artistCol)?.unknownToBlank().orEmpty(),
-                        album = cursor.getString(albumCol)?.unknownToBlank().orEmpty(),
+                        album = cursor.getString(albumCol)?.unknownToBlank()
+                            ?.notVolumeName(volume).orEmpty(),
                         durationMs = cursor.getLong(durationCol).sanitizeDuration(),
                         uri = ContentUris.withAppendedId(collection, id),
                         artworkUri = albumArtUri(cursor.getLong(albumIdCol)),
@@ -162,6 +163,17 @@ internal object MediaStoreQuery {
 
     /** MediaStore writes the literal string "<unknown>" for missing tags. */
     private fun String.unknownToBlank(): String = if (this == "<unknown>") "" else this
+
+    /**
+     * Drop an "album" that is really the volume it was found on.
+     *
+     * When a file carries no album tag, MediaStore falls back to the name of the directory it
+     * sits in — and for tracks dropped at the root of a USB stick that is the volume itself. The
+     * result was every row on the stick subtitled "90B8-455B", which is a filesystem UUID and
+     * means nothing to a driver. Blank is the honest answer: the file has no album.
+     */
+    private fun String.notVolumeName(volume: String): String =
+        if (equals(volume, ignoreCase = true)) "" else this
 
     /**
      * Report an implausible duration as unknown (0) rather than passing it on.
