@@ -142,10 +142,16 @@ fun NowPlayingCard(
                         enabled = playback.hasTrack && playback.canSkip,
                         onClick = connection::next,
                     )
+                }
+
+                // Compact, because the widget has to stay the same height as the Vehicle card
+                // beside it — but present, since reaching volume from Home is the whole point of
+                // a now-playing widget.
+                Spacer(Modifier.height(10.dp))
+                VolumeBar(compact = true)
             }
         }
     }
-}
 
 /** Thin progress line under the metadata — scaled, never re-laid out. */
 @Composable

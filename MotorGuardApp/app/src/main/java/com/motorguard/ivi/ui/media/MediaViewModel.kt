@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.motorguard.ivi.data.media.DrivingState
+import com.motorguard.ivi.data.media.BtEvents
 import com.motorguard.ivi.data.media.MediaSourceId
 import com.motorguard.ivi.data.media.MediaSourceManager
 import com.motorguard.ivi.data.media.PlaybackSnapshot
@@ -66,6 +67,20 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             UsbEvents.stream(getApplication()).collect { event -> onUsbEvent(event) }
+        }
+        viewModelScope.launch {
+            BtEvents.stream(getApplication()).collect { event ->
+                _state.update {
+                    it.copy(
+                        notice = when (event) {
+                            is BtEvents.Event.Connected -> MediaNotice.BluetoothConnected(event.name)
+                            is BtEvents.Event.Disconnected -> MediaNotice.BluetoothDisconnected(event.name)
+                        },
+                    )
+                }
+                // The tab's availability follows the A2DP sink state, which has just changed.
+                sources.refreshAvailability()
+            }
         }
         viewModelScope.launch {
             DrivingState.isMoving(getApplication()).collect { moving ->
@@ -295,4 +310,6 @@ data class MediaUiState(
 sealed interface MediaNotice {
     data class UsbMounted(val label: String) : MediaNotice
     data object UsbRemoved : MediaNotice
+    data class BluetoothConnected(val name: String) : MediaNotice
+    data class BluetoothDisconnected(val name: String) : MediaNotice
 }

@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
@@ -74,6 +75,7 @@ import com.motorguard.ivi.ui.media.components.Scrubber
 import com.motorguard.ivi.ui.media.components.SourceTabs
 import com.motorguard.ivi.ui.media.components.TrackRow
 import com.motorguard.ivi.ui.media.components.TransportBar
+import com.motorguard.ivi.ui.media.components.VolumeBar
 import com.motorguard.ivi.ui.media.components.VideoPane
 import com.motorguard.ivi.ui.media.components.rememberAlbumArt
 import com.motorguard.ivi.ui.nav.NavMotion
@@ -128,6 +130,7 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
         UsbNotice(
             notice = state.notice,
             onOpenUsb = { viewModel.selectSource(MediaSourceId.USB) },
+            onOpenBluetooth = { viewModel.selectSource(MediaSourceId.BLUETOOTH) },
             onDismiss = viewModel::dismissNotice,
         )
 
@@ -194,6 +197,7 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
 private fun UsbNotice(
     notice: MediaNotice?,
     onOpenUsb: () -> Unit,
+    onOpenBluetooth: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     LaunchedEffect(notice) {
@@ -220,7 +224,12 @@ private fun UsbNotice(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Filled.Usb,
+                imageVector = when (shown) {
+                    is MediaNotice.BluetoothConnected,
+                    is MediaNotice.BluetoothDisconnected,
+                    -> Icons.Filled.Bluetooth
+                    else -> Icons.Filled.Usb
+                },
                 contentDescription = null,
                 tint = MotorGuard.colors.accent,
                 modifier = Modifier.size(22.dp),
@@ -230,16 +239,28 @@ private fun UsbNotice(
                 text = when (shown) {
                     is MediaNotice.UsbMounted -> "${shown.label} connected"
                     MediaNotice.UsbRemoved -> "USB drive removed"
+                    // Named rather than a generic "phone connected": a car often has more than
+                    // one paired handset and the driver wants to know which one won.
+                    is MediaNotice.BluetoothConnected -> "${shown.name} connected"
+                    is MediaNotice.BluetoothDisconnected -> "${shown.name} disconnected"
                     null -> ""
                 },
                 fontSize = 15.sp,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
-            if (shown is MediaNotice.UsbMounted) {
-                TextButton(onClick = { onOpenUsb(); onDismiss() }) {
+            when (shown) {
+                is MediaNotice.UsbMounted -> TextButton(onClick = { onOpenUsb(); onDismiss() }) {
                     Text("Open", color = MotorGuard.colors.accent, fontWeight = FontWeight.SemiBold)
                 }
+
+                is MediaNotice.BluetoothConnected -> TextButton(
+                    onClick = { onOpenBluetooth(); onDismiss() },
+                ) {
+                    Text("Open", color = MotorGuard.colors.accent, fontWeight = FontWeight.SemiBold)
+                }
+
+                else -> Unit
             }
         }
     }
@@ -331,6 +352,17 @@ private fun NowPlayingPane(
                     onShuffle = viewModel::toggleShuffle,
                     onRepeat = viewModel::cycleRepeat,
                     compact = tight || narrow,
+                )
+
+                // Volume lives below the transport rather than beside it: it applies to whatever
+                // is playing, including the phone over Bluetooth, so it is not a per-track
+                // control and should not sit among the ones that are.
+                Spacer(Modifier.height(if (tight) 8.dp else 18.dp))
+                VolumeBar(
+                    compact = tight || narrow,
+                    modifier = Modifier
+                        .widthIn(max = 380.dp)
+                        .fillMaxWidth(0.82f),
                 )
             }
         }
