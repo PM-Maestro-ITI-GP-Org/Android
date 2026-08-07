@@ -11,13 +11,13 @@
 #   ./scripts/select-car-model.sh --list   # just show what's available
 #   ./scripts/select-car-model.sh 2        # non-interactive: pick entry 2
 #
-# Model library location defaults to ../../vehicle3dModel relative to MotorGuardApp/.
-# Override with:  CAR_MODEL_DIR=/path/to/models ./scripts/select-car-model.sh
+# Model library is found automatically: vehicle3dModel/ beside MotorGuardApp (in-repo) or
+# one level above it (outside the repo). Override with:
+#   CAR_MODEL_DIR=/path/to/models ./scripts/select-car-model.sh
 #
 set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MODEL_DIR="${CAR_MODEL_DIR:-$(cd "$APP_ROOT/../.." && pwd)/vehicle3dModel}"
 ASSETS_DIR="$APP_ROOT/app/src/main/assets"
 TARGET="$ASSETS_DIR/car_model.glb"
 SOURCE_NOTE="$ASSETS_DIR/car_model.source.txt"
@@ -26,8 +26,20 @@ bold=$'\033[1m'; dim=$'\033[2m'; grn=$'\033[32m'; ylw=$'\033[33m'; red=$'\033[31
 
 die() { printf '%s\n' "${red}error:${off} $*" >&2; exit 1; }
 
-[[ -d "$MODEL_DIR" ]] || die "model library not found: $MODEL_DIR
-       Put your .glb files there, or set CAR_MODEL_DIR=/path/to/models"
+# First existing candidate wins. In-repo location is preferred so a fresh clone works.
+if [[ -n "${CAR_MODEL_DIR:-}" ]]; then
+  MODEL_DIR="$CAR_MODEL_DIR"
+else
+  for candidate in "$APP_ROOT/.." "$APP_ROOT/../.." "$APP_ROOT"; do
+    if [[ -d "$candidate/vehicle3dModel" ]]; then
+      MODEL_DIR="$(cd "$candidate/vehicle3dModel" && pwd)"
+      break
+    fi
+  done
+fi
+
+[[ -n "${MODEL_DIR:-}" && -d "$MODEL_DIR" ]] || die "no vehicle3dModel/ directory found next to or above $APP_ROOT
+       Put your .glb files in one, or set CAR_MODEL_DIR=/path/to/models"
 
 # Collect candidates. -print0 so paths with spaces survive.
 models=()
