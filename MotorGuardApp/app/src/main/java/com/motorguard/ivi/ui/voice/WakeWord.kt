@@ -82,7 +82,7 @@ class OnnxWakeWordDetector(
         private const val SRC_HOTWORD = 1999
 
         /** How long to wait for a candidate config to actually deliver frames. */
-        private const val PROBE_MS = 700L
+        private const val PROBE_MS = 3_000L
 
         /** True when all three models are present, so we can pick an implementation. */
         fun modelsPresent(context: Context): Boolean = runCatching {
@@ -219,6 +219,7 @@ class OnnxWakeWordDetector(
     }
 
     private fun micCandidates(): List<MicConfig> = listOf(
+        MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, 44_100, 1),
         MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, 48_000, 1),
         MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, 48_000, 2),
         MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, sampleRate, 1),
