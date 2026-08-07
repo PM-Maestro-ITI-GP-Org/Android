@@ -50,6 +50,22 @@
     -->
     <uses-permission android:name="android.permission.CAPTURE_AUDIO_HOTWORD" />
 
+    <!--
+      Phone tab (owner F). The head unit is the HFP *hands-free* device: the paired
+      handset is the audio gateway and actually places the call, so no telephony
+      hardware is required on the Pi — hence required="false" on the feature.
+
+      CALL_PHONE covers TelecomManager.placeCall through the Bluetooth PhoneAccount.
+      READ_CONTACTS / READ_CALL_LOG read what the PBAP client syncs from the phone;
+      they return empty (not an error) until a phone is paired.
+    -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -75,6 +91,55 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Phone entry point. Two jobs:
+            1. other apps can hand us a `tel:` number, which prefills the pad;
+            2. the DIALER role will not be granted to an app that cannot handle
+               ACTION_DIAL, and without that role the platform never binds
+               MotorGuardInCallService and we cannot control a live call.
+          An alias rather than a second activity so there is still exactly one
+          MainActivity instance (launchMode singleTask).
+        -->
+        <activity-alias
+            android:name=".ui.dialer.DialerEntryActivity"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:label="@string/tab_phone">
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+          Bound by the platform once Motor Guard holds the DIALER role:
+            adb shell cmd role add-role-holder android.app.role.DIALER com.motorguard.ivi
+          IN_CALL_SERVICE_CAR_MODE_UI tells Telecom this UI is the car's, so it is
+          preferred over a phone-style in-call screen. Not needed while
+          PhoneRepository.USE_MOCK is true.
+        -->
+        <service
+            android:name=".ui.dialer.MotorGuardInCallService"
+            android:permission="android.permission.BIND_INCALL_SERVICE"
+            android:exported="true">
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_UI"
+                android:value="true" />
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_CAR_MODE_UI"
+                android:value="true" />
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
 
         <!-- Voice overlay — system services, NOT launchable activities.
              Register the app as the assistant, then trigger it:

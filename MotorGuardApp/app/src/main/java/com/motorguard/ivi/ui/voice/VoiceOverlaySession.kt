@@ -34,6 +34,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.motorguard.ivi.MainActivity
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
 import java.util.Locale
+import com.motorguard.ivi.ui.dialer.PhoneVoice
 
 /**
  * One voice interaction, start to finish.
@@ -189,7 +190,16 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
     // --- reasoning + speech out -------------------------------------------
 
     /** Hands the utterance to the C++ core and speaks the reply. */
+    /**
+    * Phone intents first (they need the contact list, which the core doesn't have),
+    * then the C++ core. Either way the reply is spoken.
+    */
     private fun answer(utterance: String) {
+        PhoneVoice.handle(context, utterance)?.let { reply ->
+            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+            speak(reply)
+            return
+        }
         val reply = VoiceEngine.handle(utterance)
             ?: "Sorry, I didn't catch that. You can ask me to explain a warning " +
             "light, whether it's serious, or where the nearest garage is."

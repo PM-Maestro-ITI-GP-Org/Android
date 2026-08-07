@@ -19,7 +19,7 @@ android {
         // The reasoning core is native C++ shared with the Linux build.
         ndk {
             // arm64 for the Pi/device, x86_64 so it still runs on the emulator.
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
         externalNativeBuild {
             cmake {
@@ -68,6 +68,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
+    // Hosts the rail/status-bar/fragment-container split. ConstraintLayout resolves all
+    // three in one pass; the LinearLayout-weight version it replaced gave the fragment
+    // container an infinite first-pass measurement — see docs/08-dialer.md.
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     // ComposeView inside the voice-overlay service window needs its own
     // ViewTree owners (see VoiceOverlaySession.OverlayHost).
