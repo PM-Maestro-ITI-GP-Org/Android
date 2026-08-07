@@ -1,0 +1,61 @@
+diff --git a/audio/usb_audio_policy_configuration.xml b/audio/usb_audio_policy_configuration.xml
+index a450602..b10c9fb 100644
+--- a/audio/usb_audio_policy_configuration.xml
++++ b/audio/usb_audio_policy_configuration.xml
+@@ -31,9 +31,48 @@
+         </devicePort>
+         <devicePort tagName="USB Device Out" type="AUDIO_DEVICE_OUT_USB_DEVICE" role="sink"/>
+         <devicePort tagName="USB Headset Out" type="AUDIO_DEVICE_OUT_USB_HEADSET" role="sink"/>
++
++        <!--
++          Mono instead of stereo. Upstream ships this port as
++          AUDIO_CHANNEL_IN_STEREO, which breaks every capture-only USB
++          microphone that is physically mono.
++
++          Such a device enumerates as AUDIO_DEVICE_IN_USB_DEVICE rather than
++          _USB_HEADSET (which requires playback too), so it lands here. Android
++          then asks for stereo, proxy_prepare() runs with require_exact_match,
++          profile_is_channel_count_valid() fails, and it returns EINVAL. The
++          stream never opens:
++
++              AHAL_alsa_device_proxy: proxy_prepare(c:2, d:0)
++              AHAL_alsa_device_proxy: proxy_close() [pcm:0x0]
++              AudioFlinger: Error when putting input stream into standby: 38
++
++          AudioRecord reports RECORDSTATE_RECORDING throughout, read() returns 0
++          forever with no error, and hw_params reads "closed" while tinycap
++          captures from the same device happily, since it never consults this
++          file.
++
++          ONE mask only. Listing both stereo and mono made
++          android.hardware.audio.service.rpi abort at startup and the board
++          would not boot:
++
++              Abort message: 'Function: convertCollectionToAidl Line: 128
++                              Failed result (BAD_VALUE)'
++
++          The XSD to AIDL conversion fails the whole collection if any element
++          is rejected. Adding a second samplingRate (44100) aborts the same way.
++          Change one attribute at a time and verify the board boots
++          (getprop sys.boot_completed, am get-current-user) before testing audio.
++
++          TRADE-OFF: a stereo USB microphone will now be refused on this port.
++          No stereo capture-only device is in use here, and the previous
++          behaviour refused mono ones, so this is strictly better for this build.
++          A USB headset is unaffected — it uses "USB Headset In" below, which
++          has always been mono.
++        -->
+         <devicePort tagName="USB Device In" type="AUDIO_DEVICE_IN_USB_DEVICE" role="source">
+             <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+-                samplingRates="48000" channelMasks="AUDIO_CHANNEL_IN_STEREO"/>
++                samplingRates="48000" channelMasks="AUDIO_CHANNEL_IN_MONO"/>
+         </devicePort>
+         <devicePort tagName="USB Headset In" type="AUDIO_DEVICE_IN_USB_HEADSET" role="source">
+             <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+@@ -51,4 +90,4 @@
+         <route type="mix" sink="usb_device input"
+                sources="USB Device In,USB Headset In"/>
+     </routes>
+-</module>
++</module>
+\ No newline at end of file
