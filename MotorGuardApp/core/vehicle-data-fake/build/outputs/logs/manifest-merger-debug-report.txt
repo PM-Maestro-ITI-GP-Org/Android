@@ -1,0 +1,16 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml:2:13-83
+INJECTED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml:2:13-83
+	package
+		INJECTED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml
+	xmlns:android
+		ADDED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml:2:23-81
+uses-sdk
+INJECTED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml reason: use-sdk injection requested
+INJECTED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml
+INJECTED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml
+	android:targetSdkVersion
+		INJECTED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml
+	android:minSdkVersion
+		INJECTED from /home/zee/ITI_Files/GP/android/Android/MotorGuardApp/core/vehicle-data-fake/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest8924035623507768451.xml

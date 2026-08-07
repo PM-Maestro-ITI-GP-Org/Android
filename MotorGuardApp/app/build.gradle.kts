@@ -43,6 +43,15 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+
+    // Phase 1: diagnostics domain + fake data source (DI swap target for Phase 2)
+    implementation(project(":core:vehicle-data-api"))
+    implementation(project(":core:vehicle-data-fake"))
+
+    testImplementation("junit:junit:4.13.2")
 
     // Compose (versions come from the BOM)
     val composeBom = platform("androidx.compose:compose-bom:2024.09.02")

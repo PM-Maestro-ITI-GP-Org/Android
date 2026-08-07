@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Safety / glanceability minimums (repo-level requirement, docs/) -->
+    <dimen name="touch_min">76dp</dimen>
+
+    <!-- Diagnostics -->
+    <dimen name="car_card_radius">26dp</dimen>
+    <dimen name="hotspot_dot">32dp</dimen>
+</resources>

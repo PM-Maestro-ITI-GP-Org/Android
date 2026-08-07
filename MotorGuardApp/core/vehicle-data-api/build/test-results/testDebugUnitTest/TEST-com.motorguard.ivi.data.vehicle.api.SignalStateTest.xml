@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.motorguard.ivi.data.vehicle.api.SignalStateTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-08-06T11:39:32.117Z" hostname="Lab" time="0.106">
+  <properties/>
+  <testcase name="severity for tires derives per corner" classname="com.motorguard.ivi.data.vehicle.api.SignalStateTest" time="0.105"/>
+  <testcase name="latestValueOrNull extracts live and stale, null for offline loading" classname="com.motorguard.ivi.data.vehicle.api.SignalStateTest" time="0.0"/>
+  <testcase name="offline and loading report via isOfflineOrLoading" classname="com.motorguard.ivi.data.vehicle.api.SignalStateTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

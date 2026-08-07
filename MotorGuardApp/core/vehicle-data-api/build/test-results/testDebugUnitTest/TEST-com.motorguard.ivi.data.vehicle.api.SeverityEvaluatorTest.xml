@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-08-06T11:39:32.091Z" hostname="Lab" time="0.025">
+  <properties/>
+  <testcase name="battery health maps ok caution critical" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.003"/>
+  <testcase name="tire psi maps ok caution critical" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.0"/>
+  <testcase name="critical to ok path also uses margin on the way up" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.014"/>
+  <testcase name="independent hotspots keep separate hysteresis memory" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.0"/>
+  <testcase name="hysteresis holds caution until value recovers past margin" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.0"/>
+  <testcase name="battery charge maps ok caution critical" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.0"/>
+  <testcase name="hysteresis escalates freely but never de-escalates inside margin" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.0"/>
+  <testcase name="motor load only has caution" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.0"/>
+  <testcase name="cell and motor temp high-is-worse" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.0"/>
+  <testcase name="brake wear and fluid" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.0"/>
+  <testcase name="doors aggregate" classname="com.motorguard.ivi.data.vehicle.api.SeverityEvaluatorTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
