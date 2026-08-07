@@ -14,6 +14,12 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
+
+        // Filament (via SceneView) ships native renderers for four ABIs. Keep only the
+        // two this project targets: x86_64 for the dev emulator, arm64-v8a for the RPi 5.
+        ndk {
+            abiFilters += listOf("x86_64", "arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -36,6 +42,11 @@ android {
     buildFeatures {
         compose = true
     }
+    androidResources {
+        // car_model.glb is already-compressed PNG payload; re-zipping it at build time
+        // only costs time and gains nothing.
+        noCompress += "glb"
+    }
 }
 
 dependencies {
@@ -50,6 +61,11 @@ dependencies {
     // Phase 1: diagnostics domain + fake data source (DI swap target for Phase 2)
     implementation(project(":core:vehicle-data-api"))
     implementation(project(":core:vehicle-data-fake"))
+
+    // Diagnostics 3D car stage (Filament under the hood). Pinned to 2.3.0: it is the last
+    // release built against kotlin-stdlib 2.0.21, which is this project's Kotlin version.
+    // Every 4.x needs Kotlin 2.3+, which would force a toolchain bump on all fragment owners.
+    implementation("io.github.sceneview:sceneview:2.3.0")
 
     testImplementation("junit:junit:4.13.2")
 

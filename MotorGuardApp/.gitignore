@@ -2,10 +2,17 @@
 .gradle/
 /local.properties
 .DS_Store
-/build
+# Any module's build dir, not just the root and :app — :core:vehicle-data-* were
+# escaping the old /build and /app/build rules and got committed by accident.
+**/build/
 /captures
 .externalNativeBuild
 .cxx
 local.properties
-/app/build
 .idea/
+.kotlin/
+
+# The 3D vehicle model is installed by scripts/select-car-model.sh from the model
+# library outside the repo. It is ~15 MB of binary — keep it out of git history.
+/app/src/main/assets/car_model.glb
+/app/src/main/assets/car_model.source.txt
