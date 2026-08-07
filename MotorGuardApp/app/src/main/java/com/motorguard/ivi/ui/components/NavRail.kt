@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.DirectionsCar
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Navigation
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -59,6 +61,7 @@ private val items = listOf(
     RailItem(Tab.MEDIA, "Media", Icons.Filled.MusicNote, Icons.Outlined.MusicNote),
     RailItem(Tab.VIDEO, "Videos", Icons.Filled.Movie, Icons.Outlined.Movie),
     RailItem(Tab.NAV, "Navigation", Icons.Filled.Navigation, Icons.Outlined.Navigation),
+    RailItem(Tab.PHONE, "Phone", Icons.Filled.Phone, Icons.Outlined.Phone),
     RailItem(Tab.DIAGNOSTICS, "Diagnostics", Icons.Filled.DirectionsCar, Icons.Outlined.DirectionsCar),
     RailItem(Tab.SETTINGS, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
 )
@@ -66,6 +69,9 @@ private val items = listOf(
 /**
  * Fixed left rail. One selected item at a time (rounded highlight), a voice/mic button,
  * and the MOTOR GUARD wordmark pinned at the bottom. See docs/01-navrail.md.
+ *
+ * Seven buttons is the ceiling at 56 dp + 16 dp gaps: the column still clears the
+ * wordmark on the 1024×600 reflow. An eighth tab needs a scrollable rail.
  */
 @Composable
 fun NavRail(
@@ -90,7 +96,7 @@ fun NavRail(
                 onClick = { onSelect(item.tab) },
             )
         }
-        // Voice: not a tab — triggers the assistant overlay (future work).
+        // Voice: not a tab — triggers the assistant overlay.
         RailButton(
             icon = Icons.Filled.Mic,
             label = "Voice",

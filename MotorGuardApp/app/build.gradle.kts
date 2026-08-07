@@ -14,6 +14,7 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
+        
 
         // Native deps: the C++ voice/reasoning core (built from src/main/cpp) plus MapLibre
         // (nav map, prebuilt .so from the AAR). Both run arm64 on the Pi; x86_64 keeps the
@@ -22,7 +23,11 @@ android {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
         externalNativeBuild {
-            cmake { cppFlags += "-std=c++17" }
+            cmake {
+                cppFlags += "-std=c++17"
+                arguments += listOf("-DCMAKE_BUILD_TYPE=Release")
+                targets += "motorguardvoice"
+            }
         }
     }
 
@@ -64,6 +69,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
+// Hosts the rail/status-bar/fragment-container split. ConstraintLayout resolves all
+    // three in one pass; the LinearLayout-weight version it replaced gave the fragment
+    // container an infinite first-pass measurement — see docs/08-dialer.md.
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     // ComposeView inside the voice-overlay service window needs its own

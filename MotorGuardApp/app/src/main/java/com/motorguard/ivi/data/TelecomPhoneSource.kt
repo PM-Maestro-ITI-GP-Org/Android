@@ -1,0 +1,290 @@
+package com.motorguard.ivi.data
+
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.Uri
+import android.os.Bundle
+import android.os.SystemClock
+import android.provider.CallLog
+import android.provider.ContactsContract
+import android.telecom.Call
+import android.telecom.TelecomManager
+import android.telecom.VideoProfile
+import android.util.Log
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Real phone backend. The head unit is the HFP **hands-free** unit; the handset is the
+ * audio gateway. Outgoing calls go out through the Bluetooth stack's PhoneAccount
+ * (`HfpClientConnectionService`), and control of the live call comes back to us through
+ * [InCallBridge] because we are bound as the `InCallService`.
+ *
+ * Requires, at runtime: BLUETOOTH_CONNECT, CALL_PHONE, READ_CONTACTS, READ_CALL_LOG,
+ * READ_PHONE_STATE — and the DIALER role, or the platform never binds our InCallService:
+ *
+ *   adb shell cmd role add-role-holder android.app.role.DIALER com.motorguard.ivi
+ *
+ * Every provider/Telecom call is wrapped: on a Pi image without a Bluetooth stack these
+ * throw or return empty, and the surface must degrade to "No phone connected" rather
+ * than crash the launcher.
+ */
+class TelecomPhoneSource(private val app: Context) : PhoneRepository {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private val telecom: TelecomManager? =
+        app.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+
+    private val adapter: BluetoothAdapter? =
+        (app.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+
+    private val _link = MutableStateFlow(PhoneLink.DISCONNECTED)
+    private val _deviceName = MutableStateFlow<String?>(null)
+    private val _call = MutableStateFlow<ActiveCall?>(null)
+    private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
+    private val _recents = MutableStateFlow<List<CallLogEntry>>(emptyList())
+
+    override val link: StateFlow<PhoneLink> = _link.asStateFlow()
+    override val deviceName: StateFlow<String?> = _deviceName.asStateFlow()
+    override val call: StateFlow<ActiveCall?> = _call.asStateFlow()
+    override val contacts: StateFlow<List<Contact>> = _contacts.asStateFlow()
+    override val recents: StateFlow<List<CallLogEntry>> = _recents.asStateFlow()
+
+    /** Answer time is ours to keep: Telecom's connectTimeMillis is wall clock, not monotonic. */
+    private var answeredAtElapsedMs = 0L
+
+    private val hfpReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_HFP_CLIENT_CONNECTION_STATE_CHANGED) return
+            val state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED)
+            @Suppress("DEPRECATION")
+            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+            applyLink(state, device)
+            if (state == BluetoothProfile.STATE_CONNECTED) refresh()
+        }
+    }
+
+    init {
+        // targetSdk 34 rejects a context-registered receiver with no export flag.
+        runCatching {
+            ContextCompat.registerReceiver(
+                app,
+                hfpReceiver,
+                IntentFilter(ACTION_HFP_CLIENT_CONNECTION_STATE_CHANGED),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+        }.onFailure { Log.w(TAG, "HFP state receiver not registered", it) }
+
+        // Any Call.Callback tick or mute change re-projects the platform call into our model.
+        combine(InCallBridge.call, InCallBridge.revision, InCallBridge.muted) { call, _, muted ->
+            project(call, muted)
+        }.onEach { _call.value = it }.launchIn(scope)
+
+        refresh()
+    }
+
+    // --- commands ----------------------------------------------------------
+
+    override fun dial(number: String, displayName: String?) {
+        val tm = telecom ?: return
+        val uri = Uri.fromParts("tel", number.filter { it.isDigit() || it == '+' || it == '#' || it == '*' }, null)
+        val extras = Bundle().apply {
+            hfpAccount()?.let { putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, it) }
+            putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, false)
+        }
+        runCatching { tm.placeCall(uri, extras) }
+            .onFailure { Log.e(TAG, "placeCall failed for $displayName", it) }
+    }
+
+    override fun answer() {
+        runCatching { InCallBridge.call.value?.answer(VideoProfile.STATE_AUDIO_ONLY) }
+            .onFailure { Log.e(TAG, "answer failed", it) }
+    }
+
+    override fun hangUp() {
+        runCatching { InCallBridge.call.value?.disconnect() }
+            .onFailure { Log.e(TAG, "disconnect failed", it) }
+    }
+
+    override fun setMuted(muted: Boolean) = InCallBridge.setMuted(muted)
+
+    override fun setOnHold(hold: Boolean) {
+        val call = InCallBridge.call.value ?: return
+        runCatching { if (hold) call.hold() else call.unhold() }
+            .onFailure { Log.e(TAG, "hold toggle failed", it) }
+    }
+
+    override fun sendDtmf(digit: Char) {
+        val call = InCallBridge.call.value ?: return
+        runCatching {
+            call.playDtmfTone(digit)
+            call.stopDtmfTone()
+        }.onFailure { Log.e(TAG, "dtmf failed", it) }
+    }
+
+    override fun refresh() {
+        scope.launch {
+            applyLink(profileState(), connectedDevice())
+            val loaded = withContext(Dispatchers.IO) { queryContacts() to queryRecents() }
+            _contacts.value = loaded.first
+            _recents.value = loaded.second
+        }
+    }
+
+    // --- platform → domain -------------------------------------------------
+
+    private fun project(call: Call?, muted: Boolean): ActiveCall? {
+        if (call == null) {
+            answeredAtElapsedMs = 0L
+            return null
+        }
+        @Suppress("DEPRECATION") val raw = call.state
+        val state = when (raw) {
+            Call.STATE_CONNECTING, Call.STATE_DIALING -> CallState.DIALING
+            Call.STATE_RINGING -> CallState.RINGING
+            Call.STATE_ACTIVE -> CallState.ACTIVE
+            Call.STATE_HOLDING -> CallState.HOLDING
+            Call.STATE_DISCONNECTING, Call.STATE_DISCONNECTED -> CallState.ENDING
+            else -> return null
+        }
+        if (state == CallState.ACTIVE && answeredAtElapsedMs == 0L) {
+            answeredAtElapsedMs = SystemClock.elapsedRealtime()
+        }
+
+        val details = call.details
+        val number = details?.handle?.schemeSpecificPart.orEmpty()
+        val name = details?.callerDisplayName?.takeIf { it.isNotBlank() }
+            ?: _contacts.value.firstOrNull { sameNumber(it.number, number) }?.name
+
+        return ActiveCall(
+            number = number,
+            name = name,
+            state = state,
+            direction = if (raw == Call.STATE_RINGING) CallDirection.INCOMING else CallDirection.OUTGOING,
+            startedAtElapsedMs = answeredAtElapsedMs,
+            muted = muted,
+        )
+    }
+
+    private fun applyLink(state: Int, device: BluetoothDevice?) {
+        _link.value = when (state) {
+            BluetoothProfile.STATE_CONNECTED -> PhoneLink.CONNECTED
+            BluetoothProfile.STATE_CONNECTING -> PhoneLink.CONNECTING
+            else -> PhoneLink.DISCONNECTED
+        }
+        _deviceName.value = if (_link.value == PhoneLink.CONNECTED) {
+            runCatching { device?.name }.getOrNull() ?: "Phone"
+        } else {
+            null
+        }
+    }
+
+    /** HEADSET_CLIENT is not in the public SDK constant set, so the profile id is literal. */
+    private fun profileState(): Int =
+        runCatching { adapter?.getProfileConnectionState(PROFILE_HEADSET_CLIENT) }
+            .getOrNull() ?: BluetoothProfile.STATE_DISCONNECTED
+
+    private fun connectedDevice(): BluetoothDevice? =
+        runCatching { adapter?.bondedDevices?.firstOrNull() }.getOrNull()
+
+    /** Prefer the Bluetooth HFP account; a SIM account would place the call on the head unit. */
+    private fun hfpAccount() = runCatching {
+        telecom?.callCapablePhoneAccounts?.firstOrNull {
+            it.componentName.className.contains("HfpClient", ignoreCase = true)
+        }
+    }.getOrNull()
+
+    // --- providers ---------------------------------------------------------
+
+    private fun queryContacts(): List<Contact> = runCatching {
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.STARRED,
+        )
+        val out = LinkedHashMap<Long, Contact>()
+        app.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} COLLATE NOCASE ASC",
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getLong(0)
+                if (out.containsKey(id)) continue          // one number per contact is enough here
+                val name = c.getString(1) ?: continue
+                val number = c.getString(2) ?: continue
+                out[id] = Contact(id, name, number, favorite = c.getInt(3) == 1)
+            }
+        }
+        out.values.toList()
+    }.getOrElse {
+        Log.w(TAG, "contacts unavailable (permission or no PBAP sync)", it)
+        emptyList()
+    }
+
+    private fun queryRecents(): List<CallLogEntry> = runCatching {
+        val projection = arrayOf(
+            CallLog.Calls._ID,
+            CallLog.Calls.CACHED_NAME,
+            CallLog.Calls.NUMBER,
+            CallLog.Calls.TYPE,
+            CallLog.Calls.DATE,
+        )
+        val out = mutableListOf<CallLogEntry>()
+        app.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${CallLog.Calls.DATE} DESC LIMIT 40",
+        )?.use { c ->
+            while (c.moveToNext()) {
+                out += CallLogEntry(
+                    id = c.getLong(0),
+                    name = c.getString(1)?.takeIf { it.isNotBlank() },
+                    number = c.getString(2).orEmpty(),
+                    direction = when (c.getInt(3)) {
+                        CallLog.Calls.INCOMING_TYPE -> CallDirection.INCOMING
+                        CallLog.Calls.MISSED_TYPE -> CallDirection.MISSED
+                        else -> CallDirection.OUTGOING
+                    },
+                    timestampMillis = c.getLong(4),
+                )
+            }
+        }
+        out
+    }.getOrElse {
+        Log.w(TAG, "call log unavailable (permission or no PBAP sync)", it)
+        emptyList()
+    }
+
+    private fun sameNumber(a: String, b: String): Boolean =
+        a.filter(Char::isDigit).takeLast(9) == b.filter(Char::isDigit).takeLast(9)
+
+    private companion object {
+        const val TAG = "MotorGuardPhone"
+        const val PROFILE_HEADSET_CLIENT = 16
+        const val ACTION_HFP_CLIENT_CONNECTION_STATE_CHANGED =
+            "android.bluetooth.headsetclient.profile.action.CONNECTION_STATE_CHANGED"
+    }
+}

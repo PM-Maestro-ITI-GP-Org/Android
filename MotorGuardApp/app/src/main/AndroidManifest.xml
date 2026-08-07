@@ -6,7 +6,7 @@
         android:name="android.hardware.type.automotive"
         android:required="false" />
 
-    <!-- Wi-Fi: read + control. Radio control (CHANGE_WIFI_STATE toggle/connect) only takes
+<!-- Wi-Fi: read + control. Radio control (CHANGE_WIFI_STATE toggle/connect) only takes
          effect on a platform-signed / privileged build; unprivileged it falls back to mock. -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
@@ -44,7 +44,7 @@
     <uses-permission android:name="android.permission.OVERRIDE_WIFI_CONFIG" />
     <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
 
-    <!-- Voice overlay (owner D): always-on wake word + assistant session. -->
+    <!-- Voice overlay: always-on wake word + assistant session. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -92,6 +92,59 @@
 
     <!-- Detecting a connected phone for the Bluetooth source (runtime permission from API 31). -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!--
+      Always-on capture, the working route.
+
+      The problem: AudioPolicy applies the RECORD_AUDIO foreground restriction to
+      background capture. AudioService logs "rec start ... not silenced", flips it
+      to "silenced" once the app settles into the background, and
+      AudioRecord.read() then returns 0 forever with no error at any layer. The
+      appop cannot be forced past this by hand, because its UID mode is derived
+      from procstate rather than being independently settable.
+
+      The fix: run the detector inside a microphone-type foreground service
+      (WakeWordService). A foreground service is never in the background
+      procstate, so the restriction never applies and VOICE_RECOGNITION stays
+      live. POST_NOTIFICATIONS is required because a foreground service must show
+      a notification.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Kept, but NOT the route in use.
+
+      HOTWORD capture is exempt from the foreground restriction and does deliver
+      frames, but on this board it delivers synthetic noise rather than
+      microphone audio. Measured: a C-Media dongle and a Logitech headset gave
+      statistically identical streams (sigma ~7700, peak ~3.3 sigma, flat mel
+      spectrum ~80-89 across all bins), and the level scaled by exactly sqrt(2)
+      between mono and stereo, which means independent noise per channel. A real
+      duplicated mono capsule cannot do that. The Pi 5 has no DSP hotword path
+      behind the API, so the platform hands back filler.
+
+      Left declared so the source can be re-tested on hardware that has a real
+      hotword path. It only takes effect as a priv-app also listed in
+      /system_ext/etc/permissions/privapp-permissions-motorguard.xml.
+    -->
+    <uses-permission android:name="android.permission.CAPTURE_AUDIO_HOTWORD" />
+
+    <!--
+      Phone tab (owner F). The head unit is the HFP *hands-free* device: the paired
+      handset is the audio gateway and actually places the call, so no telephony
+      hardware is required on the Pi — hence required="false" on the feature.
+
+      CALL_PHONE covers TelecomManager.placeCall through the Bluetooth PhoneAccount.
+      READ_CONTACTS / READ_CALL_LOG read what the PBAP client syncs from the phone;
+      they return empty (not an error) until a phone is paired.
+    -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
     <application
         android:allowBackup="true"
@@ -120,6 +173,55 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Phone entry point. Two jobs:
+            1. other apps can hand us a `tel:` number, which prefills the pad;
+            2. the DIALER role will not be granted to an app that cannot handle
+               ACTION_DIAL, and without that role the platform never binds
+               MotorGuardInCallService and we cannot control a live call.
+          An alias rather than a second activity so there is still exactly one
+          MainActivity instance (launchMode singleTask).
+        -->
+        <activity-alias
+            android:name=".ui.dialer.DialerEntryActivity"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:label="@string/tab_phone">
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+          Bound by the platform once Motor Guard holds the DIALER role:
+            adb shell cmd role add-role-holder android.app.role.DIALER com.motorguard.ivi
+          IN_CALL_SERVICE_CAR_MODE_UI tells Telecom this UI is the car's, so it is
+          preferred over a phone-style in-call screen. Not needed while
+          PhoneRepository.USE_MOCK is true.
+        -->
+        <service
+            android:name=".ui.dialer.MotorGuardInCallService"
+            android:permission="android.permission.BIND_INCALL_SERVICE"
+            android:exported="true">
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_UI"
+                android:value="true" />
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_CAR_MODE_UI"
+                android:value="true" />
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
 
         <!-- Voice overlay — system services, NOT launchable activities.
              Register the app as the assistant, then trigger it:
@@ -177,6 +279,44 @@
                 <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
+        </service>
+
+        <!--
+          Hosts the wake-word detector. VoiceOverlayService cannot do this itself:
+          it is bound by the platform rather than started, so it cannot call
+          startForeground() on its own.
+
+          foregroundServiceType is mandatory from Android 14. Without it
+          startForeground() throws, and "microphone" is specifically the type that
+          exempts the process from the background capture restriction.
+        -->
+        <service
+            android:name=".ui.voice.WakeWordService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
+
+        <service
+            android:name=".ui.voice.OfflineRecognitionService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
+
+        <service
+            android:name=".ui.voice.PiperTtsService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.TTS_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech.tts"
+                android:resource="@xml/tts_engine" />
         </service>
 
     </application>

@@ -56,6 +56,7 @@ enum class VoiceRoute(val label: String) {
     NAV("Navigate"),
     DIAGNOSTICS("Vehicle status"),
     SETTINGS("Settings"),
+    PHONE("Call"),
 }
 
 // The overlay is always dark — it floats over arbitrary content, so it pins to the

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declared via <meta-data android:name="android.speech"> on the service.
+  No settings activity: the model path and behaviour are fixed for this build.
+-->
+<recognition-service
+    xmlns:android="http://schemas.android.com/apk/res/android" />

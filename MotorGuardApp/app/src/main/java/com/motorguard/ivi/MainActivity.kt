@@ -16,10 +16,12 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.motorguard.ivi.data.Conn
 import com.motorguard.ivi.data.LocalStore
+import com.motorguard.ivi.data.PhoneRepository
 import com.motorguard.ivi.ui.theme.ThemeState
 import com.motorguard.ivi.data.media.AlbumArtLoader
 import com.motorguard.ivi.media.MediaConnection
@@ -31,6 +33,8 @@ import kotlinx.coroutines.launch
 import com.motorguard.ivi.ui.components.NavRail
 import com.motorguard.ivi.ui.components.StatusBar
 import com.motorguard.ivi.ui.diagnostics.DiagnosticsFragment
+import com.motorguard.ivi.ui.dialer.DialerFragment
+import com.motorguard.ivi.ui.dialer.DialerViewModel
 import com.motorguard.ivi.ui.home.HomeFragment
 import com.motorguard.ivi.ui.media.MediaFragment
 import com.motorguard.ivi.ui.video.VideoFragment
@@ -49,7 +53,7 @@ import com.motorguard.ivi.ui.voice.VoiceTrigger
  */
 class MainActivity : AppCompatActivity() {
 
-    enum class Tab { HOME, MEDIA, VIDEO, NAV, DIAGNOSTICS, SETTINGS }
+    enum class Tab { HOME, MEDIA, VIDEO, NAV, DIAGNOSTICS, PHONE, SETTINGS }
 
     companion object {
         /** Voice overlay routes here: putExtra(EXTRA_TAB, Tab.MEDIA.name). */
@@ -57,6 +61,14 @@ class MainActivity : AppCompatActivity() {
 
         /** Big enough for Palette to find a stable dominant colour, small enough to be cheap. */
         private const val ARTWORK_PX = 256
+
+        /**
+         * Place a call as soon as the phone tab is up. The voice overlay resolves
+         * "call Mona" to a number first (PhoneRepository.lookup) and passes both, so the
+         * screen can label the call before the far end answers.
+         */
+        const val EXTRA_DIAL_NUMBER = "com.motorguard.ivi.EXTRA_DIAL_NUMBER"
+        const val EXTRA_DIAL_NAME = "com.motorguard.ivi.EXTRA_DIAL_NAME
     }
 
     private var selected by mutableStateOf(Tab.HOME)
@@ -85,7 +97,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (savedInstanceState == null) show(tabFromIntent(intent) ?: Tab.HOME)
+        if (savedInstanceState == null) {
+            show(tabFromIntent(intent) ?: Tab.HOME)
+            applyPhoneExtras(intent)
+        }
 
         followAlbumArtwork()
     }
@@ -93,9 +108,9 @@ class MainActivity : AppCompatActivity() {
     /**
      * Hide the rail and status bar so a full-screen video gets the whole panel.
      *
-     * Done here rather than inside the fragment because both views belong to the Activity's
-     * layout — a fragment cannot reach them, and a full-screen mode that leaves a navigation
-     * rail down the side is not one.
+     * Done here rather than inside the fragment because both views belong to the
+     * Activity's layout — a fragment cannot reach them, and a full-screen mode that
+     * leaves a navigation rail down the side is not one.
      */
     fun setChromeVisible(visible: Boolean) {
         val mode = if (visible) android.view.View.VISIBLE else android.view.View.GONE
@@ -106,9 +121,10 @@ class MainActivity : AppCompatActivity() {
     /**
      * Keep the app-wide accent in step with the playing track.
      *
-     * Driven from the single Activity rather than from a composable, because the accent applies
-     * to every surface — including ones that are not composed at the time the track changes. One
-     * observer, one artwork load, one palette extraction; [MotorGuardTheme] reads the result.
+     * Driven from the single Activity rather than from a composable, because the accent
+     * applies to every surface — including ones that are not composed at the time the
+     * track changes. One observer, one artwork load, one palette extraction;
+     * [MotorGuardTheme] reads the result.
      */
     private fun followAlbumArtwork() {
         lifecycleScope.launch {
@@ -129,12 +145,41 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         tabFromIntent(intent)?.let(::show)
+        applyPhoneExtras(intent)
     }
 
-    private fun tabFromIntent(intent: Intent?): Tab? =
-        intent?.getStringExtra(EXTRA_TAB)?.let { name ->
-            runCatching { Tab.valueOf(name) }.getOrNull()
+    private fun tabFromIntent(intent: Intent?): Tab? {
+        intent ?: return null
+        intent.getStringExtra(EXTRA_TAB)?.let { name ->
+            runCatching { Tab.valueOf(name) }.getOrNull()?.let { return it }
         }
+        // ACTION_DIAL / tel: — arrives from the DIALER role and from other apps.
+        val isTel = intent.data?.scheme == "tel"
+        return if (isTel || intent.getStringExtra(EXTRA_DIAL_NUMBER) != null) Tab.PHONE else null
+    }
+
+    /**
+     * A `tel:` URI prefills the pad and waits for the driver to hit call; an explicit
+     * EXTRA_DIAL_NUMBER (voice) dials straight away, because the driver already said so
+     * out loud and a second confirmation tap defeats the point of hands-free.
+     */
+    private fun applyPhoneExtras(intent: Intent?) {
+        intent ?: return
+
+        intent.getStringExtra(EXTRA_DIAL_NUMBER)?.let { number ->
+            PhoneRepository.get(this).dial(number, intent.getStringExtra(EXTRA_DIAL_NAME))
+            intent.removeExtra(EXTRA_DIAL_NUMBER)
+            return
+        }
+
+        if (intent.data?.scheme == "tel") {
+            val number = intent.data?.schemeSpecificPart.orEmpty()
+            if (number.isNotEmpty()) {
+                ViewModelProvider(this)[DialerViewModel::class.java].prefillDigits(number)
+            }
+            intent.data = null
+        }
+    }
 
     /**
      * Take over the full screen: draw edge-to-edge and hide the Automotive system bars
@@ -210,6 +255,7 @@ class MainActivity : AppCompatActivity() {
             Tab.VIDEO -> VideoFragment()
             Tab.NAV -> NavFragment()
             Tab.DIAGNOSTICS -> DiagnosticsFragment()
+            Tab.PHONE -> DialerFragment()
             Tab.SETTINGS -> SettingsFragment()
         }
         supportFragmentManager.commit {

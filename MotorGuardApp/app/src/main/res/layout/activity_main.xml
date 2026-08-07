@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Host layout: full-height NavRail on the left; to its right a StatusBar on top and the
-     fragment container filling the rest. ConstraintLayout (not weighted LinearLayouts) so
-     the fragment container gets a definite height — required for scrollable Compose panes. -->
+<!-- Host layout: the dark NavRail runs full height on the left (no light/dark corner at
+     the top). To its right: a StatusBar on top, then the fragment container below.
+
+     ConstraintLayout, not nested weighted LinearLayouts: a LinearLayout with
+     layout_height="0dp" + layout_weight gives its child an unbounded first-pass
+     measurement before the weight is resolved, which Compose turns into
+     Constraints(maxHeight = Infinity) for whatever fragment is hosted in
+     fragment_container. Screens without a scrolling composable never noticed; the
+     dialer's Modifier.verticalScroll() throws on it immediately. Anchoring everything
+     to fixed edges here means fragment_container is never measured unbounded. -->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -11,7 +18,7 @@
 
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/nav_rail"
-        android:layout_width="wrap_content"
+        android:layout_width="92dp"
         android:layout_height="0dp"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
@@ -33,4 +40,5 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/status_bar"
         app:layout_constraintBottom_toBottomOf="parent" />
+ 
 </androidx.constraintlayout.widget.ConstraintLayout>
