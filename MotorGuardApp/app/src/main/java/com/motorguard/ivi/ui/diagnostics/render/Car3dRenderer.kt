@@ -2,8 +2,8 @@ package com.motorguard.ivi.ui.diagnostics.render
 
 import android.util.Log
 import android.view.MotionEvent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,7 +24,11 @@ import com.motorguard.ivi.data.vehicle.api.Hotspot
 import dev.romainguy.kotlin.math.Float3
 import dev.romainguy.kotlin.math.Float4
 import dev.romainguy.kotlin.math.Quaternion
+import dev.romainguy.kotlin.math.clamp
+import dev.romainguy.kotlin.math.dot
+import dev.romainguy.kotlin.math.length
 import dev.romainguy.kotlin.math.lookAt
+import dev.romainguy.kotlin.math.mix
 import dev.romainguy.kotlin.math.normalize
 import io.github.sceneview.Scene
 import io.github.sceneview.SceneView
@@ -42,6 +46,8 @@ import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberNodes
 import io.github.sceneview.rememberView
 import kotlin.coroutines.coroutineContext
+import kotlin.math.abs
+import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
@@ -95,9 +101,35 @@ object Car3dTuning {
      */
     const val HERO_TARGET_LIFT = 0f
 
-    // --- Entrance
+    // --- Entrance. Step 3 repurposes these: distanceScale for the pulled-back START pose the
+    // load effect sets, and millis for the very first camera move only (see `hasFramed`). The
+    // magnitudes are unchanged, only who reads them.
     const val ENTRANCE_DISTANCE_FACTOR = 1.20f
     const val ENTRANCE_MILLIS = 900
+
+    // --- Focus (spec §7)
+    /** Spec §7 mandates 250 ms FastOutSlowIn for the focus transition. Do not retune. */
+    const val FOCUS_MILLIS = 250
+
+    /** Eye distance from the ANCHOR = boundingRadius * this. */
+    const val FOCUS_DISTANCE_FACTOR = 1.35f
+
+    /** Degrees swung from pure side-on toward the anchor's own end of the car. */
+    const val FOCUS_AZIMUTH_DEG = 30f
+    const val FOCUS_ELEVATION_DEG = 14f
+
+    /** |lateral| below this is a centreline component: the camera keeps the side it is already on. */
+    const val FOCUS_SIDE_THRESHOLD = 0.20f
+
+    // --- Far-side occlusion. All three compared against `lateral * viewLat`.
+    /** |lateral| at or below this is a centreline anchor, never occluded. */
+    const val OCCLUSION_DEADBAND = 0.12f
+
+    /** -facing at which the fade STARTS. Equal to the deadband so the two agree exactly. */
+    const val OCCLUSION_START = 0.12f
+
+    /** -facing at which the dot is fully occluded. */
+    const val OCCLUSION_FULL = 0.45f
 
     // --- Camera
     const val FOCAL_LENGTH_MM = 45.0
@@ -167,12 +199,22 @@ class Car3dRenderer internal constructor(
      *  reasoning as [geometry]. */
     private var renderSizePx: IntSize = IntSize.Zero
 
+    /** Last pose actually written to the camera. The retarget-from-current source (§4.3). */
+    private var currentPose: CameraPose? = null
+    private var animFrom: CameraPose? = null
+    private var animTo: CameraPose? = null
+    private var animPivot: Float3 = Float3(0f, 0f, 0f)
+
+    /** False until the first camera move is scheduled, so the first transition is the slow
+     *  entrance dolly rather than a 250 ms snap. Reset on disposal. */
+    private var hasFramed = false
+
+    /** ONE animation drives every camera move — entrance, focus and return. */
+    private val cameraProgress = Animatable(1f)
+
     @Composable
     override fun Render(
-        // Step 3: if (focus != null) animate camera to focusPose(focus) else heroPose().
-        // Deliberately ignored in Step 1 — see the CarRenderer KDoc for why the parameter
-        // exists already even though nothing reads it yet.
-        @Suppress("UNUSED_PARAMETER") focus: Hotspot?,
+        focus: Hotspot?,
         onBackgroundTap: () -> Unit,
         modifier: Modifier,
     ) {
@@ -235,16 +277,34 @@ class Car3dRenderer internal constructor(
                 val geo = HotspotGeometry.resolve(node)
                 geometry = geo
                 geo.report.forEach { Log.i(TAG, "hotspot geometry: $it") }
-                frameHero(camera, node, distanceScale = 1f)
+                // Start pulled back; the focus effect below dollies in as the FIRST camera move.
+                frameHero(camera, node, distanceScale = Car3dTuning.ENTRANCE_DISTANCE_FACTOR)
                 Log.i(TAG, "car renderables: " + node.model.renderableNames.joinToString())
                 state = CarRenderState.Ready
-                playEntrance(camera, node)
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
                 Log.e(TAG, "car model load failed", t)
                 state = CarRenderState.Failed(t.message ?: t::class.java.simpleName, t)
             }
+        }
+
+        // The ONLY writer of camera.worldTransform after load. Keyed on (node, focus, camera) so
+        // it restarts exactly when the target pose changes and on nothing else: `camera` is
+        // remembered, `node` flips null->non-null once per model load, and `focus` is the
+        // ViewModel's single nullable focusedHotspot. An unrelated recomposition re-runs Render
+        // but leaves all three keys identical, so the running animation is untouched.
+        val node = modelNode
+        LaunchedEffect(node, focus, camera) {
+            val n = node ?: return@LaunchedEffect
+            val geo = geometry ?: return@LaunchedEffect
+            val radius = boundingRadius(n)
+            val hero = heroPose(radius, 1f)
+            val target = if (focus == null) hero else focusPose(focus, n, geo, hero.eye) ?: hero
+            val pivot = (n.worldTransform * Float4(geo.centerLocal, 1f)).xyz
+            val millis = if (hasFramed) Car3dTuning.FOCUS_MILLIS else Car3dTuning.ENTRANCE_MILLIS
+            hasFramed = true
+            animateCameraTo(camera, target, pivot, millis)
         }
 
         // Every Filament object below is created by a remember* helper and destroyed by its
@@ -264,6 +324,10 @@ class Car3dRenderer internal constructor(
                 modelNode = null
                 geometry = null
                 renderSizePx = IntSize.Zero
+                currentPose = null
+                animFrom = null
+                animTo = null
+                hasFramed = false
             }
         }
 
@@ -325,6 +389,95 @@ class Car3dRenderer internal constructor(
         // internally. DO NOT flip again. `.z` of the result is always 0 and must not be read.
         val p = cam.worldToScreenPoint(Vector3(w4.x, w4.y, w4.z))
         return Offset(p.x * size.width / vp.width, p.y * size.height / vp.height)
+    }
+
+    override fun occlusionOf(hotspot: Hotspot): Float {
+        val cam = cameraNode ?: return 0f
+        val model = modelNode ?: return 0f
+        val geo = geometry ?: return 0f
+        val local = geo.anchorOf(hotspot) ?: return 0f
+
+        // Car-frame constant: which flank this anchor sits on, and how far out along it.
+        val s = geo.lateralOf(hotspot)
+        if (abs(s) <= Car3dTuning.OCCLUSION_DEADBAND) return 0f // centreline: never occluded
+
+        // Everything below is read from the LIVE transforms, every frame. Nothing here is baked,
+        // which is precisely what lets this survive the user-rotatable car planned for a later
+        // phase: a static "these anchors are on the left" table would be wrong the moment the
+        // model turns, and wrong in a way that looks plausible.
+        val m = model.worldTransform
+        val anchor = (m * Float4(local, 1f)).xyz
+        // w = 0 -> direction, so the model's translation is not picked up.
+        val right = normalize((m * Float4(geo.lateralAxis, 0f)).xyz)
+        val eye = cam.worldTransform.position
+
+        val toEye = eye - anchor
+        val len = length(toEye)
+        if (len < 1e-4f) return 0f
+
+        // s * viewLat > 0 means the flank this anchor sits on is the one facing the camera.
+        val facing = s * dot(toEye / len, right)
+        val t = ((-facing - Car3dTuning.OCCLUSION_START) /
+            (Car3dTuning.OCCLUSION_FULL - Car3dTuning.OCCLUSION_START)).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t) // smoothstep: C1, so no kink as the car turns
+    }
+
+    /**
+     * Writes [pose] to the camera and records it as the retarget origin.
+     *
+     * `up` is deliberately world-Y rather than the car's own up axis: [applyOrientation] leaves
+     * the model upright by construction, and a fixed up vector removes a whole class of roll
+     * artefact when two poses are interpolated. Revisit only if a later phase pitches or rolls
+     * the model itself.
+     */
+    private fun applyPose(camera: CameraNode, pose: CameraPose) {
+        camera.worldTransform = lookAt(eye = pose.eye, target = pose.target, up = Float3(0f, 1f, 0f))
+        currentPose = pose
+    }
+
+    /** Snaps [camera] to the hero framing derived from [node]'s current bounding box. */
+    private fun frameHero(camera: CameraNode, node: ModelNode, distanceScale: Float) {
+        applyPose(camera, heroPose(boundingRadius(node), distanceScale))
+    }
+
+    /**
+     * Interruptible camera move. **Interruption is the point**: [currentPose] holds the pose
+     * written on the last rendered frame, so a call that lands mid-flight restarts from exactly
+     * where the camera currently is, never from the abandoned target. `snapTo` and `animateTo`
+     * share one `MutatorMutex`, so the in-flight animation is cancelled before this one's first
+     * frame runs — that cancellation IS the retarget mechanism, which is why nothing here
+     * catches `CancellationException`.
+     *
+     * Velocity is deliberately not carried across: the spec mandates a fixed 250 ms tween, which
+     * has no velocity continuity to preserve. Position continuity is what removes the visible
+     * snap, and that comes from [currentPose].
+     */
+    private suspend fun animateCameraTo(
+        camera: CameraNode,
+        target: CameraPose,
+        pivot: Float3,
+        millis: Int,
+    ) {
+        val from = currentPose
+        if (from == null) {
+            applyPose(camera, target)
+            return
+        }
+        animFrom = from
+        animTo = target
+        animPivot = pivot
+        cameraProgress.snapTo(0f)
+        cameraProgress.animateTo(1f, tween(millis, easing = FastOutSlowInEasing)) {
+            // Same null-guard discipline as screenPositionOf: the nulling DisposableEffect runs
+            // BEFORE the remember* helpers destroy anything, so a null here means "Filament is
+            // going away" and skipping the write is the correct, crash-free response.
+            val cam = cameraNode
+            val a = animFrom
+            val b = animTo
+            if (cam != null && a != null && b != null) {
+                applyPose(cam, lerpPose(a, b, value, animPivot))
+            }
+        }
     }
 }
 
@@ -397,33 +550,94 @@ private fun heroPose(radius: Float, distanceScale: Float): CameraPose {
 }
 
 /**
- * Points [camera] at the hero pose derived from [node]'s current bounding box.
- * [distanceScale] > 1 pulls the eye back along the same ray, which is all [playEntrance]
- * needs to dolly in.
+ * Camera pose that frames [hotspot]'s component. Every magnitude derives from the anchor and the
+ * model's own bounding radius — not one world-space constant appears below — so this survives a
+ * model swap and any future rotation of the car.
  *
- * Neither `Node` nor `CameraNode` has a `lookAt(eye:, target:, up:)` overload — the only
- * member `lookAt` rotates a node in place around its *current* position to face a target, it
- * cannot move the node. `dev.romainguy.kotlin.math.lookAt` builds the full eye+orientation
- * transform directly, which is what an eye/target camera pose actually needs; assigning it to
- * `worldTransform` sets position and rotation in one step.
+ * The camera approaches from whichever side the anchor sits on, or the component would end up
+ * behind the bodywork. [heroEye] supplies the fallback side for centreline components (BATTERY,
+ * MOTOR, DOORS, BRAKES), which have no side of their own: keeping the camera on the side it is
+ * already on avoids a pointless 180-degree swing around the car to show something visible from
+ * both sides.
+ *
+ * INVARIANT, and the reason the focus camera and [Car3dRenderer.occlusionOf] can never disagree:
+ * at this pose `dot(normalize(eye - anchor), right)` carries the sign of the anchor's own lateral
+ * coordinate, so `occlusionOf` returns 0 for the focused hotspot. The camera physically cannot
+ * hide the thing it was asked to focus on.
  */
-private fun frameHero(camera: CameraNode, node: ModelNode, distanceScale: Float) {
-    val pose = heroPose(boundingRadius(node), distanceScale)
-    camera.worldTransform = lookAt(eye = pose.eye, target = pose.target, up = Float3(0f, 1f, 0f))
+private fun focusPose(
+    hotspot: Hotspot,
+    node: ModelNode,
+    geo: HotspotGeometry,
+    heroEye: Float3,
+): CameraPose? {
+    val local = geo.anchorOf(hotspot) ?: return null
+    val m = node.worldTransform
+    val anchor = (m * Float4(local, 1f)).xyz
+    val center = (m * Float4(geo.centerLocal, 1f)).xyz
+    // w = 0 for the axes: directions must not pick up the model's translation.
+    val right = normalize((m * Float4(geo.lateralAxis, 0f)).xyz)
+    val fwd = normalize((m * Float4(geo.forwardAxis, 0f)).xyz)
+    val up = normalize((m * Float4(geo.upAxis, 0f)).xyz)
+
+    val s = geo.lateralOf(hotspot)
+    val heroSide = if (dot(heroEye - center, right) >= 0f) 1f else -1f
+    val sideSign = if (abs(s) > Car3dTuning.FOCUS_SIDE_THRESHOLD) {
+        if (s >= 0f) 1f else -1f
+    } else {
+        heroSide
+    }
+    // Explicit comparison rather than sign(): sign(0f) is 0f, which would silently drop the
+    // forward term for a dead-centre anchor and quietly change the framing.
+    val lonSign = if (geo.longitudinalOf(hotspot) >= 0f) 1f else -1f
+
+    val az = Math.toRadians(Car3dTuning.FOCUS_AZIMUTH_DEG.toDouble()).toFloat()
+    val el = Math.toRadians(Car3dTuning.FOCUS_ELEVATION_DEG.toDouble()).toFloat()
+    val dir = normalize(
+        right * (sideSign * cos(el) * cos(az)) +
+            fwd * (lonSign * cos(el) * sin(az)) +
+            up * sin(el),
+    )
+    val d = boundingRadius(node) * Car3dTuning.FOCUS_DISTANCE_FACTOR
+    return CameraPose(eye = anchor + dir * d, target = anchor)
 }
 
 /**
- * A slow dolly-in on load. Deliberately not `Modifier.graphicsLayer { alpha / scale }` on the
- * Scene: alpha and scale on a SurfaceView are composited by SurfaceFlinger and behave
- * inconsistently across drivers. The fade half of the entrance is a Compose scrim instead,
- * layered over the Scene in `DiagnosticsScreen`'s `CarStage`.
+ * Interpolates two camera poses at [t], orbiting the eye around [pivot] on a spherical arc rather
+ * than sliding along the straight chord between them.
+ *
+ * The arc is not decoration. A straight lerp between two poses on OPPOSITE sides of the car flies
+ * the eye through the cabin — a few frames of upholstery mid-transition. That is unreachable
+ * today only because nothing can focus a far-side component yet; it becomes reachable the moment
+ * the Step 5 alert list can jump to a far-side wheel, and permanently once the user can rotate
+ * the car.
+ *
+ * Radius is lerped linearly, so a pure dolly (same direction, different distance) degenerates to
+ * exactly the entrance behaviour this replaced.
  */
-private suspend fun playEntrance(camera: CameraNode, node: ModelNode) {
-    animate(
-        initialValue = Car3dTuning.ENTRANCE_DISTANCE_FACTOR,
-        targetValue = 1f,
-        animationSpec = tween(Car3dTuning.ENTRANCE_MILLIS, easing = FastOutSlowInEasing),
-    ) { value, _ -> frameHero(camera, node, distanceScale = value) }
+private fun lerpPose(a: CameraPose, b: CameraPose, t: Float, pivot: Float3): CameraPose {
+    val target = mix(a.target, b.target, t)
+    val va = a.eye - pivot
+    val vb = b.eye - pivot
+    val ra = length(va)
+    val rb = length(vb)
+    if (ra < 1e-5f || rb < 1e-5f) return CameraPose(mix(a.eye, b.eye, t), target) // eye at pivot
+
+    val da = va / ra
+    val db = vb / rb
+    val ang = acos(clamp(dot(da, db), -1f, 1f))
+    val r = ra + (rb - ra) * t
+
+    // sin(ang) -> 0 at BOTH ends of the range: 0 (a pure dolly, directions identical) and PI
+    // (exactly antipodal, where no unique arc exists). Both fall back to a normalised linear
+    // blend — exactly right for the first, arbitrary but stable for the second.
+    val sinAng = sin(ang)
+    val dir = if (sinAng < 1e-4f) {
+        normalize(mix(da, db, t))
+    } else {
+        (da * sin((1f - t) * ang) + db * sin(t * ang)) / sinAng
+    }
+    return CameraPose(eye = pivot + dir * r, target = target)
 }
 
 private fun srgbToLinear(c: Float): Float =

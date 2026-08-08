@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +42,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +79,7 @@ fun DiagnosticsScreen(
         onBackgroundTap = viewModel::onBackgroundTap,
         onStageLongPress = viewModel::onStageLongPress,
         onDebugDismiss = viewModel::onDebugPanelDismiss,
+        onUserInteraction = viewModel::onUserInteraction,
         modifier = modifier,
     )
 }
@@ -98,9 +102,33 @@ internal fun DiagnosticsScreenContent(
     onBackgroundTap: () -> Unit,
     onStageLongPress: () -> Unit,
     onDebugDismiss: () -> Unit,
+    onUserInteraction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxSize()) {
+    // rememberUpdatedState because pointerInput(Unit) captures its lambda for the whole
+    // composition, and the callback identity changes on every recomposition of the caller.
+    val latestInteraction by rememberUpdatedState(onUserInteraction)
+
+    Box(
+        modifier
+            .fillMaxSize()
+            // Resets the auto-return timer (spec §7: "8-10 s of NO INTERACTION"). Deliberately
+            // the whole screen rather than just the car stage — reading the alert list or a live
+            // card is interaction too, and auto-returning out from under someone mid-read would
+            // be worse than not having the feature.
+            //
+            // PointerEventPass.Initial sees every press BEFORE any child does and consumes
+            // nothing, so no existing gesture changes behaviour. Filtered to Press so dragging
+            // does not cancel and relaunch the timer coroutine on every motion sample.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press) latestInteraction()
+                    }
+                }
+            },
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -365,7 +393,7 @@ private fun CarStage(
 @Composable
 private fun DiagnosticsScreenDayPreview() {
     MotorGuardTheme {
-        DiagnosticsScreenContent(DiagnosticsUiState(), null, {}, {}, {}, {})
+        DiagnosticsScreenContent(DiagnosticsUiState(), null, {}, {}, {}, {}, {})
     }
 }
 
@@ -378,6 +406,6 @@ private fun DiagnosticsScreenDayPreview() {
 @Composable
 private fun DiagnosticsScreenNightPreview() {
     MotorGuardTheme {
-        DiagnosticsScreenContent(DiagnosticsUiState(), null, {}, {}, {}, {})
+        DiagnosticsScreenContent(DiagnosticsUiState(), null, {}, {}, {}, {}, {})
     }
 }

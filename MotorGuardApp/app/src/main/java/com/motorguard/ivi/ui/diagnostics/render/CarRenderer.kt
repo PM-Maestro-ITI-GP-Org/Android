@@ -83,4 +83,19 @@ interface CarRenderer {
      *   is gone (null, not a frozen last-known point).
      */
     fun screenPositionOf(hotspot: Hotspot): Offset?
+
+    /**
+     * How much [hotspot]'s anchor is on the side of the car facing AWAY from the viewer:
+     * 0 = fully visible, 1 = fully hidden behind the vehicle, continuous ramp between.
+     *
+     * Live, view-dependent data — same contract as [screenPositionOf]: not Compose-observable,
+     * must be polled from a frame loop, cheap enough to call 8x per frame, never throws, returns
+     * 0f (not a stale value) once the model or camera is gone.
+     *
+     * Continuous rather than boolean on purpose: the car becomes user-rotatable in a later phase,
+     * and a hard flip would pop as it turns.
+     *
+     * A renderer with no depth (e.g. a 2D side elevation) takes the default: nothing occludes.
+     */
+    fun occlusionOf(hotspot: Hotspot): Float = 0f
 }

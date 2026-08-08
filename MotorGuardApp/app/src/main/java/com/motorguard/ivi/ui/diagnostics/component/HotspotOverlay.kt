@@ -80,6 +80,36 @@ private object HotspotTokens {
 
     /** Long enough to read as a deliberate response, short enough to feel immediate. */
     const val EMPHASIS_MILLIS = 160
+
+    /**
+     * Resting alpha for a dot whose anchor is on the hidden side of the car: enough to hint that
+     * the annotation layer wraps around the vehicle, not enough to compete with, or be mistaken
+     * for, a near-side dot.
+     */
+    const val OCCLUDED_ALPHA = 0.05f
+
+    /**
+     * Floor for a CAUTION/CRITICAL dot on the hidden side. Deliberately NOT [ALERT_ALPHA].
+     *
+     * The idle fade exempts alerts because a de-emphasised dot is still in the right place. An
+     * occluded dot is not: it draws over near-side bodywork, so at full brightness it MISSTATES
+     * which side of the car the fault is on — with two tire dots ~60 px apart the driver cannot
+     * tell which wheel is critical, which is worse than a dim one. Reachability is restored by
+     * the alert list's jump-to-component (spec §7), not by brightness.
+     */
+    const val OCCLUDED_ALERT_ALPHA = 0.22f
+
+    /** Past this occlusion the 76 dp hit target is withdrawn entirely. */
+    const val OCCLUSION_TAP_CUTOFF = 0.5f
+
+    /** Alpha of the non-focused dots while a component is focused (spec §7: "fade other dots"). */
+    const val UNFOCUSED_ALPHA = 0.10f
+
+    /** Floor for a non-focused CAUTION/CRITICAL dot while another component is focused. */
+    const val UNFOCUSED_ALERT_ALPHA = 0.30f
+
+    /** Spec §7: the other dots fade over 150-200 ms when a component is focused. */
+    const val FOCUS_FADE_MILLIS = 180
 }
 
 /**
@@ -99,6 +129,7 @@ class HotspotProjector {
     private val x = FloatArray(n)
     private val y = FloatArray(n)
     private val shown = BooleanArray(n)
+    private val occ = FloatArray(n)
 
     /** The ONE snapshot cell backing all 8 dots. Bumped only when something actually moved. */
     private var version by mutableIntStateOf(0)
@@ -119,6 +150,12 @@ class HotspotProjector {
                 x[i] = p.x
                 y[i] = p.y // keep last-known when null, so no jump when the dot returns
             }
+
+            // Occlusion is per-frame, camera-derived data exactly like position, so it rides the
+            // same diffing pipeline rather than getting its own state cell.
+            val o = if (active) renderer.occlusionOf(h) else 0f
+            if (abs(o - occ[i]) > 0.01f) changed = true
+            occ[i] = o
         }
         if (changed) version++
     }
@@ -137,9 +174,28 @@ class HotspotProjector {
         return if (shown[hotspot.ordinal]) 1f else 0f
     }
 
+    /** Draw-phase read. 0 = on the visible side of the car, 1 = fully behind it. */
+    fun occlusionOf(hotspot: Hotspot): Float {
+        observe()
+        return occ[hotspot.ordinal]
+    }
+
+    /**
+     * Layout-phase read. Displacement applied to the HIT TARGET only, so an occluded dot keeps
+     * its faint visual while ceasing to eat taps aimed at the near-side dot beside it.
+     */
+    fun tapOffsetOf(hotspot: Hotspot): IntOffset {
+        observe()
+        return if (isTappableNow(hotspot)) IntOffset.Zero else OFF_SCREEN
+    }
+
     /** NO snapshot read — for the click handler, which must not register a recompose-triggering
-     *  read just to decide whether a stale tap should be ignored. */
-    fun isShownNow(hotspot: Hotspot): Boolean = shown[hotspot.ordinal]
+     *  read just to decide whether a stale tap should be ignored. False when the dot cannot be
+     *  projected at all, OR when it is occluded past the cutoff. */
+    fun isTappableNow(hotspot: Hotspot): Boolean {
+        val i = hotspot.ordinal
+        return shown[i] && occ[i] < HotspotTokens.OCCLUSION_TAP_CUTOFF
+    }
 
     private companion object {
         val OFF_SCREEN = IntOffset(-10_000, -10_000)
@@ -203,17 +259,41 @@ fun HotspotOverlay(
             val pressed by interactions.collectIsPressedAsState()
 
             val emphasised = hovered || pressed || focusedNow || pulsing
-            // A composition read, but it only changes on hover/press/severity edges — never per
-            // frame — so it does not reintroduce the recomposition storm HotspotProjector avoids.
+            val focusActive = state.focusedHotspot != null
+            val dimmedByFocus = focusActive && !focusedNow
+
+            // A composition read, but it only changes on hover/press/severity/focus edges — never
+            // per frame — so it does not reintroduce the recomposition storm HotspotProjector
+            // exists to avoid.
             val emphasisAlpha = animateFloatAsState(
                 targetValue = when {
+                    focusedNow -> HotspotTokens.ACTIVE_ALPHA
+                    // Checked BEFORE `pulsing`: spec §7 fades the other dots while a component is
+                    // focused, alerting or not. Alerts keep a higher floor and never vanish, and
+                    // the state is transient anyway (8-10 s auto-return).
+                    dimmedByFocus && pulsing -> HotspotTokens.UNFOCUSED_ALERT_ALPHA
+                    dimmedByFocus -> HotspotTokens.UNFOCUSED_ALPHA
                     pulsing -> HotspotTokens.ALERT_ALPHA
                     emphasised -> HotspotTokens.ACTIVE_ALPHA
                     else -> HotspotTokens.IDLE_ALPHA
                 },
-                animationSpec = tween(HotspotTokens.EMPHASIS_MILLIS, easing = FastOutSlowInEasing),
+                animationSpec = tween(
+                    durationMillis = if (focusActive) {
+                        HotspotTokens.FOCUS_FADE_MILLIS
+                    } else {
+                        HotspotTokens.EMPHASIS_MILLIS
+                    },
+                    easing = FastOutSlowInEasing,
+                ),
                 label = "hotspotEmphasis",
             ) // `val`, not `by` — read inside graphicsLayer so it invalidates draw only.
+
+            // Plain Float resolved at composition: depends only on severity, never per frame.
+            val occludedFloor = if (pulsing) {
+                HotspotTokens.OCCLUDED_ALERT_ALPHA
+            } else {
+                HotspotTokens.OCCLUDED_ALPHA
+            }
 
             Box(
                 modifier = Modifier
@@ -223,19 +303,17 @@ fun HotspotOverlay(
                         projector.centerOf(hotspot) - IntOffset(halfPx, halfPx)
                     }
                     // Visibility (is it projectable at all?) times emphasis (is the user
-                    // addressing it?). Multiplying keeps the two concerns independent.
+                    // addressing it?) faded by occlusion (is it round the far side?). Keeping the
+                    // three independent is what lets each be reasoned about on its own.
                     .graphicsLayer {
-                        alpha = projector.alphaOf(hotspot) * emphasisAlpha.value
-                    }
-                    .clip(CircleShape)
-                    .hoverable(interactions)
-                    .clickable(
-                        interactionSource = interactions,
-                        indication = null, // the alpha change IS the feedback
-                        role = Role.Button,
-                        onClickLabel = hotspot.label,
-                    ) {
-                        if (projector.isShownNow(hotspot)) onHotspotTap(hotspot) // no snapshot read
+                        // The focused dot is never occlusion-faded: a mid-transition frame must
+                        // not dim the very component the user just tapped.
+                        val o = if (focusedNow) 0f else projector.occlusionOf(hotspot)
+                        val e = emphasisAlpha.value
+                        // Interpolate toward min(e, floor), never toward the floor itself, so
+                        // occlusion can only ever DIM a dot — never brighten one that focus has
+                        // already faded below the occluded floor.
+                        alpha = projector.alphaOf(hotspot) * (e + (minOf(e, occludedFloor) - e) * o)
                     },
                 contentAlignment = Alignment.Center,
             ) {
@@ -247,6 +325,31 @@ fun HotspotOverlay(
                     ringColor = ringColor,
                     pulse = pulse,
                 )
+
+                // The hit target lives in its OWN box, separate from the visual, so it can be
+                // withdrawn while the dot stays faintly drawn. An occluded dot has drifted onto
+                // the wrong side of the car; leaving a 76 dp target there means it keeps stealing
+                // taps aimed at the near-side dot beside it (measured: near/far tire pairs 61 px
+                // and 58 px apart, against a 76 px target). Parking it off-screen is what
+                // actually removes it — the parent is not clipped, so it simply becomes
+                // unreachable. Note a focus-dimmed dot stays tappable: spec §7 requires tapping a
+                // second hotspot while one is focused, and that dot is still where the user
+                // expects it. The two fades look alike and deliberately differ here.
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .offset { projector.tapOffsetOf(hotspot) }
+                        .clip(CircleShape)
+                        .hoverable(interactions)
+                        .clickable(
+                            interactionSource = interactions,
+                            indication = null, // the alpha change IS the feedback
+                            role = Role.Button,
+                            onClickLabel = hotspot.label,
+                        ) {
+                            if (projector.isTappableNow(hotspot)) onHotspotTap(hotspot)
+                        },
+                )
             }
         }
     }
@@ -256,9 +359,11 @@ fun HotspotOverlay(
  * Single small canvas per dot. All animated values are read INSIDE the draw lambda — see the
  * `pulse` comment in [HotspotOverlay] for why that matters.
  *
- * Known and accepted for Step 2: dots on the far side of the car are not depth-tested against
- * the model and draw over the bodywork. Spec §7 requires all 8 dots visible at idle framing —
- * this is correct behaviour here, not a bug to fix.
+ * This draws the dot unconditionally; whether it should be visible at all is decided by the
+ * caller's `graphicsLayer` alpha. In particular, dots whose component sits on the hidden side of
+ * the car are faded to near-invisible from `CarRenderer.occlusionOf` — they are still drawn, just
+ * barely, so the annotation layer reads as wrapping around the vehicle rather than stopping at
+ * its silhouette.
  */
 @Composable
 private fun HotspotDot(

@@ -33,6 +33,16 @@ private data class Part(val name: String, val p: Float3)
  */
 class HotspotGeometry private constructor(
     private val anchors: Map<Hotspot, Float3>,
+    private val laterals: Map<Hotspot, Float>,
+    private val longitudinals: Map<Hotspot, Float>,
+    /** Bounding-box centre, ModelNode-LOCAL. Pivot for camera arcs and origin for the occlusion test. */
+    val centerLocal: Float3,
+    /** Unit, ModelNode-LOCAL, points to the car's right. */
+    val lateralAxis: Float3,
+    /** Unit, ModelNode-LOCAL, points to the car's nose. */
+    val forwardAxis: Float3,
+    /** Unit, ModelNode-LOCAL, points up out of the roof. */
+    val upAxis: Float3,
     /** One line per resolution decision. Logged by the caller (`Car3dRenderer`'s `LaunchedEffect`)
      *  — it is the entire debugging story for "why is this dot in the wrong place". */
     val report: List<String>,
@@ -40,6 +50,17 @@ class HotspotGeometry private constructor(
     /** Anchor in ModelNode-LOCAL space. Never null after [resolve] — every hotspot always gets
      *  *some* anchor, real or [Tuning.FALLBACK]. */
     fun anchorOf(hotspot: Hotspot): Float3? = anchors[hotspot]
+
+    /**
+     * Normalised lateral coordinate: -1 = full left flank, 0 = centreline, +1 = full right.
+     * A property of the CAR, in the car's own frame — constant under every camera move and under
+     * any future rotation. The view-dependent half of the occlusion test lives in
+     * Car3dRenderer.occlusionOf, which combines this with the live camera pose.
+     */
+    fun lateralOf(hotspot: Hotspot): Float = laterals[hotspot] ?: 0f
+
+    /** Normalised longitudinal coordinate: -1 = tail, 0 = middle, +1 = nose. */
+    fun longitudinalOf(hotspot: Hotspot): Float = longitudinals[hotspot] ?: 0f
 
     object Tuning {
         /** Set true only if the model is mirrored and FL/FR come out swapped. */
@@ -94,10 +115,10 @@ class HotspotGeometry private constructor(
             val he = bbox.halfExtent
             val ct = bbox.center
             val center = Float3(ct[0], ct[1], ct[2])
-            val lengthAxis = (0..2).maxBy { he[it] }
-            val upAxis = (0..2).minBy { he[it] }
-            val lateralAxis = 3 - lengthAxis - upAxis
-            report += "basis: lengthAxis=$lengthAxis upAxis=$upAxis lateralAxis=$lateralAxis " +
+            val lengthAxisIndex = (0..2).maxBy { he[it] }
+            val upAxisIndex = (0..2).minBy { he[it] }
+            val lateralAxisIndex = 3 - lengthAxisIndex - upAxisIndex
+            report += "basis: lengthAxis=$lengthAxisIndex upAxis=$upAxisIndex lateralAxis=$lateralAxisIndex " +
                 "halfExtent=(${he[0]}, ${he[1]}, ${he[2]})"
 
             fun axis(i: Int) = Float3(if (i == 0) 1f else 0f, if (i == 1) 1f else 0f, if (i == 2) 1f else 0f)
@@ -107,7 +128,7 @@ class HotspotGeometry private constructor(
             // correct regardless of which physical axis turned out to be length/up/lateral.
             val frontBrakes = parts.filter { it.name.startsWith("geo_brakes_front") }
             val rearBrakes = parts.filter { it.name.startsWith("geo_brakes_rear") }
-            val lengthAxisVec = axis(lengthAxis)
+            val lengthAxisVec = axis(lengthAxisIndex)
             val frontSign = if (frontBrakes.isNotEmpty() && rearBrakes.isNotEmpty()) {
                 val meanFront = frontBrakes.map { dot(it.p, lengthAxisVec) }.average().toFloat()
                 val meanRear = rearBrakes.map { dot(it.p, lengthAxisVec) }.average().toFloat()
@@ -117,16 +138,16 @@ class HotspotGeometry private constructor(
                 1f
             }
             val fwd = lengthAxisVec * frontSign
-            val up = axis(upAxis)
+            val up = axis(upAxisIndex)
             val left = cross(up, fwd) // right-handed; glTF is right-handed
             val right = -left * (if (Tuning.MIRROR_LATERAL) -1f else 1f)
 
             /** Maps a [CarFrame] fraction back into ModelNode-local space using the basis just derived. */
             fun fromCarFrame(f: CarFrame): Float3 =
                 center +
-                    fwd * ((f.t - 0.5f) * 2f * he[lengthAxis]) +
-                    up * ((f.h - 0.5f) * 2f * he[upAxis]) +
-                    right * (f.s * he[lateralAxis])
+                    fwd * ((f.t - 0.5f) * 2f * he[lengthAxisIndex]) +
+                    up * ((f.h - 0.5f) * 2f * he[upAxisIndex]) +
+                    right * (f.s * he[lateralAxisIndex])
 
             val anchors = mutableMapOf<Hotspot, Float3>()
 
@@ -170,7 +191,7 @@ class HotspotGeometry private constructor(
                     fromCarFrame(Tuning.FALLBACK.getValue(Hotspot.BRAKES))
                 }
             }
-            brakesAnchor += up * (Tuning.BRAKES_LIFT * 2f * he[upAxis])
+            brakesAnchor += up * (Tuning.BRAKES_LIFT * 2f * he[upAxisIndex])
             anchors[Hotspot.BRAKES] = brakesAnchor
 
             // (6) DOORS — centroid of every door mesh, else FALLBACK.
@@ -197,8 +218,30 @@ class HotspotGeometry private constructor(
                 anchors[hotspot] = anchors.getValue(hotspot) + (fromCarFrame(nudge) - neutral)
             }
 
+            // (9) Car-frame coordinates of the final anchors. Step 3's occlusion test and focus-pose
+            // derivation both need these; both must stay valid if the model is later rotated, which is
+            // why they are stored in the car's own frame and never in world space.
+            val halfLat = he[lateralAxisIndex]
+            val halfLon = he[lengthAxisIndex]
+            val laterals = anchors.mapValues { (_, p) ->
+                if (halfLat > 1e-6f) (dot(p - center, right) / halfLat).coerceIn(-1f, 1f) else 0f
+            }
+            val longitudinals = anchors.mapValues { (_, p) ->
+                if (halfLon > 1e-6f) (dot(p - center, fwd) / halfLon).coerceIn(-1f, 1f) else 0f
+            }
+            report += "laterals: " + laterals.entries.joinToString { "${it.key}=${"%.2f".format(it.value)}" }
+
             // (10) All 8 keys are always present by construction.
-            return HotspotGeometry(anchors, report)
+            return HotspotGeometry(
+                anchors = anchors,
+                laterals = laterals,
+                longitudinals = longitudinals,
+                centerLocal = center,
+                lateralAxis = right,
+                forwardAxis = fwd,
+                upAxis = up,
+                report = report,
+            )
         }
     }
 }
