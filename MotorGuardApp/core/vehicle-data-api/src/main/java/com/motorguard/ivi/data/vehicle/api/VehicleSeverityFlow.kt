@@ -74,5 +74,6 @@ class VehicleSeverityFlow(
 
     private fun tireSeverity(s: Snapshot, corner: Hotspot): Severity? =
         s.tires.getOrNull(Hotspot.tireCorners.indexOf(corner))
-            ?.latestValueOrNull?.let { resolver.tirePsi(corner, it.psi) }
+            ?.latestValueOrNull
+            ?.let { resolver.severityFor(corner, tirePsi = it.psi, tireTempC = it.tempC) }
 }

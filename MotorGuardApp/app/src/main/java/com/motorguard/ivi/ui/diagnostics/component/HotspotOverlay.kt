@@ -34,6 +34,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -130,13 +131,24 @@ class HotspotProjector {
     private val y = FloatArray(n)
     private val shown = BooleanArray(n)
     private val occ = FloatArray(n)
+    private val tappable = BooleanArray(n)
 
     /** The ONE snapshot cell backing all 8 dots. Bumped only when something actually moved. */
     private var version by mutableIntStateOf(0)
     private fun observe(): Int = version
 
-    /** Call exactly once per frame, on the main thread (see [HotspotOverlay]'s `LaunchedEffect`). */
-    fun update(renderer: CarRenderer, active: Boolean) {
+    /**
+     * Call exactly once per frame, on the main thread (see [HotspotOverlay]'s `LaunchedEffect`).
+     *
+     * [alerting] marks the hotspots currently at CAUTION or CRITICAL, and [targetPx] is the touch
+     * target diameter — both are needed to decide tappability, see [isTappableNow].
+     */
+    fun update(
+        renderer: CarRenderer,
+        active: Boolean,
+        alerting: BooleanArray,
+        targetPx: Float,
+    ) {
         var changed = false
         for (h in Hotspot.entries) {
             val i = h.ordinal
@@ -157,7 +169,39 @@ class HotspotProjector {
             if (abs(o - occ[i]) > 0.01f) changed = true
             occ[i] = o
         }
+
+        // Tappability, resolved after every position is known because it depends on the others.
+        for (h in Hotspot.entries) {
+            val i = h.ordinal
+            val t = shown[i] && when {
+                occ[i] < HotspotTokens.OCCLUSION_TAP_CUTOFF -> true
+                // A far-side component with a fault must stay reachable directly — an alert the
+                // driver can see but not touch is a dead end. The exception is withdrawn only when
+                // honouring it would steal a tap from a NEAR-side dot sitting on top of it, which
+                // is the defect the occlusion cutoff exists to prevent in the first place. In that
+                // case the alert list is still a route to it.
+                alerting[i] -> !overlapsNearSideDot(i, targetPx)
+                else -> false
+            }
+            if (t != tappable[i]) {
+                tappable[i] = t
+                changed = true
+            }
+        }
+
         if (changed) version++
+    }
+
+    /** True when dot [i] sits within one touch target of any dot on the visible side of the car. */
+    private fun overlapsNearSideDot(i: Int, targetPx: Float): Boolean {
+        for (j in 0 until n) {
+            if (j == i || !shown[j]) continue
+            if (occ[j] >= HotspotTokens.OCCLUSION_TAP_CUTOFF) continue
+            val dx = x[j] - x[i]
+            val dy = y[j] - y[i]
+            if (dx * dx + dy * dy < targetPx * targetPx) return true
+        }
+        return false
     }
 
     /** Layout-phase read. Hidden dots park off-screen so an alpha-0 hit target cannot eat
@@ -190,12 +234,9 @@ class HotspotProjector {
     }
 
     /** NO snapshot read — for the click handler, which must not register a recompose-triggering
-     *  read just to decide whether a stale tap should be ignored. False when the dot cannot be
-     *  projected at all, OR when it is occluded past the cutoff. */
-    fun isTappableNow(hotspot: Hotspot): Boolean {
-        val i = hotspot.ordinal
-        return shown[i] && occ[i] < HotspotTokens.OCCLUSION_TAP_CUTOFF
-    }
+     *  read just to decide whether a stale tap should be ignored. Computed once per frame in
+     *  [update]; see there for the occluded-but-alerting exception. */
+    fun isTappableNow(hotspot: Hotspot): Boolean = tappable[hotspot.ordinal]
 
     private companion object {
         val OFF_SCREEN = IntOffset(-10_000, -10_000)
@@ -220,14 +261,25 @@ fun HotspotOverlay(
 ) {
     val projector = remember { HotspotProjector() }
 
+    // Which hotspots are alerting, and how big a touch target is in pixels — both needed by
+    // HotspotProjector.update to decide whether an occluded dot stays tappable. Recomputed only
+    // when a severity actually flips, not per frame.
+    val alerting = remember(state.severities) {
+        BooleanArray(Hotspot.entries.size) { index ->
+            val severity = state.severityOf(Hotspot.entries[index])
+            severity == Severity.CAUTION || severity == Severity.CRITICAL
+        }
+    }
+    val targetPx = with(LocalDensity.current) { HotspotTokens.touchTarget.toPx() }
+
     // Deliberately not `Scene(onFrame = ...)`: that would force an `onFrame` hook into
     // `CarRenderer`, which a hypothetical 2D renderer has no business implementing.
     // `withFrameNanos` runs on the same Choreographer Filament's own frame pump uses, so worst
     // case the dots lag one frame — invisible in practice.
-    LaunchedEffect(renderer, projector, active) {
+    LaunchedEffect(renderer, projector, active, alerting, targetPx) {
         while (isActive) {
             withFrameNanos { }
-            projector.update(renderer, active)
+            projector.update(renderer, active, alerting, targetPx)
         }
     }
 

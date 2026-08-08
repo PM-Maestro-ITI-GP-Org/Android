@@ -123,7 +123,7 @@ internal fun HealthRing(
                         else -> "All monitored systems nominal"
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
                 )
             }
         }

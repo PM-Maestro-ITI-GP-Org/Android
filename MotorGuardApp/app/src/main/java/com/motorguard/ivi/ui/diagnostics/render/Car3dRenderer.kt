@@ -25,6 +25,7 @@ import dev.romainguy.kotlin.math.Float3
 import dev.romainguy.kotlin.math.Float4
 import dev.romainguy.kotlin.math.Quaternion
 import dev.romainguy.kotlin.math.clamp
+import dev.romainguy.kotlin.math.cross
 import dev.romainguy.kotlin.math.dot
 import dev.romainguy.kotlin.math.length
 import dev.romainguy.kotlin.math.lookAt
@@ -120,6 +121,14 @@ object Car3dTuning {
 
     /** |lateral| below this is a centreline component: the camera keeps the side it is already on. */
     const val FOCUS_SIDE_THRESHOLD = 0.20f
+
+    /**
+     * Degrees of orbit per pixel dragged. At this rate a drag across the full ~1000 dp car stage
+     * sweeps a half turn, so one deliberate gesture brings the opposite flank into view, while a
+     * short 200 px flick moves ~36 degrees — enough to feel responsive, not enough for a stray
+     * touch to lose the driver's orientation.
+     */
+    const val ROTATE_DEG_PER_PX = 0.18f
 
     // --- Far-side occlusion. All three compared against `lateral * viewLat`.
     /** |lateral| at or below this is a centreline anchor, never occluded. */
@@ -238,6 +247,19 @@ class Car3dRenderer internal constructor(
     /** ONE animation drives every camera move — entrance, focus and return. */
     private val cameraProgress = Animatable(1f)
 
+    /**
+     * User-applied orbit, accumulated from drags and added to every derived pose. Kept here rather
+     * than in the ViewModel because it is camera state, not vehicle state: it must not survive a
+     * process restart, and nothing outside this renderer has any use for it.
+     */
+    private var userAzimuthDeg = 0f
+
+    /** True while a finger is driving the camera, which suspends animated writes (see [rotateBy]). */
+    private var isDragging = false
+
+    /** The focus the camera is currently framing, so [rotateBy] can re-derive the right pose. */
+    private var currentFocus: Hotspot? = null
+
     @Composable
     override fun Render(
         focus: Hotspot?,
@@ -325,8 +347,8 @@ class Car3dRenderer internal constructor(
             val n = node ?: return@LaunchedEffect
             val geo = geometry ?: return@LaunchedEffect
             val radius = boundingRadius(n)
-            val hero = heroPose(radius, 1f)
-            val target = if (focus == null) hero else focusPose(focus, n, geo, hero.eye) ?: hero
+            currentFocus = focus
+            val target = poseFor(focus, n, geo)
             val pivot = (n.worldTransform * Float4(geo.centerLocal, 1f)).xyz
             val millis = if (hasFramed) Car3dTuning.FOCUS_MILLIS else Car3dTuning.ENTRANCE_MILLIS
             hasFramed = true
@@ -448,6 +470,38 @@ class Car3dRenderer internal constructor(
         return t * t * (3f - 2f * t) // smoothstep: C1, so no kink as the car turns
     }
 
+    override fun rotateBy(deltaDegrees: Float) {
+        userAzimuthDeg += deltaDegrees
+        val cam = cameraNode ?: return
+        val node = modelNode ?: return
+        val geo = geometry ?: return
+        // Written straight to the camera, not animated: a rotation the finger is driving has to
+        // track the finger. applyPose also records it as currentPose, so if a focus transition
+        // starts afterwards it begins from exactly where the user left the view.
+        applyPose(cam, poseFor(currentFocus, node, geo))
+    }
+
+    /** Set by the drag gesture so an in-flight animation stops writing under the finger. */
+    internal fun onDragStateChange(dragging: Boolean) {
+        isDragging = dragging
+    }
+
+    /**
+     * The pose the camera should hold right now: the focused component's framing if something is
+     * focused, otherwise the hero framing — both with the user's accumulated orbit applied.
+     *
+     * Shared by the animation driver and by [rotateBy], so a drag can never derive its pose by a
+     * different route than the transition it interrupts.
+     */
+    private fun poseFor(focus: Hotspot?, node: ModelNode, geo: HotspotGeometry): CameraPose {
+        val hero = heroPose(boundingRadius(node), 1f, userAzimuthDeg)
+        return if (focus == null) {
+            hero
+        } else {
+            focusPose(focus, node, geo, hero.eye, userAzimuthDeg) ?: hero
+        }
+    }
+
     /**
      * Writes [pose] to the camera and records it as the retarget origin.
      *
@@ -500,7 +554,9 @@ class Car3dRenderer internal constructor(
             val cam = cameraNode
             val a = animFrom
             val b = animTo
-            if (cam != null && a != null && b != null) {
+            // A drag that started mid-transition owns the camera: writing an interpolated pose
+            // underneath the finger would fight it.
+            if (!isDragging && cam != null && a != null && b != null) {
                 applyPose(cam, lerpPose(a, b, value, animPivot))
             }
         }
@@ -552,6 +608,17 @@ private fun applyOrientation(node: ModelNode) {
             Quaternion.fromAxisAngle(Float3(1f, 0f, 0f), pitchDeg)
 }
 
+/**
+ * Rotates [v] by unit quaternion [q]. kotlin-math offers no direct quaternion-times-vector
+ * operator, so this is the standard v + 2*cross(q.xyz, cross(q.xyz, v) + q.w*v) form, which avoids
+ * building a matrix for a single vector.
+ */
+private fun rotateVector(q: Quaternion, v: Float3): Float3 {
+    val u = Float3(q.x, q.y, q.z)
+    val t = cross(u, v) + v * q.w
+    return v + cross(u, t) * 2f
+}
+
 /** Eye and look-at point for the hero camera pose, in world space. */
 private data class CameraPose(val eye: Float3, val target: Float3)
 
@@ -562,9 +629,9 @@ private fun boundingRadius(node: ModelNode): Float {
     return sqrt(h[0] * h[0] + h[1] * h[1] + h[2] * h[2]) * s
 }
 
-private fun heroPose(radius: Float, distanceScale: Float): CameraPose {
+private fun heroPose(radius: Float, distanceScale: Float, azimuthOffsetDeg: Float = 0f): CameraPose {
     val d = radius * Car3dTuning.HERO_DISTANCE_FACTOR * distanceScale
-    val az = Math.toRadians(Car3dTuning.HERO_AZIMUTH_DEG.toDouble()).toFloat()
+    val az = Math.toRadians((Car3dTuning.HERO_AZIMUTH_DEG + azimuthOffsetDeg).toDouble()).toFloat()
     val el = Math.toRadians(Car3dTuning.HERO_ELEVATION_DEG.toDouble()).toFloat()
     val target = Float3(0f, radius * Car3dTuning.HERO_TARGET_LIFT, 0f)
     val eye = Float3(
@@ -596,6 +663,7 @@ private fun focusPose(
     node: ModelNode,
     geo: HotspotGeometry,
     heroEye: Float3,
+    azimuthOffsetDeg: Float = 0f,
 ): CameraPose? {
     val local = geo.anchorOf(hotspot) ?: return null
     val m = node.worldTransform
@@ -624,8 +692,11 @@ private fun focusPose(
             fwd * (lonSign * cos(el) * sin(az)) +
             up * sin(el),
     )
+    // The user's orbit is applied about the car's OWN up axis, so dragging behaves identically
+    // whether the view is framing the whole car or one component.
+    val orbited = Quaternion.fromAxisAngle(up, azimuthOffsetDeg).let { q -> rotateVector(q, dir) }
     val d = boundingRadius(node) * Car3dTuning.FOCUS_DISTANCE_FACTOR
-    return CameraPose(eye = anchor + dir * d, target = anchor)
+    return CameraPose(eye = anchor + orbited * d, target = anchor)
 }
 
 /**

@@ -96,7 +96,7 @@ internal fun AlertList(
                         // empty is a fact we have; "the vehicle is fine" is a claim we do not.
                         text = "No active alerts",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -182,7 +182,7 @@ private fun AlertRow(alert: VehicleAlert, onTap: () -> Unit, onDismiss: () -> Un
             Icon(
                 imageVector = Icons.Filled.Close,
                 contentDescription = null, // the clickable above already carries the label
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
                 modifier = Modifier.size(22.dp),
             )
         }

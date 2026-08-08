@@ -5,12 +5,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -209,23 +212,36 @@ internal fun DiagnosticsScreenContent(
                     // two lines of text, so it needs the least. The alert list needs the most —
                     // every row is a 76 dp touch target by safety requirement, so three alerts plus
                     // a header overflow anything smaller and the top row ends up clipped.
+                    // The ring is a fixed 132 dp disc plus two lines, so it gets a fixed height
+                    // rather than a weight. The detail card is only present while something is
+                    // focused, and the alert list takes whatever is left — so with nothing selected
+                    // the alerts get the full column instead of the screen carrying an empty
+                    // placeholder panel.
                     HealthRing(
                         score = healthScore,
                         worst = worstSeverity,
                         onLongPress = onStageLongPress,
                         modifier = Modifier
-                            .weight(0.8f)
+                            .height(184.dp)
                             .healthRingSemantics(healthScore, worstSeverity),
                     )
-                    ComponentDetailPanel(
-                        telemetry = focusedTelemetry,
-                        modifier = Modifier.weight(1.2f),
-                    )
+                    AnimatedVisibility(
+                        visible = ui.focusedHotspot != null,
+                        enter = expandVertically(tween(240, easing = FastOutSlowInEasing)) +
+                            fadeIn(tween(200)),
+                        exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing)) +
+                            fadeOut(tween(140)),
+                    ) {
+                        ComponentDetailPanel(
+                            telemetry = focusedTelemetry,
+                            modifier = Modifier.height(376.dp),
+                        )
+                    }
                     AlertList(
                         alerts = alerts,
                         onAlertTap = onHotspotTap,
                         onAlertDismiss = onAlertDismiss,
-                        modifier = Modifier.weight(1.4f),
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -264,7 +280,7 @@ private fun ReservedPanel(title: String, hint: String, modifier: Modifier = Modi
             Text(
                 text = hint,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -348,6 +364,23 @@ private fun CarStage(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // Horizontal drag orbits the vehicle. A separate pointerInput from the taps below
+                // so the two detectors do not compete for the same gesture scope: a drag that
+                // passes touch slop is claimed here and never reaches detectTapGestures, so
+                // rotating the car cannot be mistaken for a background tap that clears focus.
+                .pointerInput(renderer) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { renderer.onDragStateChange(true) },
+                        // Both end paths must clear the flag, or an interrupted drag would leave
+                        // the camera permanently refusing animated writes.
+                        onDragEnd = { renderer.onDragStateChange(false) },
+                        onDragCancel = { renderer.onDragStateChange(false) },
+                    ) { _, dragAmount ->
+                        // Dragging right rotates the car as if pushing its near flank away, which
+                        // is the direction people expect from turning an object on a turntable.
+                        renderer.rotateBy(-dragAmount * Car3dTuning.ROTATE_DEG_PER_PX)
+                    }
+                }
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { onBackgroundTap() },
@@ -418,7 +451,7 @@ private fun CarStage(
         Text(
             text = Car3dTuning.MODEL_CREDIT,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.46f),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(horizontal = 18.dp, vertical = 12.dp),

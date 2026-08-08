@@ -98,4 +98,15 @@ interface CarRenderer {
      * A renderer with no depth (e.g. a 2D side elevation) takes the default: nothing occludes.
      */
     fun occlusionOf(hotspot: Hotspot): Float = 0f
+
+    /**
+     * Orbit the view around the vehicle by [deltaDegrees], as a direct response to a drag.
+     *
+     * Applied immediately rather than animated — a rotation the finger is driving must track the
+     * finger, and any camera animation in flight is abandoned. The offset persists, so a focus
+     * transition afterwards approaches the component from wherever the user left the view.
+     *
+     * A renderer with a fixed viewpoint (a 2D elevation, say) takes the default and ignores it.
+     */
+    fun rotateBy(deltaDegrees: Float) = Unit
 }

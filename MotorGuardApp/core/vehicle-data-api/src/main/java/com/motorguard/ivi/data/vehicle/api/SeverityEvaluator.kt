@@ -10,6 +10,11 @@ data class SeverityThresholds(
     val recommendedPsi: Float = 34f,
     val tireCautionPsi: Float = 28f,
     val tireCriticalPsi: Float = 24f,
+    // Tire carcass temperature. Was specified in the phase-1 brief but never given a rule here,
+    // which left the UI showing tire temp ungraded — the one field on the detail card with a
+    // documented threshold and no way to apply it.
+    val tireTempCaution: Float = 70f,
+    val tireTempCritical: Float = 85f,
     // Battery
     val batteryChargeCaution: Float = 20f,
     val batteryChargeCritical: Float = 10f,
@@ -44,6 +49,10 @@ class SeverityEvaluator(val thresholds: SeverityThresholds = SeverityThresholds(
 
     fun curb(psi: Float): Severity = belowIsWorse(
         psi, thresholds.tireCautionPsi, thresholds.tireCriticalPsi,
+    )
+
+    fun tireTemp(c: Float): Severity = aboveIsWorse(
+        c, thresholds.tireTempCaution, thresholds.tireTempCritical,
     )
 
     fun batteryCharge(pct: Float): Severity = belowIsWorse(

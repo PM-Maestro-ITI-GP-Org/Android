@@ -112,7 +112,7 @@ private fun EmptyDetailPanel(modifier: Modifier = Modifier) {
             Text(
                 text = "Select a component on the car to inspect it",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -218,7 +218,7 @@ private fun DetailContent(telemetry: FocusedTelemetry) {
             )
             Spacer(Modifier.height(22.dp))
             MetricRow {
-                MetricCell("Temp", TelemetryFormat.tempC(r.data.tempC), null, Modifier.weight(1f))
+                MetricCell("Temp", TelemetryFormat.tempC(r.data.tempC), r.temp, Modifier.weight(1f))
             }
         }
 
@@ -314,7 +314,7 @@ private fun NoDataBody() {
         Text(
             text = "Signal offline",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
         )
     }
 }
@@ -363,7 +363,7 @@ private fun HeroValue(value: String, caption: String, severity: Severity?, stale
         Text(
             text = if (stale) "$caption · last known" else caption,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
         )
     }
 }
@@ -389,7 +389,7 @@ private fun MetricCell(
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
         )
         Spacer(Modifier.height(2.dp))
         Text(
@@ -416,7 +416,7 @@ private fun DoorChip(state: DoorState, modifier: Modifier = Modifier) {
         Text(
             text = state.door.label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
         )
         Spacer(Modifier.height(4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

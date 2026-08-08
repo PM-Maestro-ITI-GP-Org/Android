@@ -17,8 +17,8 @@ import com.motorguard.ivi.data.vehicle.api.TireTelemetry
  * pure delegation to the domain's SeverityResolver — no threshold number appears anywhere in the
  * UI layer (phase-1 brief §15: severity logic lives in SeverityEvaluator and is never duplicated).
  *
- * Fields with no rule in SeverityThresholds — motor RPM, tire temperature, battery cycle count and
- * charging flag — carry no severity at all rather than an invented one. They render neutral.
+ * Fields with no rule in SeverityThresholds — motor RPM, battery cycle count and the charging flag
+ * — carry no severity at all rather than an invented one. They render neutral.
  */
 
 internal data class BatteryReading(
@@ -30,8 +30,12 @@ internal data class BatteryReading(
     val overall: Severity get() = maxOf(charge, cellTemp, health)
 }
 
-internal data class TireReading(val data: TireTelemetry, val psi: Severity) {
-    val overall: Severity get() = psi
+internal data class TireReading(
+    val data: TireTelemetry,
+    val psi: Severity,
+    val temp: Severity,
+) {
+    val overall: Severity get() = maxOf(psi, temp)
 }
 
 internal data class MotorReading(

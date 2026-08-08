@@ -107,9 +107,10 @@ class DiagnosticsViewModel(
      * The entire severity surface of the detail card: five straight delegations to the shared
      * resolver, no arithmetic of their own. No threshold number appears in the UI layer.
      *
-     * Motor RPM, tire temperature, battery cycle count and the charging flag are deliberately
-     * ungraded — SeverityThresholds defines no rule for them, and inventing one here would put
-     * severity logic outside SeverityEvaluator, which the brief forbids. They render neutral.
+     * Motor RPM, battery cycle count and the charging flag remain deliberately ungraded —
+     * SeverityThresholds defines no rule for them, and inventing one here would put severity logic
+     * outside SeverityEvaluator, which the brief forbids. They render neutral. Tire temperature
+     * used to be in that list; it now has a real rule in the domain module and is graded.
      *
      * These run inside a Flow.map, never inside a composable: they mutate the resolver's hysteresis
      * state, and a composition can be skipped, restarted or discarded at will.
@@ -135,8 +136,11 @@ class DiagnosticsViewModel(
 
     private fun gradeDoors(t: DoorsTelemetry) = DoorsReading(t, resolver.doors(t))
 
-    private fun gradeTire(corner: Hotspot, t: TireTelemetry) =
-        TireReading(t, resolver.tirePsi(corner, t.psi))
+    private fun gradeTire(corner: Hotspot, t: TireTelemetry) = TireReading(
+        data = t,
+        psi = resolver.tirePsi(corner, t.psi),
+        temp = resolver.tireTemp(corner, t.tempC),
+    )
 
     /**
      * Hotspots the driver has dismissed, recorded WITH the severity they were dismissed at.

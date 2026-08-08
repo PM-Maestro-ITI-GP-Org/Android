@@ -37,6 +37,10 @@ class SeverityResolver(
         resolve("battery.health", pct, batteryHealthCaution, batteryHealthCritical, marginPercent, belowIsWorse = true)
     }
 
+    fun tireTemp(hotspot: Hotspot, c: Float): Severity = with(evaluator.thresholds) {
+        resolve("tire.${hotspot.name}.temp", c, tireTempCaution, tireTempCritical, marginTempC, belowIsWorse = false)
+    }
+
     fun cellTemp(c: Float): Severity = with(evaluator.thresholds) {
         resolve("battery.cellTemp", c, cellTempCaution, cellTempCritical, marginTempC, belowIsWorse = false)
     }
@@ -58,7 +62,8 @@ class SeverityResolver(
     fun doors(t: DoorsTelemetry): Severity = evaluator.doors(t)
 
     /** Worst-of severity across all sub-signals of one hotspot. */
-    fun severityFor(hotspot: Hotspot, tirePsi: Float? = null, battery: BatteryTelemetry? = null,
+    fun severityFor(hotspot: Hotspot, tirePsi: Float? = null, tireTempC: Float? = null,
+                    battery: BatteryTelemetry? = null,
                     motor: MotorTelemetry? = null, brakes: BrakeTelemetry? = null,
                     doorsState: DoorsTelemetry? = null): Severity = when (hotspot) {
         Hotspot.BATTERY -> evaluator.worstOf(
@@ -67,8 +72,15 @@ class SeverityResolver(
             cellTemp(battery.cellTempC),
         )
         Hotspot.MOTOR -> evaluator.worstOf(motorTemp(motor!!.tempC), motorLoad(motor.loadPercent))
+        // Worst-of across the corner's own fields. Temperature is optional so existing callers
+        // that only have pressure keep working; when it is supplied a hot tire raises the dot
+        // even at a perfectly normal pressure, which is the whole point of grading it.
         Hotspot.TIRE_FL, Hotspot.TIRE_FR, Hotspot.TIRE_RL, Hotspot.TIRE_RR ->
-            tirePsi(hotspot, tirePsi!!)
+            if (tireTempC == null) {
+                tirePsi(hotspot, tirePsi!!)
+            } else {
+                evaluator.worstOf(tirePsi(hotspot, tirePsi!!), tireTemp(hotspot, tireTempC))
+            }
         Hotspot.BRAKES -> brakes?.let {
             evaluator.worstOf(brakeWear(it.padWearPercent), brakeFluid(it.fluidOk))
         } ?: Severity.OK

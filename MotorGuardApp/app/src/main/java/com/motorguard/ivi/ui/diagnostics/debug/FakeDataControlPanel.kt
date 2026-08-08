@@ -131,7 +131,7 @@ fun FakeDataControlPanel(
                 Text(
                     text = "Debug build only — not part of the driver UI",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
                 )
             }
         }
