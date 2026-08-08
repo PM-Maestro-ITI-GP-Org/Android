@@ -75,8 +75,29 @@ class HotspotGeometry private constructor(
          */
         const val BRAKES_LIFT = 0.01f
 
-        /** Used when a name-based resolution is unavailable. MOTOR and BATTERY always use
-         *  these — see [resolve] step (7) for why neither has a real mesh to anchor to. */
+        /**
+         * Node names in the diagnostics model (`prep_car.py` output). The Blender merge that
+         * builds it collapses the source car's ~123 parts into one shell, destroying the
+         * `geo_*` names the original Sketchfab export carried, and re-emits the four wheels
+         * under names that state their corner outright — so no centroid classification is
+         * needed here, unlike the legacy path below.
+         */
+        val WHEEL_MESHES: Map<Hotspot, String> = mapOf(
+            Hotspot.TIRE_FL to "Wheel_FL",
+            Hotspot.TIRE_FR to "Wheel_FR",
+            Hotspot.TIRE_RL to "Wheel_RL",
+            Hotspot.TIRE_RR to "Wheel_RR",
+        )
+
+        /** The two components the merge adds inside the bodywork. Real geometry, unlike the
+         *  estimates these two used to be stuck with. */
+        val COMPONENT_MESHES: Map<Hotspot, String> = mapOf(
+            Hotspot.MOTOR to "Comp_Motor",
+            Hotspot.BATTERY to "Comp_Battery",
+        )
+
+        /** Used when a name-based resolution is unavailable — which, in the diagnostics model,
+         *  is BRAKES and DOORS: see [resolve] steps (5) and (6). */
         val FALLBACK: Map<Hotspot, CarFrame> = mapOf(
             Hotspot.BATTERY to CarFrame(t = 0.50f, h = 0.26f, s = 0.00f),
             Hotspot.MOTOR to CarFrame(t = 0.14f, h = 0.34f, s = 0.00f),
@@ -128,16 +149,27 @@ class HotspotGeometry private constructor(
 
             fun axis(i: Int) = Float3(if (i == 0) 1f else 0f, if (i == 1) 1f else 0f, if (i == 2) 1f else 0f)
 
-            // (3) Front direction — from the brakes, the only name-carrying front/rear pair.
+            /** Exact name match. Node names are unique in both supported models. */
+            fun named(name: String): Part? = parts.firstOrNull { it.name == name }
+
+            val namedWheels = Tuning.WHEEL_MESHES.mapNotNull { (h, n) -> named(n)?.let { h to it } }.toMap()
+
+            // (3) Front direction — from whichever name-carrying front/rear pair the model has:
+            // the wheels in the diagnostics model, the brakes in the legacy one.
             // Deliberately not a shortcut on axis index: real basis vectors make left/right
             // correct regardless of which physical axis turned out to be length/up/lateral.
             val frontBrakes = parts.filter { it.name.startsWith("geo_brakes_front") }
             val rearBrakes = parts.filter { it.name.startsWith("geo_brakes_rear") }
             val lengthAxisVec = axis(lengthAxisIndex)
-            val frontSign = if (frontBrakes.isNotEmpty() && rearBrakes.isNotEmpty()) {
-                val meanFront = frontBrakes.map { dot(it.p, lengthAxisVec) }.average().toFloat()
-                val meanRear = rearBrakes.map { dot(it.p, lengthAxisVec) }.average().toFloat()
-                sign(meanFront - meanRear)
+            fun meanAlongLength(ps: List<Part>) = ps.map { dot(it.p, lengthAxisVec) }.average().toFloat()
+            val frontPair: Pair<List<Part>, List<Part>>? = when {
+                namedWheels.size == 4 -> listOf(Hotspot.TIRE_FL, Hotspot.TIRE_FR).map { namedWheels.getValue(it) } to
+                    listOf(Hotspot.TIRE_RL, Hotspot.TIRE_RR).map { namedWheels.getValue(it) }
+                frontBrakes.isNotEmpty() && rearBrakes.isNotEmpty() -> frontBrakes to rearBrakes
+                else -> null
+            }
+            val frontSign = if (frontPair != null) {
+                sign(meanAlongLength(frontPair.first) - meanAlongLength(frontPair.second))
             } else {
                 report += "FRONT UNRESOLVED, assuming +length"
                 1f
@@ -156,12 +188,26 @@ class HotspotGeometry private constructor(
 
             val anchors = mutableMapOf<Hotspot, Float3>()
 
-            // (4) Tire corners — split by sign against the tire centroid using the derived
-            // basis; tire mesh names carry no L/R/F/R identity of their own.
-            val tires = parts.filter { it.name.startsWith("geo_tire") } // rims are "geo_rim_*", no collision
-            if (tires.size == 4) {
-                val axleCenter = tires.map { it.p }.reduce { a, b -> a + b } / 4f
-                val classified = tires.map { part ->
+            // (4) Tire corners. The diagnostics model names each wheel by its corner, so those
+            // are taken at their word — and used to check the derived left/right, since a
+            // mirrored model would put every dot on the wrong flank in a way that still looks
+            // plausible. Reported rather than auto-corrected: MIRROR_LATERAL stays the one lever.
+            val legacyTires = parts.filter { it.name.startsWith("geo_tire") } // rims are "geo_rim_*", no collision
+            if (namedWheels.size == 4) {
+                namedWheels.forEach { (corner, part) -> anchors[corner] = part.p }
+                val fl = namedWheels.getValue(Hotspot.TIRE_FL).p
+                val fr = namedWheels.getValue(Hotspot.TIRE_FR).p
+                report += if (dot(fr - fl, right) > 0f) {
+                    "tires: resolved from Wheel_* node names"
+                } else {
+                    "tires: resolved from Wheel_* node names, but FR is LEFT of FL — " +
+                        "model looks mirrored, consider MIRROR_LATERAL"
+                }
+            } else if (legacyTires.size == 4) {
+                // Legacy path, for the pre-merge model: split by sign against the tire centroid
+                // using the derived basis, since those tire mesh names carry no L/R/F/R identity.
+                val axleCenter = legacyTires.map { it.p }.reduce { a, b -> a + b } / 4f
+                val classified = legacyTires.map { part ->
                     val isFront = dot(part.p - axleCenter, fwd) > 0f
                     val isRight = dot(part.p - axleCenter, right) > 0f
                     val corner = when {
@@ -175,13 +221,14 @@ class HotspotGeometry private constructor(
                 val distinctCorners = classified.map { it.second }.toSet()
                 if (distinctCorners.size == 4) {
                     classified.forEach { (part, corner) -> anchors[corner] = part.p }
-                    report += "tires: resolved from mesh names"
+                    report += "tires: resolved from geo_tire* mesh names"
                 } else {
                     report += "TIRES: corner collision (${classified.map { it.second }}), using FALLBACK for all 4"
                     Hotspot.tireCorners.forEach { anchors[it] = fromCarFrame(Tuning.FALLBACK.getValue(it)) }
                 }
             } else {
-                report += "TIRES: expected 4, got ${tires.size}, using FALLBACK for all 4"
+                report += "TIRES: no Wheel_* nodes and ${legacyTires.size} geo_tire* meshes, " +
+                    "using FALLBACK for all 4"
                 Hotspot.tireCorners.forEach { anchors[it] = fromCarFrame(Tuning.FALLBACK.getValue(it)) }
             }
 
@@ -192,7 +239,12 @@ class HotspotGeometry private constructor(
                 frontBrakes.isNotEmpty() -> frontBrakes.map { it.p }.reduce { a, b -> a + b } / frontBrakes.size.toFloat()
                 allBrakes.isNotEmpty() -> allBrakes.map { it.p }.reduce { a, b -> a + b } / allBrakes.size.toFloat()
                 else -> {
-                    report += "BRAKES: no geo_brakes_* mesh, using FALLBACK"
+                    // The diagnostics model has no brake geometry at all: the merge dissolved
+                    // the calipers and discs into the shell, and the components it adds are the
+                    // motor and the pack. There is nothing to anchor to, so this stays on the
+                    // estimate table — an invented anchor would be a guess wearing the costume
+                    // of a measurement.
+                    report += "BRAKES: no brake mesh in this model, using FALLBACK"
                     fromCarFrame(Tuning.FALLBACK.getValue(Hotspot.BRAKES))
                 }
             }
@@ -204,18 +256,27 @@ class HotspotGeometry private constructor(
             anchors[Hotspot.DOORS] = if (doors.isNotEmpty()) {
                 doors.map { it.p }.reduce { a, b -> a + b } / doors.size.toFloat()
             } else {
-                report += "DOORS: no geo_doors_* mesh, using FALLBACK"
+                // Same story as the brakes: the doors are part of the single merged shell here,
+                // with no separable mesh of their own. FALLBACK, and said out loud.
+                report += "DOORS: no door mesh in this model, using FALLBACK"
                 fromCarFrame(Tuning.FALLBACK.getValue(Hotspot.DOORS))
             }
 
-            // (7) BATTERY and MOTOR always use FALLBACK — neither has a corresponding mesh:
-            // there is no motor/engine geometry in the GLB, and the only charging-related mesh
-            // (`geo_charging`) is the charge port on the fender, not the floor-mounted pack.
-            // Labelling the charge port "Battery" would put the dot in the wrong place.
-            report += "MOTOR: no motor/engine mesh in the GLB, using FALLBACK"
-            anchors[Hotspot.MOTOR] = fromCarFrame(Tuning.FALLBACK.getValue(Hotspot.MOTOR))
-            report += "BATTERY: geo_charging is the charge port, not the pack; using FALLBACK"
-            anchors[Hotspot.BATTERY] = fromCarFrame(Tuning.FALLBACK.getValue(Hotspot.BATTERY))
+            // (7) MOTOR and BATTERY — the two components the diagnostics model plants inside the
+            // bodywork, and the first real geometry these two have ever had. Before the merge
+            // there was no motor mesh at all, and the only battery-adjacent mesh (`geo_charging`)
+            // was the charge port on the fender rather than the floor-mounted pack, so both were
+            // permanently estimated. `Comp_Motor` and `Comp_Battery` are the parts themselves.
+            Tuning.COMPONENT_MESHES.forEach { (hotspot, meshName) ->
+                val part = named(meshName)
+                anchors[hotspot] = if (part != null) {
+                    report += "$hotspot: resolved from $meshName"
+                    part.p
+                } else {
+                    report += "$hotspot: no $meshName mesh, using FALLBACK"
+                    fromCarFrame(Tuning.FALLBACK.getValue(hotspot))
+                }
+            }
 
             // (8) Apply the manual nudge, expressed as a car-frame-fraction delta.
             val neutral = fromCarFrame(CarFrame(0.5f, 0.5f, 0f))
