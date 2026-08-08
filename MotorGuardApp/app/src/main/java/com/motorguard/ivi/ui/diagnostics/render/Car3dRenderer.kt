@@ -143,6 +143,22 @@ object Car3dTuning {
     const val CAST_SHADOWS = false
 
     // --- Quality
+    //
+    // These two are coupled: Filament runs FXAA inside the post-process pass, so disabling
+    // POST_PROCESSING disables anti-aliasing with it. They are the first lever to pull if the
+    // target hardware cannot keep up.
+    //
+    // Measured on the dev emulator (AMD RENOIR via Mesa, GLES 3.1, 1920x1080, 202k-vertex model),
+    // sampled across four consecutive focus transitions — i.e. continuous camera animation, the
+    // worst case rather than idle:
+    //
+    //     on   ->  43.5% janky frames, p50 48 ms, p90 65 ms
+    //     off  ->   7.9% janky frames, p50 25 ms, p90 48 ms
+    //
+    // Kept ON: without it the panel-gap and door-seam lines visibly stair-step, and the car is the
+    // centrepiece of this screen. The emulator's integrated GPU is also not the RPi 5's VideoCore
+    // VII, so this number is a signal rather than a verdict — re-measure on target before deciding
+    // (spec T13), and flip these two if the real hardware disagrees.
     const val POST_PROCESSING = true
     const val FXAA = true
 
@@ -152,6 +168,16 @@ object Car3dTuning {
      * see the comment on `environment` in [Car3dRenderer.Render] for why a skybox is unwanted.
      */
     const val NEUTRAL_IBL_ASSET = "environments/neutral/neutral_ibl.ktx"
+
+    /**
+     * Attribution for the installed model, displayed on the car stage.
+     *
+     * The Porsche Mission E asset is CC-BY-4.0, which requires credit wherever the work appears —
+     * a licence obligation, not a courtesy, so this string is rendered rather than merely recorded
+     * in a file nobody ships. Change it together with `vehicle3dModel/MODEL_LICENSE.md` whenever
+     * `scripts/select-car-model.sh` installs a different model.
+     */
+    const val MODEL_CREDIT = "3D model: Porsche Mission E by kevin · CC BY 4.0"
 }
 
 /**

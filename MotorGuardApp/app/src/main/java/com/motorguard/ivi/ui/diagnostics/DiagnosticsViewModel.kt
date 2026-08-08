@@ -7,6 +7,7 @@ import com.motorguard.ivi.data.vehicle.api.BrakeTelemetry
 import com.motorguard.ivi.data.vehicle.api.DoorsTelemetry
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
+import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SeverityResolver
 import com.motorguard.ivi.data.vehicle.api.TireTelemetry
 import com.motorguard.ivi.data.vehicle.api.VehicleDataSource
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -135,6 +137,63 @@ class DiagnosticsViewModel(
 
     private fun gradeTire(corner: Hotspot, t: TireTelemetry) =
         TireReading(t, resolver.tirePsi(corner, t.psi))
+
+    /**
+     * Hotspots the driver has dismissed, recorded WITH the severity they were dismissed at.
+     *
+     * Storing the severity rather than a bare flag is what makes escalation re-alert: a row waved
+     * away at CAUTION comes straight back at CRITICAL. Entries are pruned the moment a hotspot
+     * returns to OK (see the collector in `init`), so a component that degrades again later starts
+     * from a clean slate. In-memory only; the brief puts persistence out of scope for phase 1.
+     */
+    private val dismissed = MutableStateFlow<Map<Hotspot, Severity>>(emptyMap())
+
+    private val tracking: StateFlow<AlertTracking> =
+        severityFlow.severities
+            .scan(AlertTracking()) { acc, next -> acc.advance(next, System.currentTimeMillis()) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AlertTracking())
+
+    /** Every hotspot at CAUTION or CRITICAL that has not been dismissed at its current severity. */
+    internal val alerts: StateFlow<List<VehicleAlert>> =
+        combine(tracking, dismissed) { t, d -> t.visibleAlerts(d) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Aggregate health, or null while no signal has produced a severity yet.
+     *
+     * Note this is derived from the SAME severity flow the dots and cards use, and dismissal is
+     * deliberately NOT an input: acknowledging an alert must never improve the score, or the ring
+     * would report a healthier car than the one on screen.
+     */
+    val healthScore: StateFlow<Int?> =
+        severityFlow.healthScore
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    init {
+        // A dismissal only survives while the hotspot is still alerting. Once it returns to OK the
+        // record is dropped, so a later degrade raises a fresh row rather than staying silent
+        // because of an acknowledgement the driver made about a different episode.
+        viewModelScope.launch {
+            severityFlow.severities.collect { map ->
+                val kept = dismissed.value.filterKeys { hotspot ->
+                    map[hotspot].let { it != null && it != Severity.OK }
+                }
+                if (kept != dismissed.value) dismissed.value = kept
+            }
+        }
+    }
+
+    /**
+     * Acknowledge an alert. Removes the ROW and nothing else — the hotspot's severity, its dot
+     * colour and the health ring are all untouched, because the car does not become healthier by
+     * being told to be quiet.
+     */
+    fun onDismissAlert(hotspot: Hotspot) {
+        val current = tracking.value.severities[hotspot] ?: return
+        if (current == Severity.OK) return
+        dismissed.value = dismissed.value + (hotspot to current)
+        restartIdleTimer()
+    }
 
     private var idleJob: Job? = null
 

@@ -54,9 +54,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.components.Pill
+import com.motorguard.ivi.ui.diagnostics.component.AlertList
 import com.motorguard.ivi.ui.diagnostics.component.ComponentDetailPanel
+import com.motorguard.ivi.ui.diagnostics.component.HealthRing
+import com.motorguard.ivi.ui.diagnostics.component.healthRingSemantics
 import com.motorguard.ivi.ui.diagnostics.component.HotspotOverlay
 import com.motorguard.ivi.ui.diagnostics.debug.FakeDataControlPanel
+import com.motorguard.ivi.ui.diagnostics.render.Car3dTuning
 import com.motorguard.ivi.ui.diagnostics.render.CarRenderState
 import com.motorguard.ivi.ui.diagnostics.render.rememberCar3dRenderer
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
@@ -77,11 +81,16 @@ fun DiagnosticsScreen(
     // Filament surface included — on every telemetry tick. Deferring the read into the lambda
     // confines that invalidation to ComponentDetailPanel.
     val telemetryState = viewModel.focusedTelemetry.collectAsStateWithLifecycle()
+    val alerts by viewModel.alerts.collectAsStateWithLifecycle()
+    val healthScore by viewModel.healthScore.collectAsStateWithLifecycle()
     DiagnosticsScreenContent(
         ui = ui,
         focusedTelemetry = { telemetryState.value },
+        alerts = alerts,
+        healthScore = healthScore,
         debugControls = viewModel.debugControls,
         onHotspotTap = viewModel::onHotspotTap,
+        onAlertDismiss = viewModel::onDismissAlert,
         onBackgroundTap = viewModel::onBackgroundTap,
         onStageLongPress = viewModel::onStageLongPress,
         onDebugDismiss = viewModel::onDebugPanelDismiss,
@@ -104,9 +113,12 @@ internal fun DiagnosticsScreenContent(
     ui: DiagnosticsUiState,
     /** A lambda, not a value: see the collection site in [DiagnosticsScreen] for why. */
     focusedTelemetry: () -> FocusedTelemetry?,
+    alerts: List<VehicleAlert>,
+    healthScore: Int?,
     /** Null in previews: previews render chrome only, with nothing wired to drive it. */
     debugControls: VehicleDebugControls?,
     onHotspotTap: (Hotspot) -> Unit,
+    onAlertDismiss: (Hotspot) -> Unit,
     onBackgroundTap: () -> Unit,
     onStageLongPress: () -> Unit,
     onDebugDismiss: () -> Unit,
@@ -116,6 +128,10 @@ internal fun DiagnosticsScreenContent(
     // rememberUpdatedState because pointerInput(Unit) captures its lambda for the whole
     // composition, and the callback identity changes on every recomposition of the caller.
     val latestInteraction by rememberUpdatedState(onUserInteraction)
+
+    // Worst-of across every hotspot that currently has a signal. Null when nothing has reported
+    // yet, which the ring renders as "waiting" rather than as a score of zero.
+    val worstSeverity = ui.severities.values.filterNotNull().maxByOrNull { it.ordinal }
 
     Box(
         modifier
@@ -189,20 +205,27 @@ internal fun DiagnosticsScreenContent(
                         .fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    // The middle slot is live; the ring and the alert list are still reservations.
-                    ReservedPanel(
-                        title = "Vehicle health",
-                        hint = "Health score appears here once telemetry is connected",
-                        modifier = Modifier.weight(1f),
+                    // Weights measured against the real panel: the ring is a fixed 132 dp disc and
+                    // two lines of text, so it needs the least. The alert list needs the most —
+                    // every row is a 76 dp touch target by safety requirement, so three alerts plus
+                    // a header overflow anything smaller and the top row ends up clipped.
+                    HealthRing(
+                        score = healthScore,
+                        worst = worstSeverity,
+                        onLongPress = onStageLongPress,
+                        modifier = Modifier
+                            .weight(0.8f)
+                            .healthRingSemantics(healthScore, worstSeverity),
                     )
                     ComponentDetailPanel(
                         telemetry = focusedTelemetry,
                         modifier = Modifier.weight(1.2f),
                     )
-                    ReservedPanel(
-                        title = "Alerts",
-                        hint = "Severity alerts appear here",
-                        modifier = Modifier.weight(1f),
+                    AlertList(
+                        alerts = alerts,
+                        onAlertTap = onHotspotTap,
+                        onAlertDismiss = onAlertDismiss,
+                        modifier = Modifier.weight(1.4f),
                     )
                 }
             }
@@ -388,6 +411,18 @@ private fun CarStage(
                 }
             }
         }
+
+        // Model attribution. The asset is CC-BY-4.0, which requires credit wherever the work is
+        // shown — so this is a licence obligation and must not be removed to tidy the layout.
+        // Placed low-contrast in the corner: legally present, visually out of the way.
+        Text(
+            text = Car3dTuning.MODEL_CREDIT,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+        )
     }
 }
 
@@ -399,7 +434,7 @@ private fun CarStage(
 @Composable
 private fun DiagnosticsScreenDayPreview() {
     MotorGuardTheme {
-        DiagnosticsScreenContent(DiagnosticsUiState(), { null }, null, {}, {}, {}, {}, {})
+        DiagnosticsScreenContent(DiagnosticsUiState(), { null }, emptyList(), null, null, {}, {}, {}, {}, {}, {})
     }
 }
 
@@ -412,6 +447,6 @@ private fun DiagnosticsScreenDayPreview() {
 @Composable
 private fun DiagnosticsScreenNightPreview() {
     MotorGuardTheme {
-        DiagnosticsScreenContent(DiagnosticsUiState(), { null }, null, {}, {}, {}, {}, {})
+        DiagnosticsScreenContent(DiagnosticsUiState(), { null }, emptyList(), null, null, {}, {}, {}, {}, {}, {})
     }
 }
