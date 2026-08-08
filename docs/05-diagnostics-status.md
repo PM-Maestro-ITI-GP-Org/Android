@@ -58,6 +58,11 @@ own finish. `DEFAULT_LIVERY` is what the car starts in; the debug panel (long-pr
 ring, scroll to "Vehicle paint") writes straight to `Car3dRenderer.livery`, so a colour can be
 judged on the real render without a rebuild.
 
+A material can be claimed by a slot even when the shell has no faces carrying it: `Doorsill`
+survives only as `Zone_Battery_Doorsill`, because the battery zone's carve takes every sill face.
+The suffix match handles that, but it is why probing the shell for a material can come up empty
+while the part is plainly on screen.
+
 The five slots exist because the v2 model splits the materials for them. Before that split the
 disc and caliper shared one material, and the wheel barrel was painted with the *body* material —
 so recolouring the car recoloured its wheels, and a red car got red wheels.
@@ -94,9 +99,6 @@ without it the door seams visibly stair-step. The emulator's integrated AMD GPU 
 VideoCore VII, so re-measure on target (spec T13) before deciding. Both constants are in
 `Car3dTuning`.
 
-**5. The side sill stays silver in every livery.** It is a separate textured material on the real
-car too, so it was left alone. Add it to `PAINT_MATERIALS` if it should follow the body.
-
 ## Decisions worth not re-litigating
 
 - **Dismissing an alert changes nothing but the row.** Not the dot, not the ring. The car stays
@@ -109,6 +111,10 @@ car too, so it was left alone. Add it to `PAINT_MATERIALS` if it should follow t
   tap from the one in front of it is the defect that made them untappable originally.
 - **Occlusion is computed live from the camera every frame**, never baked, specifically so touch
   rotation works — which it now does.
+- **The battery is framed from ABOVE**, looking down through its cutaway. This reverses an earlier
+  decision recorded here — that a floor-mounted pack cannot honestly be shown from above — which
+  was correct while the bodywork was opaque and stopped being correct when the cutaway started
+  opening. From below the pack is an edge; from above it is a slab with a module grid.
 - **Rotation is free only with nothing focused.** A focused view is a framing, not a turntable:
   drag past the bodywork and the eye ends up inside the cabin looking out through the seats. Each
   component clamps to its own `orbitLimitDeg`, and the two orbits are separate values so
