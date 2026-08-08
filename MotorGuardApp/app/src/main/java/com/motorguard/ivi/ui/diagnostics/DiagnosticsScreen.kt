@@ -30,7 +30,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +71,7 @@ import com.motorguard.ivi.ui.diagnostics.render.Car3dTuning
 import com.motorguard.ivi.ui.diagnostics.render.CarRenderState
 import com.motorguard.ivi.ui.diagnostics.render.rememberCar3dRenderer
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
+import com.motorguard.ivi.ui.theme.SemanticColors
 
 /**
  * Fragment-facing entry point: binds [DiagnosticsViewModel] and hands its state down to
@@ -128,6 +133,11 @@ internal fun DiagnosticsScreenContent(
     onUserInteraction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Hoisted to here rather than kept in the renderer, because the debug panel that edits it is
+    // a sibling of the car stage, not a child. Deliberately NOT persisted: a livery is something
+    // you try, and the car should come back in its designed colours after a restart.
+    var livery by remember { mutableStateOf(Car3dTuning.DEFAULT_LIVERY) }
+
     // rememberUpdatedState because pointerInput(Unit) captures its lambda for the whole
     // composition, and the callback identity changes on every recomposition of the caller.
     val latestInteraction by rememberUpdatedState(onUserInteraction)
@@ -195,6 +205,7 @@ internal fun DiagnosticsScreenContent(
             ) {
                 CarStage(
                     ui = ui,
+                    livery = livery,
                     onHotspotTap = onHotspotTap,
                     onBackgroundTap = onBackgroundTap,
                     onLongPress = onStageLongPress,
@@ -255,7 +266,12 @@ internal fun DiagnosticsScreenContent(
                 enter = fadeIn() + slideInHorizontally { it },
                 exit = fadeOut() + slideOutHorizontally { it },
             ) {
-                FakeDataControlPanel(controls = debugControls, onDismiss = onDebugDismiss)
+                FakeDataControlPanel(
+                    controls = debugControls,
+                    livery = livery,
+                    onLivery = { livery = it },
+                    onDismiss = onDebugDismiss,
+                )
             }
         }
     }
@@ -310,6 +326,7 @@ private fun ReservedPanel(title: String, hint: String, modifier: Modifier = Modi
 @Composable
 private fun CarStage(
     ui: DiagnosticsUiState,
+    livery: Car3dTuning.Livery,
     onHotspotTap: (Hotspot) -> Unit,
     onBackgroundTap: () -> Unit,
     onLongPress: () -> Unit,
@@ -322,6 +339,22 @@ private fun CarStage(
     val stageColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f).compositeOver(page)
 
     val renderer = rememberCar3dRenderer(stageColor = stageColor)
+
+    // Re-applied whenever the panel changes it. Cheap and idempotent: a handful of material
+    // parameter writes, and a no-op before the model has loaded (the renderer keeps the value and
+    // applies it at load).
+    SideEffect { renderer.applyLivery(livery) }
+
+    // The motor and the battery are the two parts the model puts *inside* the bodywork, and the
+    // only ones whose colour the app owns. Painting them by severity is what makes the cutaway
+    // worth opening: a grey drum tells you nothing the card has not already said. Read here, in
+    // composition, because SemanticColors is theme-aware — the renderer must not reach for colours
+    // itself, and this way a day/night flip repaints the part with everything else.
+    val severities = ui.severities
+    Hotspot.entries.forEach { hotspot ->
+        val color = SemanticColors.forSeverity(severities[hotspot])
+        SideEffect { renderer.setComponentColor(hotspot, color) }
+    }
 
     Box(modifier) {
         Box(
