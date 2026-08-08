@@ -45,6 +45,27 @@ ZONE_RESTING_ALPHA = 0.99
 ZONE_RADIUS_FACTOR_MOTOR = 3.6
 ZONE_RADIUS_FACTOR_BATTERY = 1.15
 
+# --- Material splits. The donor model bundles parts the app needs to colour separately: the
+# brake disc shares a material with the caliper, and the wheel barrel shares one with the body
+# paint. Both are split geometrically here rather than by hand, so a re-run reproduces them.
+
+# Where the disc ends and the caliper begins, as a fraction of the wheel's radius.
+#
+# Measured, not guessed. Binning every brake face of the donor model by its distance from the hub
+# and counting how many of 24 angular sectors each band touches gives, for the front and rear brake
+# materials alike:
+#
+#     r <= 0.5R  ->  24/24 sectors   a full annulus, i.e. the disc
+#     r >= 0.6R  ->   7/24 sectors   a lump on one side, i.e. the caliper
+#
+# A clean gap, so one radius threshold splits them and no island analysis is needed.
+CALIPER_RADIUS_FRAC = 0.55
+
+# The wheel barrel is whatever bodywork or brake surface falls inside the wheel's own cylinder.
+# Just under 1.0 so the arch lip, which sits immediately outside the tyre, is not swept in with it.
+BARREL_RADIUS_FRAC = 0.96
+BARREL_WIDTH_FRAC = 1.15
+
 CAR_LENGTH_RANGE = (4.2, 4.8)  # metres
 DEFAULT_COMPONENT_TRIS = 6000  # per imported component after decimation
 
@@ -318,6 +339,139 @@ def assign_only(obj, mat):
     obj.data.materials.append(mat)
 
 
+def recalculate_normals(objs):
+    """Make every face wind outwards.
+
+    The donor Porsche relies on double-sided materials and a good deal of it is wound inwards —
+    door skins, the front fender, the mirrors, the tyre sidewalls. That is invisible in Blender and
+    invisible in a double-sided viewer, and then those panels simply do not draw in an engine that
+    culls backfaces, which this pipeline asks for (see the single-sided pass in main). The app was
+    carrying a runtime workaround that turned culling back off for the whole model; this is the
+    repair that lets it go.
+    """
+    for obj in objs:
+        if obj is None:
+            continue
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+
+
+def ensure_slot(obj, material):
+    """Index of [material] in [obj]'s slots, appending it if it is not there yet."""
+    for i, m in enumerate(obj.data.materials):
+        if m is material:
+            return i
+    obj.data.materials.append(material)
+    return len(obj.data.materials) - 1
+
+
+def wheel_frames(wheels, axes):
+    """Per wheel: (centre, radius, axis index) in world space, from its own bounding box."""
+    _, width_axis, _, _ = axes
+    frames = []
+    for obj in wheels.values():
+        if obj is None:
+            continue
+        wlo, whi = world_bbox([obj])
+        centre = Vector([(wlo[k] + whi[k]) / 2 for k in range(3)])
+        radial = [whi[k] - wlo[k] for k in range(3) if k != width_axis]
+        frames.append((centre, max(radial) / 2, whi[width_axis] - wlo[width_axis]))
+    return frames
+
+
+def split_brakes(shell, wheels, axes):
+    """Separate the brake caliper from the disc, which share one material per axle in the donor.
+
+    Split by distance from the hub — see [CALIPER_RADIUS_FRAC] for the measurement that justifies
+    the threshold. Both the front and rear brake materials go through it, so all four wheels end up
+    with a disc and a caliper the app can colour independently; splitting only the front left the
+    rear calipers to be swept up by the barrel pass and rendered as wheel.
+    """
+    _, width_axis, _, _ = axes
+    slots = {m.name: i for i, m in enumerate(shell.data.materials) if m}
+    sources = {i for n, i in slots.items() if n.startswith(("Brakes_Front", "Brakes_Rear"))}
+    if not sources:
+        log("brakes: no Brakes_Front/Rear material, nothing to split")
+        return
+    frames = wheel_frames(wheels, axes)
+    if not frames:
+        log("brakes: no wheels to measure against, leaving the material intact")
+        return
+
+    disc_mat = make_material("Brakes_Disc", (0.55, 0.56, 0.58, 1.0), metallic=0.9, roughness=0.30)
+    caliper_mat = make_material("Brakes_Caliper", (0.60, 0.10, 0.10, 1.0),
+                                metallic=0.25, roughness=0.45)
+    disc_slot = ensure_slot(shell, disc_mat)
+    caliper_slot = ensure_slot(shell, caliper_mat)
+
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+    bm.faces.ensure_lookup_table()
+    mw = shell.matrix_world
+    discs = calipers = 0
+    for f in bm.faces:
+        if f.material_index not in sources:
+            continue
+        p = mw @ f.calc_center_median()
+        centre, radius, _ = min(frames, key=lambda fr: (fr[0] - p).length)
+        radial = Vector([0 if k == width_axis else p[k] - centre[k] for k in range(3)]).length
+        if radial / max(1e-6, radius) > CALIPER_RADIUS_FRAC:
+            f.material_index = caliper_slot
+            calipers += 1
+        else:
+            f.material_index = disc_slot
+            discs += 1
+    bm.to_mesh(shell.data)
+    bm.free()
+    log(f"brakes: split -> Brakes_Disc {discs}f, Brakes_Caliper {calipers}f")
+
+
+def split_wheel_barrel(shell, wheels, axes):
+    """Give the wheel barrel a material of its own.
+
+    The ring inside the tyre is painted with the *body* material in the donor model, so recolouring
+    the car recoloured the wheels with it — a red car got red wheels. Selection is a cylinder test
+    against each wheel's own bounding box: inside the tyre it is wheel, outside it is bodywork.
+    """
+    _, width_axis, _, _ = axes
+    frames = wheel_frames(wheels, axes)
+    if not frames:
+        log("barrel: no wheels to measure against")
+        return
+    barrel_mat = make_material("Wheel_Barrel", (0.12, 0.12, 0.13, 1.0),
+                               metallic=0.15, roughness=0.75)
+    barrel_slot = ensure_slot(shell, barrel_mat)
+
+    # The disc and the caliper sit inside the same cylinder and must survive it — they were
+    # split out immediately before this and would otherwise be swallowed whole.
+    protected = {i for i, m in enumerate(shell.data.materials)
+                 if m and m.name.startswith(("Brakes_Disc", "Brakes_Caliper"))}
+
+    bm = bmesh.new()
+    bm.from_mesh(shell.data)
+    bm.faces.ensure_lookup_table()
+    mw = shell.matrix_world
+    moved = 0
+    for f in bm.faces:
+        if f.material_index in protected:
+            continue
+        p = mw @ f.calc_center_median()
+        for centre, radius, width in frames:
+            axial = abs(p[width_axis] - centre[width_axis])
+            radial = (Vector([0 if k == width_axis else p[k] - centre[k] for k in range(3)])).length
+            if radial <= radius * BARREL_RADIUS_FRAC and axial <= width * BARREL_WIDTH_FRAC / 2:
+                f.material_index = barrel_slot
+                moved += 1
+                break
+    bm.to_mesh(shell.data)
+    bm.free()
+    log(f"barrel: {moved} shell faces inside the wheel cylinders -> Wheel_Barrel")
+
+
 # ---------------------------------------------------------------- axis derivation
 
 def derive_axes(lo, hi):
@@ -495,6 +649,26 @@ def main():
 
     # Wheels split into corners by position; the app never relies on which is which here, but a
     # human reading the tree does, and the names are part of the agreed output structure.
+    # The donor model's wheel-arch liners are one object covering all four arches, and its name
+    # trips the wheel hints. Left in the wheel group it lands in whichever corner its centre falls
+    # in and takes that wheel's bounding box with it — which is what put the front-right hotspot in
+    # the middle of the cabin, and what made the barrel cylinder below swallow the whole body.
+    #
+    # Moved to the body rather than deleted: they are the inside of the wheel arches, and without
+    # them the wheel wells are open and the motor shows straight through them. Judged by size,
+    # since a wheel is a wheel and anything twice their size is not one.
+    if groups["wheel"]:
+        sizes = [max(o.dimensions) for o in groups["wheel"]]
+        typical = sorted(sizes)[len(sizes) // 2]
+        keep = []
+        for o, size in zip(groups["wheel"], sizes):
+            if size > typical * 2.0:
+                log(f"  {o.name[:30]:30s} {size:.2f} m vs typical {typical:.2f} m -> body")
+                groups["body"].append(o)
+            else:
+                keep.append(o)
+        groups["wheel"] = keep
+
     wheels = {}
     if groups["wheel"]:
         for o in groups["wheel"]:
@@ -514,6 +688,13 @@ def main():
         raise SystemExit("ABORT: no bodywork mesh identified")
     log(f"Body_Shell {tri_count(shell):,}t   Glass "
         f"{tri_count(glass):,}t" if glass else f"Body_Shell {tri_count(shell):,}t   Glass -")
+
+    # ---- 2b. repairs and material splits, before anything is carved out of the shell so the
+    # cutaway zones inherit the results rather than a stale copy of them.
+    recalculate_normals([shell, glass, *wheels.values()])
+    log("normals recalculated outward on shell, glass and wheels")
+    split_brakes(shell, wheels, axes)
+    split_wheel_barrel(shell, wheels, axes)
 
     # ---- 3/4. internals, measured against the SHELL rather than the whole car
     slo, shi = world_bbox([shell])
@@ -594,6 +775,10 @@ def main():
                                      metallic=0.5, roughness=0.4, emission_strength=0.8))
     assign_only(battery, make_material("MatBattery", (0.60, 0.64, 0.70, 1.0),
                                        metallic=0.4, roughness=0.5, emission_strength=0.8))
+
+    # The imported components carry their own winding; make it outward like everything else, or
+    # the single-sided pass below will punch holes in them.
+    recalculate_normals([motor, battery, *zones.values()])
 
     # Single-sided everywhere. A double-sided blended surface shows the car's far side through its
     # near side, which is the "silver ghost" look rather than a clean cutaway.
