@@ -68,6 +68,19 @@ interface CarRenderer {
      *
      * Read this from a composable that invalidates every frame; it is a live projection, not
      * a constant.
+     *
+     * Step 2 additions to this contract, now that a real implementation exists
+     * ([Car3dRenderer.screenPositionOf]):
+     * - Coordinates are px, top-left origin, relative to the area [Render] was given. Callers
+     *   must place their overlay in the **same** `Box`, at the **same** size, as [Render] — the
+     *   two must share a coordinate space for this to mean anything.
+     * - It is **not** Compose-observable: calling it registers no snapshot read, so a composable
+     *   that only reads this once will not recompose as the camera moves. Callers must poll it
+     *   from a frame loop (e.g. `withFrameNanos`) themselves.
+     * - Must be cheap enough to call 8x per frame — a 3D implementation should keep this to a
+     *   couple of matrix-vector multiplies plus one projection, not a scene traversal.
+     * - Must never throw and must never return a stale value once the underlying model/camera
+     *   is gone (null, not a frozen last-known point).
      */
     fun screenPositionOf(hotspot: Hotspot): Offset?
 }

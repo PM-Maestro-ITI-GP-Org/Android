@@ -16,15 +16,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import com.google.android.filament.Renderer
 import com.google.android.filament.View as FilamentView
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 import dev.romainguy.kotlin.math.Float3
+import dev.romainguy.kotlin.math.Float4
 import dev.romainguy.kotlin.math.Quaternion
 import dev.romainguy.kotlin.math.lookAt
 import dev.romainguy.kotlin.math.normalize
 import io.github.sceneview.Scene
 import io.github.sceneview.SceneView
+import io.github.sceneview.collision.Vector3
 import io.github.sceneview.model.renderableNames
 import io.github.sceneview.node.CameraNode
 import io.github.sceneview.node.ModelNode
@@ -149,6 +153,20 @@ class Car3dRenderer internal constructor(
     private var cameraNode: CameraNode? by mutableStateOf(null)
     private var modelNode: ModelNode? by mutableStateOf(null)
 
+    /**
+     * Resolved once per model load (see the `LaunchedEffect` in [Render]). Plain `var`, not
+     * `mutableStateOf`: [screenPositionOf] is read from a frame loop during the layout/draw
+     * phases (see [HotspotOverlay][com.motorguard.ivi.ui.diagnostics.component.HotspotOverlay]),
+     * never from composition, so there is nothing for Compose to observe here — wrapping it in
+     * snapshot state would only add a write-during-layout/read-during-layout hazard for free.
+     */
+    private var geometry: HotspotGeometry? = null
+
+    /** Compose-layout size of the Scene in px, to rescale `worldToScreenPoint`'s viewport-space
+     *  px into the Compose px the overlay draws in (see [screenPositionOf]). Same non-observable
+     *  reasoning as [geometry]. */
+    private var renderSizePx: IntSize = IntSize.Zero
+
     @Composable
     override fun Render(
         // Step 3: if (focus != null) animate camera to focusPose(focus) else heroPose().
@@ -158,20 +176,6 @@ class Car3dRenderer internal constructor(
         onBackgroundTap: () -> Unit,
         modifier: Modifier,
     ) {
-        // Every Filament object below is created by a remember* helper and destroyed by its
-        // matching onDispose — that is the entire lifecycle-safety story for this file (see
-        // the design doc §5). cameraNode/modelNode are the one exception allowed to outlive a
-        // single recomposition, so they are nulled out explicitly when the Scene leaves
-        // composition: Step 2's screenPositionOf can be read from a frame callback that
-        // outlives the Scene by a frame, and a stale native pointer there is a crash, not an
-        // exception.
-        DisposableEffect(Unit) {
-            onDispose {
-                cameraNode = null
-                modelNode = null
-            }
-        }
-
         val engine = rememberEngine()
         val modelLoader = rememberModelLoader(engine)
         val materialLoader = rememberMaterialLoader(engine)
@@ -228,6 +232,9 @@ class Car3dRenderer internal constructor(
                 applyOrientation(node)
                 modelNode = node
                 childNodes += node
+                val geo = HotspotGeometry.resolve(node)
+                geometry = geo
+                geo.report.forEach { Log.i(TAG, "hotspot geometry: $it") }
                 frameHero(camera, node, distanceScale = 1f)
                 Log.i(TAG, "car renderables: " + node.model.renderableNames.joinToString())
                 state = CarRenderState.Ready
@@ -240,8 +247,28 @@ class Car3dRenderer internal constructor(
             }
         }
 
+        // Every Filament object below is created by a remember* helper and destroyed by its
+        // matching onDispose — that is the entire lifecycle-safety story for this file (see
+        // the design doc §5). cameraNode/modelNode/geometry/renderSizePx are the one exception
+        // allowed to outlive a single recomposition, so they are nulled out explicitly when the
+        // Scene leaves composition: screenPositionOf can be read from a frame callback
+        // (HotspotOverlay's LaunchedEffect) that outlives the Scene by a frame, and a stale
+        // native pointer there is a crash, not an exception. Registered here, immediately before
+        // `Scene(...)`, rather than at the top of `Render`: Compose forgets remembered objects in
+        // REVERSE declaration order, so this DisposableEffect's onDispose — which only nulls out
+        // plain fields, touching no native object — runs FIRST, before rememberNodes/
+        // rememberEngine tear down the Filament objects those fields point into.
+        DisposableEffect(Unit) {
+            onDispose {
+                cameraNode = null
+                modelNode = null
+                geometry = null
+                renderSizePx = IntSize.Zero
+            }
+        }
+
         Scene(
-            modifier = modifier,
+            modifier = modifier.onSizeChanged { renderSizePx = it },
             engine = engine,
             modelLoader = modelLoader,
             materialLoader = materialLoader,
@@ -276,8 +303,29 @@ class Car3dRenderer internal constructor(
         )
     }
 
-    override fun screenPositionOf(hotspot: Hotspot): Offset? =
-        null // Step 2: cameraNode.worldToScreenPoint(anchor)
+    override fun screenPositionOf(hotspot: Hotspot): Offset? {
+        val cam = cameraNode ?: return null
+        val model = modelNode ?: return null
+        val local = geometry?.anchorOf(hotspot) ?: return null
+
+        val w4 = model.worldTransform * Float4(local, 1f)
+
+        // worldToScreenPoint has NO behind-camera rejection: for w < 0 it silently returns a
+        // point mirrored through the screen centre. Filament view space looks down -Z, so a
+        // visible point has viewZ < -near. This test is the rejection (Step 2 design doc §0.1).
+        val v4 = cam.viewTransform * Float4(w4.x, w4.y, w4.z, 1f)
+        if (-v4.z <= cam.near) return null
+
+        val vp = cam.viewport ?: return null // null until the Scene attaches its View
+        if (vp.width <= 0 || vp.height <= 0) return null
+        val size = renderSizePx
+        if (size.width == 0 || size.height == 0) return null
+
+        // Returns TOP-LEFT origin already: SceneView applies `y = viewport.height - y`
+        // internally. DO NOT flip again. `.z` of the result is always 0 and must not be read.
+        val p = cam.worldToScreenPoint(Vector3(w4.x, w4.y, w4.z))
+        return Offset(p.x * size.width / vp.width, p.y * size.height / vp.height)
+    }
 }
 
 /** Remembers a [Car3dRenderer], re-created only if [modelAsset] changes. */

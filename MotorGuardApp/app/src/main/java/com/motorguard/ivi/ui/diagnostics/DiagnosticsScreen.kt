@@ -1,11 +1,17 @@
 package com.motorguard.ivi.ui.diagnostics
 
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,92 +41,148 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.components.Pill
+import com.motorguard.ivi.ui.diagnostics.component.HotspotOverlay
+import com.motorguard.ivi.ui.diagnostics.debug.FakeDataControlPanel
 import com.motorguard.ivi.ui.diagnostics.render.CarRenderState
 import com.motorguard.ivi.ui.diagnostics.render.rememberCar3dRenderer
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
 
 /**
- * First-draft wide-landscape composition for the Diagnostics tab: a 3D car stage on the left,
- * three reserved panels on the right (health ring / component detail / alerts — Steps 4-5).
- * Designed against the 1828 x 1026 dp area the fragment container leaves after the rail and
- * status bar. No ViewModel yet: everything on screen is either static chrome or driven by
- * [com.motorguard.ivi.ui.diagnostics.render.Car3dRenderer]'s own load state.
- *
- * // Step 2: hoist focus + severity from DiagnosticsViewModel
+ * Fragment-facing entry point: binds [DiagnosticsViewModel] and hands its state down to
+ * [DiagnosticsScreenContent]. Kept separate from the content composable so `@Preview` never
+ * needs a `ViewModelStoreOwner` — `viewModel()` throws with a null owner — and so opening this
+ * screen in the IDE renderer never boots [VehicleData]'s process-lifetime ticker.
  */
 @Composable
-fun DiagnosticsScreen(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 28.dp, vertical = 22.dp),
-    ) {
-        Row(
+fun DiagnosticsScreen(
+    modifier: Modifier = Modifier,
+    viewModel: DiagnosticsViewModel = viewModel(),
+) {
+    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+    DiagnosticsScreenContent(
+        ui = ui,
+        debugControls = viewModel.debugControls,
+        onHotspotTap = viewModel::onHotspotTap,
+        onBackgroundTap = viewModel::onBackgroundTap,
+        onStageLongPress = viewModel::onStageLongPress,
+        onDebugDismiss = viewModel::onDebugPanelDismiss,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Wide-landscape composition for the Diagnostics tab: a 3D car stage on the left, three reserved
+ * panels on the right (health ring / component detail / alerts — Steps 4-5), and the debug drawer
+ * as the top-most layer. Designed against the 1828 x 1026 dp area the fragment container leaves
+ * after the rail and status bar.
+ *
+ * Pure function of [ui] plus a handful of callbacks — no ViewModel reference, no fake-source
+ * reference — so it is what both [DiagnosticsScreen] and every `@Preview` below actually render.
+ */
+@Composable
+internal fun DiagnosticsScreenContent(
+    ui: DiagnosticsUiState,
+    /** Null in previews: previews render chrome only, with nothing wired to drive it. */
+    debugControls: VehicleDebugControls?,
+    onHotspotTap: (Hotspot) -> Unit,
+    onBackgroundTap: () -> Unit,
+    onStageLongPress: () -> Unit,
+    onDebugDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(horizontal = 28.dp, vertical = 22.dp),
         ) {
-            Column {
-                Text(
-                    text = "Diagnostics",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Text(
-                    text = "Porsche Mission E",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "Diagnostics",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = "Porsche Mission E",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Pill(text = "Preview", bg = MaterialTheme.colorScheme.primary)
             }
-            Spacer(Modifier.weight(1f))
-            Pill(text = "Preview", bg = MaterialTheme.colorScheme.primary)
+
+            Spacer(Modifier.height(18.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                CarStage(
+                    ui = ui,
+                    onHotspotTap = onHotspotTap,
+                    onBackgroundTap = onBackgroundTap,
+                    onLongPress = onStageLongPress,
+                    modifier = Modifier
+                        .weight(1.35f)
+                        .fillMaxHeight(),
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    // These three panels are exactly the Step 5 health ring, Step 4 live card and
+                    // Step 5 alert list. Their relative weights are the layout reservation for them.
+                    ReservedPanel(
+                        title = "Vehicle health",
+                        hint = "Health score appears here once telemetry is connected",
+                        modifier = Modifier.weight(1f),
+                    )
+                    ReservedPanel(
+                        title = "Component detail",
+                        hint = "Select a component on the car to inspect it",
+                        modifier = Modifier.weight(1.2f),
+                    )
+                    ReservedPanel(
+                        title = "Alerts",
+                        hint = "Severity alerts appear here",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
 
-        Spacer(Modifier.height(18.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            CarStage(
-                modifier = Modifier
-                    .weight(1.35f)
-                    .fillMaxHeight(),
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+        // Top-most layer, so it sits over both the car stage and the reserved panels. Null in
+        // previews (see [debugControls]'s KDoc) — nothing to drive it with there anyway.
+        if (debugControls != null) {
+            AnimatedVisibility(
+                visible = ui.debugPanelVisible,
+                enter = fadeIn() + slideInHorizontally { it },
+                exit = fadeOut() + slideOutHorizontally { it },
             ) {
-                // These three panels are exactly the Step 5 health ring, Step 4 live card and
-                // Step 5 alert list. Their relative weights are the layout reservation for them.
-                ReservedPanel(
-                    title = "Vehicle health",
-                    hint = "Health score appears here once telemetry is connected",
-                    modifier = Modifier.weight(1f),
-                )
-                ReservedPanel(
-                    title = "Component detail",
-                    hint = "Select a component on the car to inspect it",
-                    modifier = Modifier.weight(1.2f),
-                )
-                ReservedPanel(
-                    title = "Alerts",
-                    hint = "Severity alerts appear here",
-                    modifier = Modifier.weight(1f),
-                )
+                FakeDataControlPanel(controls = debugControls, onDismiss = onDebugDismiss)
             }
         }
     }
@@ -162,10 +224,24 @@ private fun ReservedPanel(title: String, hint: String, modifier: Modifier = Modi
  *    sets this explicitly) so that everything below composites visually on top of it.
  * 3. A Canvas that rounds the corners the SurfaceView cannot clip and redraws GlassCard's
  *    border on top, so the stage reads as one more glass panel among the others.
- * 4. A loading/failure scrim that dissolves once the model is ready.
+ * 4. A gesture layer that turns a plain tap into [onBackgroundTap] and a long-press into
+ *    [onLongPress] (the debug-panel reveal). Compose hit-tests topmost-first, so this consumes
+ *    the touch down before the `Scene` underneath (layer 2) ever sees it — Step 1's
+ *    `Scene(onTouchEvent = …)` background-tap hook is therefore dead code as of Step 2. Left in
+ *    place rather than deleted: it is a hook into hit-testing against the model itself, which
+ *    Step 3 may want back for tap-to-focus.
+ * 5. [HotspotOverlay] — the 8 dots. Declared after layer 4, so a dot gets first refusal on a tap
+ *    over the gesture layer's blanket background handler.
+ * 6. A loading/failure scrim that dissolves once the model is ready.
  */
 @Composable
-private fun CarStage(modifier: Modifier = Modifier) {
+private fun CarStage(
+    ui: DiagnosticsUiState,
+    onHotspotTap: (Hotspot) -> Unit,
+    onBackgroundTap: () -> Unit,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val cornerRadius = 26.dp
     val page = MaterialTheme.colorScheme.background
     // The opaque colour a GlassCard visually resolves to. Filament clears to exactly this, so
@@ -182,7 +258,11 @@ private fun CarStage(modifier: Modifier = Modifier) {
                 .background(stageColor),
         )
 
-        renderer.Render(focus = null, onBackgroundTap = { }, modifier = Modifier.fillMaxSize())
+        renderer.Render(
+            focus = ui.focusedHotspot,
+            onBackgroundTap = onBackgroundTap,
+            modifier = Modifier.fillMaxSize(),
+        )
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val r = cornerRadius.toPx()
@@ -207,6 +287,25 @@ private fun CarStage(modifier: Modifier = Modifier) {
                 style = Stroke(width = 1.dp.toPx()),
             )
         }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { onBackgroundTap() },
+                        onLongPress = { onLongPress() },
+                    )
+                },
+        )
+
+        HotspotOverlay(
+            renderer = renderer,
+            state = ui,
+            active = renderer.state is CarRenderState.Ready,
+            onHotspotTap = onHotspotTap,
+            modifier = Modifier.fillMaxSize(),
+        )
 
         val scrimAlpha by animateFloatAsState(
             targetValue = if (renderer.state is CarRenderState.Ready) 0f else 1f,
@@ -259,12 +358,15 @@ private fun CarStage(modifier: Modifier = Modifier) {
 }
 
 // Previews show only the Loading/Failed chrome (Filament doesn't run in the IDE renderer) —
-// exactly why that chrome has to look intentional on its own.
+// exactly why that chrome has to look intentional on its own. `debugControls = null` and a
+// literal [DiagnosticsUiState] keep these independent of both `viewModel()` and [VehicleData].
 
 @Preview(name = "Day", widthDp = 1828, heightDp = 1026)
 @Composable
 private fun DiagnosticsScreenDayPreview() {
-    MotorGuardTheme { DiagnosticsScreen() }
+    MotorGuardTheme {
+        DiagnosticsScreenContent(DiagnosticsUiState(), null, {}, {}, {}, {})
+    }
 }
 
 @Preview(
@@ -275,5 +377,7 @@ private fun DiagnosticsScreenDayPreview() {
 )
 @Composable
 private fun DiagnosticsScreenNightPreview() {
-    MotorGuardTheme { DiagnosticsScreen() }
+    MotorGuardTheme {
+        DiagnosticsScreenContent(DiagnosticsUiState(), null, {}, {}, {}, {})
+    }
 }
