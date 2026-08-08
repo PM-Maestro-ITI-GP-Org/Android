@@ -251,7 +251,9 @@ object Car3dTuning {
      * `Zone_Battery_PORLQW` and friends — and missing those would leave the doors and rear quarter
      * the old colour while the rest of the car changed.
      */
-    val PAINT_MATERIALS = setOf("PORLQW", "PORMBB", "PORPMB", "Material_55", "Glow_Front")
+    val PAINT_MATERIALS = setOf(
+        "PORLQW", "PORMBB", "PORPMB", "Material_55", "Glow_Front", "Doorsill",
+    )
 
     /**
      * The wheel face: the spoke star AND the fine turbine blades between the spokes. One material
