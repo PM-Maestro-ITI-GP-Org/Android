@@ -21,60 +21,81 @@ PNG bytes. A physical phone may also be attached; target the emulator explicitly
 29 unit tests: `SeverityEvaluatorTest` (11), `SignalStateTest` (3), `TireTempSeverityTest` (5),
 `AlertTrackingTest` (10).
 
+**The model is not in git.** `app/src/main/assets/car_model.glb` is gitignored, so a fresh clone
+renders nothing until you run `./scripts/select-car-model.sh 2` to install
+`porsche_mission_e_diag_v2.glb`. Anything below that mentions material names assumes v2.
+
+Regenerate the model itself with:
+
+```bash
+blender --background --python vehicle3dModel/tools/prep_car.py -- vehicle3dModel/porsche_mission_e/porsche_mission_e_texture1k.glb vehicle3dModel/porsche_mission_e/porsche_mission_e_diag_v2.glb --motor vehicle3dModel/porsche_mission_e/motor_battery_models/ac-09_induction_motor.glb --battery vehicle3dModel/porsche_mission_e/motor_battery_models/tesla_batterie_pack_v2.glb
+```
+
 ## What exists
 
 | Area | Where |
 |---|---|
 | Domain (unchanged seam for Phase 2) | `core/vehicle-data-api`, `core/vehicle-data-fake` |
 | 3D car stage, camera, occlusion, rotation | `ui/diagnostics/render/Car3dRenderer.kt` |
+| Cutaway zones, faded on focus | `ui/diagnostics/render/CutawayZones.kt` |
 | Anchors derived from mesh geometry | `ui/diagnostics/render/HotspotGeometry.kt` |
 | Hotspot dots, projection, tappability | `ui/diagnostics/component/HotspotOverlay.kt` |
 | Telemetry card, four SignalState renderings | `ui/diagnostics/component/ComponentDetailCard.kt` |
 | Health ring, alert list | `ui/diagnostics/component/HealthRing.kt`, `AlertList.kt` |
 | Alert dismiss / re-alert rules | `ui/diagnostics/VehicleAlert.kt` (pure, unit-tested) |
-| Fake-data debug panel (long-press the ring) | `ui/diagnostics/debug/FakeDataControlPanel.kt` |
+| Fake-data panel + live paint picker | `ui/diagnostics/debug/FakeDataControlPanel.kt` |
 | Blender asset pipeline | `vehicle3dModel/tools/` — see its README |
+| Stage backdrop textures | `vehicle3dModel/tools/make_backdrop.py` |
 
-Every tuning number lives in one place per concern: `Car3dTuning` (camera, occlusion, quality),
-`HotspotGeometry.Tuning` (anchors), `HotspotTokens` (dot appearance), `SeverityThresholds` (domain).
+Every tuning number lives in one place per concern: `Car3dTuning` (camera, occlusion, lighting,
+livery, quality), `HotspotGeometry.Tuning` (anchors), `CutawayZones.Tuning` (fade),
+`HotspotTokens` (dot appearance), `SeverityThresholds` (domain).
+
+## Colour, and how to change it
+
+`Car3dTuning.Livery` holds five slots — body, rim, rim inner, brake disc, caliper — each with its
+own finish. `DEFAULT_LIVERY` is what the car starts in; the debug panel (long-press the health
+ring, scroll to "Vehicle paint") writes straight to `Car3dRenderer.livery`, so a colour can be
+judged on the real render without a rebuild.
+
+The five slots exist because the v2 model splits the materials for them. Before that split the
+disc and caliper shared one material, and the wheel barrel was painted with the *body* material —
+so recolouring the car recoloured its wheels, and a red car got red wheels.
+
+**Never give the rim the body colour.** Tried, rejected: it reads as a toy, and the rim stops
+separating from the arch behind it. Accents belong on the caliper, which is where real cars put
+them.
 
 ## Open items, most consequential first
 
-**1. The app does not drive the cutaway zones.** `porsche_mission_e_diag_v1.glb` contains
-`Zone_Motor` and `Zone_Battery` — patches of bodywork exported BLEND so they can fade, opening a
-window onto the component beneath while the rest of the car stays opaque and textured. Nothing in
-`Car3dRenderer` touches them yet, so the car simply looks normal. Wiring it means finding those
-renderables and animating their material alpha when the matching hotspot is focused.
+**1. `FORCE_DOUBLE_SIDED` is still on, and the model is why.** `prep_car.py` recalculates normals
+outward at export, but `recalc_face_normals` can only agree a winding *within* a connected island;
+an island that is closed and entirely inverted comes out backwards regardless. Enough of the donor
+Porsche is built that way that culling leaves holes — with the flag off, the rear wheels show the
+motor straight through their spokes. Turning it off needs a model whose winding is right
+everywhere, and the check is to look at a rear wheel. Costs a little fill, and it is why
+`CutawayZones.Tuning.OPEN_ALPHA` is halved (both faces of a zone contribute).
 
-**2. Anchors regress with the new model, and it is currently installed.** `HotspotGeometry`
-resolves anchors from mesh names (`geo_tire*`, `geo_brakes_front*`, `geo_doors*`), which the
-Blender merge destroys. Confirmed on device — all eight fall back to the estimate table:
-
-```
-TIRES: expected 4, got 0, using FALLBACK for all 4
-BRAKES / DOORS: no geo_* mesh, using FALLBACK
-```
-
-Teaching `HotspotGeometry.Tuning` the new names (`Wheel_FL`…`Wheel_RR`, `Comp_Motor`,
-`Comp_Battery`) fixes it and would make motor and battery **better** than today, since those two
-have only ever had estimated positions. Revert meanwhile with `./scripts/select-car-model.sh 2`.
-
-**3. WCAG AA fails in day mode for the semantic colours.** Measured, not guessed:
+**2. WCAG AA fails in day mode for the semantic colours.** Measured, not guessed:
 `Tokens.Day.success` 2.60:1, `caution` 2.39:1, `critical` 3.85:1 against the light card — all
 below the 4.5:1 floor. Every de-emphasised alpha in `ui/diagnostics/` was already raised to the
 measured minimum, but these three are in `ui/theme/Tokens.kt`, which other fragment owners share,
 so the change was reported rather than made. Passing values are roughly 30% darker: `#16824c`,
 `#976c15`, `#cb443c`. The alternative is keeping the diagnostics stage dark in both themes.
 
-**4. Attribution is incomplete.** `Car3dTuning.MODEL_CREDIT` names only the Porsche author. The
+**3. Attribution is incomplete.** `Car3dTuning.MODEL_CREDIT` names only the Porsche author. The
 derived model is a CC-BY-4.0 derivative of **three** works (Porsche shell, AC-09 motor, Tesla
 pack) and must credit all three before reaching users. See `vehicle3dModel/MODEL_LICENSE.md`.
 
-**5. Performance is a signal, not a verdict.** Measured across four consecutive focus transitions
-on the emulator: post-processing + FXAA on gives 43.5% janky frames and a 48 ms p50; off gives
-7.9% and 25 ms. Kept **on**, because without it the door seams visibly stair-step. The emulator's
-integrated AMD GPU is not the RPi 5's VideoCore VII, so re-measure on target (spec T13) before
-deciding. Both constants are in `Car3dTuning`.
+**4. Performance needs re-measuring.** The numbers below predate the lighting change, the
+backdrop quad and the v2 model, so treat them as a shape rather than a result: post-processing +
+FXAA on gave 43.5% janky frames and a 48 ms p50; off gave 7.9% and 25 ms. Kept **on**, because
+without it the door seams visibly stair-step. The emulator's integrated AMD GPU is not the RPi 5's
+VideoCore VII, so re-measure on target (spec T13) before deciding. Both constants are in
+`Car3dTuning`.
+
+**5. The side sill stays silver in every livery.** It is a separate textured material on the real
+car too, so it was left alone. Add it to `PAINT_MATERIALS` if it should follow the body.
 
 ## Decisions worth not re-litigating
 
@@ -88,6 +109,14 @@ deciding. Both constants are in `Car3dTuning`.
   tap from the one in front of it is the defect that made them untappable originally.
 - **Occlusion is computed live from the camera every frame**, never baked, specifically so touch
   rotation works — which it now does.
+- **Rotation is free only with nothing focused.** A focused view is a framing, not a turntable:
+  drag past the bodywork and the eye ends up inside the cabin looking out through the seats. Each
+  component clamps to its own `orbitLimitDeg`, and the two orbits are separate values so
+  unfocusing returns the overview to the angle the user left it at.
+- **The stage backdrop is a quad inside the scene**, not a Compose background. The stage is an
+  opaque `SurfaceView`, which punches through the window wherever it draws, so Compose content
+  *behind* it is erased. Filament's own alternative, a skybox, needs a KTX cubemap and would feed
+  the image back into the lighting.
 - **SceneView is pinned to 2.3.0.** It is the last release built against Kotlin 2.0.21. Every 4.x
   needs Kotlin 2.3+, which would force a toolchain bump across build files other owners share.
 - **`BackHandler` will not compile here** — `activity-compose` is runtime-only on this classpath.
