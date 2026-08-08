@@ -3,6 +3,7 @@ package com.motorguard.ivi.ui.diagnostics.render
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 
 /**
@@ -109,4 +110,18 @@ interface CarRenderer {
      * A renderer with a fixed viewpoint (a 2D elevation, say) takes the default and ignores it.
      */
     fun rotateBy(deltaDegrees: Float) = Unit
+
+    /**
+     * Paint the component behind [hotspot] in [color] — the severity colour the dot and the card
+     * already use, applied to the part itself.
+     *
+     * Only the parts the diagnostics model plants inside the bodywork (the motor and the battery)
+     * have a material of their own to recolour; anything belonging to the donor car keeps its own
+     * paint, and a renderer is free to ignore hotspots it has no such part for. Idempotent and
+     * cheap: callers re-send the whole set whenever severities change rather than diffing.
+     *
+     * Not Compose-observable and not animated — severity changes are discrete, and a component
+     * that eased from green to red would spend the transition claiming a severity it never had.
+     */
+    fun setComponentColor(hotspot: Hotspot, color: Color) = Unit
 }
