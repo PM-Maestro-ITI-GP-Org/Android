@@ -68,7 +68,12 @@ class HotspotGeometry private constructor(
 
         /** Fraction of car height the BRAKES anchor is lifted above the front-axle centre, so
          *  the dot sits clear of the wheel well instead of buried in it. */
-        const val BRAKES_LIFT = 0.12f
+        /**
+         * Near zero on purpose. The front-brake meshes average to a point BETWEEN the wheels at
+         * axle height; lifting it from there walks the dot up onto the door skin, which reads as
+         * the brakes being somewhere they are not. Kept level with the discs themselves.
+         */
+        const val BRAKES_LIFT = 0.01f
 
         /** Used when a name-based resolution is unavailable. MOTOR and BATTERY always use
          *  these — see [resolve] step (7) for why neither has a real mesh to anchor to. */

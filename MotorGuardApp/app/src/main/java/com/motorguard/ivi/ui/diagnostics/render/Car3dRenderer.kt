@@ -112,12 +112,51 @@ object Car3dTuning {
     /** Spec §7 mandates 250 ms FastOutSlowIn for the focus transition. Do not retune. */
     const val FOCUS_MILLIS = 250
 
-    /** Eye distance from the ANCHOR = boundingRadius * this. */
-    const val FOCUS_DISTANCE_FACTOR = 1.35f
+    /**
+     * How one component is framed when focused.
+     *
+     * @param azimuthDeg swing from pure side-on toward the anchor's own end of the car. Small
+     *   values are side-on and flatten the part against the bodywork behind it; large values are
+     *   three-quarter and give depth.
+     * @param elevationDeg height above the horizon. Negative looks slightly UP at the vehicle,
+     *   which is the only honest way to present something mounted under the floor.
+     * @param distanceFactor eye distance from the anchor, as a multiple of the car's bounding
+     *   radius. Small parts want a small number; parts that span the vehicle want a large one or
+     *   the camera ends up inside them.
+     */
+    data class FocusFraming(
+        val azimuthDeg: Float,
+        val elevationDeg: Float,
+        val distanceFactor: Float,
+    )
 
-    /** Degrees swung from pure side-on toward the anchor's own end of the car. */
-    const val FOCUS_AZIMUTH_DEG = 30f
-    const val FOCUS_ELEVATION_DEG = 14f
+    /**
+     * Per-component framing, tuned against the real render rather than shared.
+     *
+     * A single set of angles cannot serve all eight: a wheel is a small object best read almost
+     * side-on and near eye level, while the battery pack spans the whole floor and is invisible
+     * from anywhere above the sill. The earlier one-size framing put the battery camera on the
+     * door skin and cropped the doors down to glass and roof.
+     */
+    val FOCUS_FRAMING: Map<Hotspot, FocusFraming> = mapOf(
+        // Nearly side-on and low, so the sidewall and the wheel face read rather than the arch.
+        Hotspot.TIRE_FL to FocusFraming(16f, 5f, 1.15f),
+        Hotspot.TIRE_FR to FocusFraming(16f, 5f, 1.15f),
+        Hotspot.TIRE_RL to FocusFraming(16f, 5f, 1.15f),
+        Hotspot.TIRE_RR to FocusFraming(16f, 5f, 1.15f),
+        // Pulled back enough to hold a whole wheel, since the disc itself is behind the spokes.
+        Hotspot.BRAKES to FocusFraming(24f, 7f, 1.75f),
+        // Below the horizon looking up at the floor pan: the pack is under the floor, and any
+        // camera above the sill shows the door instead and quietly implies the wrong location.
+        Hotspot.BATTERY to FocusFraming(14f, -6f, 2.15f),
+        // Rear three-quarter, where the drive unit sits.
+        Hotspot.MOTOR to FocusFraming(42f, 9f, 1.7f),
+        // Side-on and wide: the subject is the whole flank and its four openings, not one panel.
+        Hotspot.DOORS to FocusFraming(6f, 6f, 2.3f),
+    )
+
+    /** Used if a hotspot is ever added without a framing entry. */
+    val FOCUS_FRAMING_DEFAULT = FocusFraming(30f, 14f, 1.35f)
 
     /** |lateral| below this is a centreline component: the camera keeps the side it is already on. */
     const val FOCUS_SIDE_THRESHOLD = 0.20f
@@ -685,8 +724,9 @@ private fun focusPose(
     // forward term for a dead-centre anchor and quietly change the framing.
     val lonSign = if (geo.longitudinalOf(hotspot) >= 0f) 1f else -1f
 
-    val az = Math.toRadians(Car3dTuning.FOCUS_AZIMUTH_DEG.toDouble()).toFloat()
-    val el = Math.toRadians(Car3dTuning.FOCUS_ELEVATION_DEG.toDouble()).toFloat()
+    val framing = Car3dTuning.FOCUS_FRAMING[hotspot] ?: Car3dTuning.FOCUS_FRAMING_DEFAULT
+    val az = Math.toRadians(framing.azimuthDeg.toDouble()).toFloat()
+    val el = Math.toRadians(framing.elevationDeg.toDouble()).toFloat()
     val dir = normalize(
         right * (sideSign * cos(el) * cos(az)) +
             fwd * (lonSign * cos(el) * sin(az)) +
@@ -695,7 +735,7 @@ private fun focusPose(
     // The user's orbit is applied about the car's OWN up axis, so dragging behaves identically
     // whether the view is framing the whole car or one component.
     val orbited = Quaternion.fromAxisAngle(up, azimuthOffsetDeg).let { q -> rotateVector(q, dir) }
-    val d = boundingRadius(node) * Car3dTuning.FOCUS_DISTANCE_FACTOR
+    val d = boundingRadius(node) * framing.distanceFactor
     return CameraPose(eye = anchor + orbited * d, target = anchor)
 }
 
