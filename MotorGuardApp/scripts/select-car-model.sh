@@ -11,6 +11,9 @@
 #   ./scripts/select-car-model.sh --list   # just show what's available
 #   ./scripts/select-car-model.sh 2        # non-interactive: pick entry 2
 #
+# Component models under motor_battery_models/ are inputs to tools/prep_car.py, not
+# vehicles in their own right, so they are not offered here.
+#
 # Model library is found automatically: vehicle3dModel/ beside MotorGuardApp (in-repo) or
 # one level above it (outside the repo). Override with:
 #   CAR_MODEL_DIR=/path/to/models ./scripts/select-car-model.sh
@@ -44,7 +47,8 @@ fi
 # Collect candidates. -print0 so paths with spaces survive.
 models=()
 while IFS= read -r -d '' f; do models+=("$f"); done \
-  < <(find "$MODEL_DIR" -type f \( -iname '*.glb' -o -iname '*.gltf' \) -print0 | sort -z)
+  < <(find "$MODEL_DIR" -type f \( -iname '*.glb' -o -iname '*.gltf' \) \
+        -not -path '*/motor_battery_models/*' -print0 | sort -z)
 
 (( ${#models[@]} )) || die "no .glb or .gltf files under $MODEL_DIR"
 
