@@ -19,6 +19,7 @@ new spellings are set and the result is verified by check_glb.py rather than ass
 import math
 import sys
 
+import bmesh
 import bpy
 from mathutils import Vector
 
@@ -35,6 +36,14 @@ BATTERY_WIDTH_FRAC = 0.60      # of car width
 BATTERY_HEIGHT_FRAC = 0.15     # of car height; a real pack with brackets is ~0.16 m
 BATTERY_FLOOR_CLEARANCE = 0.02 # of car height, above the floor plane
 BATTERY_LON_FRAC = -0.02       # slightly rearward of centre, as real skateboard packs sit
+
+# How far beyond a component's own radius its cutaway zone reaches. Big enough that the window
+# clearly frames the part; small enough that it stays a window rather than half the car.
+# Just under 1.0 so the exporter writes alphaMode BLEND; see blendify().
+ZONE_RESTING_ALPHA = 0.99
+
+ZONE_RADIUS_FACTOR_MOTOR = 3.6
+ZONE_RADIUS_FACTOR_BATTERY = 1.15
 
 CAR_LENGTH_RANGE = (4.2, 4.8)  # metres
 DEFAULT_COMPONENT_TRIS = 6000  # per imported component after decimation
@@ -233,6 +242,75 @@ def make_material(name, base_rgba, metallic, roughness, emission_strength=0.0, b
             mat.show_transparent_back = False
         log(f"  material {name}: {', '.join(applied) or 'NO blend property found'}")
     return mat
+
+
+def split_zone(shell, centre, radius, name):
+    """Carve the faces of [shell] within [radius] of [centre] into their own object.
+
+    Done with bmesh rather than `mesh.separate`, because face-select flags set in object mode do
+    not survive Blender's edit-mode selection sync — the first attempt selected every face and
+    handed the entire shell over as the "zone". Duplicating and pruning each half explicitly
+    leaves no room for that ambiguity.
+
+    Purely geometric, so it is reproducible and does not depend on the topology of one particular
+    model — which is what makes it safe to automate where hand-picking panels would not be.
+    """
+    zone = shell.copy()
+    zone.data = shell.data.copy()
+    bpy.context.collection.objects.link(zone)
+    zone.name = name
+    zone.data.name = name + "_mesh"
+
+    def prune(obj, keep_inside):
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bm.faces.ensure_lookup_table()
+        mw = obj.matrix_world
+        doomed = [f for f in bm.faces
+                  if (((mw @ f.calc_center_median()) - centre).length <= radius) != keep_inside]
+        bmesh.ops.delete(bm, geom=doomed, context="FACES")
+        bm.to_mesh(obj.data)
+        bm.free()
+        return len(obj.data.polygons)
+
+    if prune(zone, keep_inside=True) == 0:
+        bpy.data.objects.remove(zone, do_unlink=True)
+        return None
+    prune(shell, keep_inside=False)
+    return zone
+
+
+def blendify(obj, tag):
+    """Give [obj] its own BLEND copies of whatever materials it inherited.
+
+    Copies rather than shared originals, because fading a zone must not fade the shell it was cut
+    from.
+
+    Alpha is 0.99, not 1.0, and that is not cosmetic. This Blender's glTF exporter decides
+    alphaMode from the alpha VALUE rather than from blend_method — at 1.0 it writes OPAQUE, and an
+    OPAQUE material can never be faded at runtime, which would make the whole cutaway impossible.
+    One percent of blend is invisible next to the shell, especially with backface culling on.
+    """
+    for i, src in enumerate(obj.data.materials):
+        if src is None:
+            continue
+        mat = src.copy()
+        mat.name = f"{tag}_{src.name}"
+        if hasattr(mat, "blend_method"):
+            try:
+                mat.blend_method = "BLEND"
+            except TypeError:
+                pass
+        if hasattr(mat, "surface_render_method"):
+            try:
+                mat.surface_render_method = "BLENDED"
+            except TypeError:
+                pass
+        bsdf = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes else None
+        if bsdf and "Alpha" in bsdf.inputs and not bsdf.inputs["Alpha"].is_linked:
+            bsdf.inputs["Alpha"].default_value = ZONE_RESTING_ALPHA
+        obj.data.materials[i] = mat
+    log(f"  {tag}: {len(obj.data.materials)} material(s) -> BLEND copies")
 
 
 def assign_only(obj, mat):
@@ -476,22 +554,57 @@ def main():
                     BATTERY_LON_FRAC * front_sign,
                     BATTERY_FLOOR_CLEARANCE + BATTERY_HEIGHT_FRAC / 2)
 
-    # ---- 5. materials, one per object
-    assign_only(shell, make_material("MatBodyShell", (0.42, 0.44, 0.47, 0.99),
-                                     metallic=0.7, roughness=0.25, blend=True))
+    # ---- 5. cutaway zones
+    #
+    # A localised transparent window, not a whole-car ghost. The shell keeps its real paint and
+    # textures and stays opaque; only the patch of bodywork over a component is separated out, so
+    # focusing that component can fade its patch and nothing else.
+    #
+    # Selection is geometric — faces whose centre falls within a radius of the component — so it
+    # is reproducible and needs no hand-picking of faces on this particular mesh.
+    zones = {}
+    for comp, zone_name, radius_factor in (
+        (motor, "Zone_Motor", ZONE_RADIUS_FACTOR_MOTOR),
+        (battery, "Zone_Battery", ZONE_RADIUS_FACTOR_BATTERY),
+    ):
+        zlo, zhi = world_bbox([comp])
+        cen = Vector([(zlo[k] + zhi[k]) / 2 for k in range(3)])
+        rad = max(zhi[k] - zlo[k] for k in range(3)) / 2 * radius_factor
+        zone = split_zone(shell, cen, rad, zone_name)
+        if zone:
+            zones[zone_name] = zone
+            log(f"{zone_name}: {tri_count(zone):,}t carved from shell (r={rad:.2f} m)")
+        else:
+            log(f"{zone_name}: NO faces within {rad:.2f} m — no cutaway will be possible here")
+
+    # ---- 6. materials
+    #
+    # The shell, glass and wheels keep the model's own materials, which is what makes the car look
+    # like a car rather than flat paint. Only two categories are rewritten:
+    #
+    #  - zone materials, which must be BLEND because Filament cannot turn an OPAQUE material
+    #    transparent at runtime. They sit at alpha 1.0 so a zone is indistinguishable from the
+    #    surrounding shell until the app fades it. At alpha 1.0 blending is an identity operation,
+    #    so draw order cannot show through the way it does at 0.99.
+    #  - the two components, which get unique emissive materials so they stay legible through a
+    #    faded zone and can be recoloured by severity independently.
+    for zone_name, zone in zones.items():
+        blendify(zone, zone_name)
     assign_only(motor, make_material("MatMotor", (0.62, 0.66, 0.72, 1.0),
                                      metallic=0.5, roughness=0.4, emission_strength=0.8))
     assign_only(battery, make_material("MatBattery", (0.60, 0.64, 0.70, 1.0),
                                        metallic=0.4, roughness=0.5, emission_strength=0.8))
-    if glass:
-        assign_only(glass, make_material("MatGlass", (0.30, 0.34, 0.38, 0.35),
-                                         metallic=0.0, roughness=0.05, blend=True))
-    for key, obj in wheels.items():
-        assign_only(obj, make_material(f"Mat{key}", (0.10, 0.10, 0.11, 1.0),
-                                       metallic=0.3, roughness=0.6))
 
-    # ---- 6. transforms and scale
-    parts = [p for p in [shell, glass, motor, battery, *wheels.values()] if p]
+    # Single-sided everywhere. A double-sided blended surface shows the car's far side through its
+    # near side, which is the "silver ghost" look rather than a clean cutaway.
+    for obj in [shell, glass, motor, battery, *wheels.values(), *zones.values()]:
+        if obj:
+            for slot in obj.data.materials:
+                if slot:
+                    slot.use_backface_culling = True
+
+    # ---- 7. transforms and scale
+    parts = [p for p in [shell, glass, motor, battery, *wheels.values(), *zones.values()] if p]
     for p in parts:
         origin_to_geometry(p)
         apply_transforms(p)

@@ -23,8 +23,9 @@ the exported GLB by hand.
 
 | | |
 |---|---|
-| Nodes | `CarRoot` → `Body_Shell`, `Glass`, `Comp_Motor`, `Comp_Battery`, `Wheel_FL/FR/RL/RR` |
-| Triangles | 235,201 total — shell 169,065, motor 6,000, battery 6,000, wheels ~11.6k each |
+| Nodes | `CarRoot` → `Body_Shell`, `Zone_Motor`, `Zone_Battery`, `Glass`, `Comp_Motor`, `Comp_Battery`, `Wheel_FL/FR/RL/RR` |
+| Triangles | 235,201 total — shell 53,474, motor zone 64,453, battery zone 51,138, components 6,000 each |
+| Textures | 14, preserved from the source — the car keeps its real paint |
 | Bounding box | 1.876 × 1.201 × 4.500 m |
 | Validator | all checks pass, 0 warnings |
 
@@ -52,6 +53,34 @@ Two earlier failures were structural rather than aesthetic:
   flattened (parent cleared keeping transform, then transforms applied) before anything measures it.
 - The AC-09 motor ships with a 447-unit cable that dominated its bounding box. Objects with an
   aspect ratio above 8:1 are dropped as slivers.
+
+## Cutaway zones
+
+The car is **opaque and normally textured**. Only two patches of bodywork are separable and
+fadeable: `Zone_Motor` over the rear drive unit and `Zone_Battery` over the floor pack. Fading one
+opens a window onto that component while the rest of the car stays untouched — which is the
+behaviour the reference cutaway images show, and it is why the shell is no longer ghosted whole.
+
+Zones are cut geometrically (faces within a radius of the component), so the split is
+reproducible and needs no hand-picking of panels on this particular mesh. The two radius
+constants in `prep_car.py` control how much bodywork each window opens.
+
+Two constraints shape the implementation, both discovered rather than assumed:
+
+- **Filament cannot turn an OPAQUE material transparent at runtime.** Anything that will ever
+  fade must be exported BLEND, which is why zones exist as separate objects at all.
+- **This Blender's glTF exporter decides `alphaMode` from the alpha VALUE, not `blend_method`.**
+  At alpha 1.0 it writes OPAQUE and the cutaway becomes impossible, so zones rest at 0.99. One
+  percent of blend is invisible; being wrong here silently disables the whole feature.
+
+Backface culling is on everywhere. Without it a blended surface shows the car's far side through
+its near side, which is the silver-ghost look rather than a clean window.
+
+### Still to do — the app half
+
+The asset supports the cutaway; the app does not drive it yet. `Car3dRenderer` needs to find the
+`Zone_Motor` / `Zone_Battery` renderables and animate their material alpha when the matching
+hotspot is focused. Until then the zones simply sit at 0.99 and the car looks normal.
 
 ## Known limitation — read before shipping this model
 

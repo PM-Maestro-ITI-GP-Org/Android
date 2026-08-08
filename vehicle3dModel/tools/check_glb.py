@@ -15,8 +15,12 @@ import struct
 import sys
 from collections import defaultdict
 
-REQUIRED_NODES = ["CarRoot", "Body_Shell", "Comp_Motor", "Comp_Battery"]
-GHOSTABLE_NODES = ["Body_Shell"]
+REQUIRED_NODES = ["CarRoot", "Body_Shell", "Comp_Motor", "Comp_Battery",
+                  "Zone_Motor", "Zone_Battery"]
+# Only the cutaway zones fade. The shell itself must stay OPAQUE so the car looks
+# like a car until the user asks to see inside it.
+GHOSTABLE_NODES = ["Zone_Motor", "Zone_Battery"]
+MUST_BE_OPAQUE = ["Body_Shell"]
 CAR_LENGTH_RANGE = (4.2, 4.8)   # metres; glTF units are metres
 TRI_BUDGET_TOTAL = 260_000      # car shell + internals; above this the Pi 5 will struggle
 
@@ -167,6 +171,34 @@ def main(path):
         else:
             fail(f"{name} alphaMode = {sorted(modes)} — must be BLEND or the app cannot fade it")
 
+    # 2b. the shell must NOT be blended, or the whole car ghosts and depth sorting breaks
+    for name in MUST_BE_OPAQUE:
+        i = by_name.get(name)
+        if i is None or "mesh" not in nodes[i]:
+            continue
+        modes = set()
+        for prim in g["meshes"][nodes[i]["mesh"]]["primitives"]:
+            mi = prim.get("material")
+            modes.add(materials[mi].get("alphaMode", "OPAQUE") if mi is not None else "OPAQUE")
+        if "BLEND" in modes:
+            fail(f"{name} contains BLEND materials - the car would never look solid")
+        else:
+            ok(f"{name} is opaque")
+
+    # 2c. a double-sided blended surface shows the car's far side through its near side
+    for name in GHOSTABLE_NODES:
+        i = by_name.get(name)
+        if i is None or "mesh" not in nodes[i]:
+            continue
+        two_sided = [p for p in g["meshes"][nodes[i]["mesh"]]["primitives"]
+                     if p.get("material") is not None
+                     and materials[p["material"]].get("doubleSided")]
+        if two_sided:
+            fail(f"{name} has {len(two_sided)} double-sided material(s) - you would see through "
+                 f"to the far side of the car instead of a clean cutaway")
+        else:
+            ok(f"{name} is single-sided")
+
     # 3. one material per object, or fading/colouring one part changes another
     mat_users = defaultdict(list)
     for i, node in enumerate(nodes):
@@ -176,13 +208,17 @@ def main(path):
             mi = prim.get("material")
             if mi is not None:
                 mat_users[mi].append(node.get("name", f"node{i}"))
-    shared = {mi: us for mi, us in mat_users.items() if len(set(us)) > 1}
+    # Sharing only matters between things that fade or recolour INDEPENDENTLY. The four wheels
+    # legitimately share tyre rubber; nothing ever recolours one wheel on its own.
+    independent = set(GHOSTABLE_NODES) | {"Comp_Motor", "Comp_Battery"}
+    shared = {mi: us for mi, us in mat_users.items()
+              if len(set(us)) > 1 and set(us) & independent}
     if shared:
         for mi, us in shared.items():
             fail(f"material '{materials[mi].get('name', mi)}' shared by {sorted(set(us))} — "
                  f"recolouring one would change the others")
     else:
-        ok("no material is shared between objects")
+        ok("no independently-faded object shares a material")
 
     # 4. scale sanity
     car = subtree_bounds(g, by_name["CarRoot"], world) if "CarRoot" in by_name else None
@@ -198,7 +234,7 @@ def main(path):
         fail("cannot measure CarRoot bounds")
 
     # 5. internals must actually sit inside the shell
-    shell = subtree_bounds(g, by_name["Body_Shell"], world) if "Body_Shell" in by_name else None
+    shell = car  # zones are carved OUT of Body_Shell, so compare against the whole car
     for comp in ("Comp_Motor", "Comp_Battery"):
         i = by_name.get(comp)
         if i is None or shell is None:
@@ -211,9 +247,9 @@ def main(path):
         inside = all(b[0][k] >= shell[0][k] - 0.02 and b[1][k] <= shell[1][k] + 0.02 for k in range(3))
         print(f"    {comp} extent (m): {ext}")
         if inside:
-            ok(f"{comp} is inside the Body_Shell bounding box")
+            ok(f"{comp} is inside the car bounding box")
         else:
-            fail(f"{comp} extends outside Body_Shell — it would poke through the bodywork")
+            fail(f"{comp} extends outside the car - it would poke through the bodywork")
 
     # 6. triangle budget
     total = sum(tri_count(g, i) for i in range(len(nodes)))
