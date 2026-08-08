@@ -2,15 +2,26 @@ package com.motorguard.ivi.ui.diagnostics
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.motorguard.ivi.data.vehicle.api.BatteryTelemetry
+import com.motorguard.ivi.data.vehicle.api.BrakeTelemetry
+import com.motorguard.ivi.data.vehicle.api.DoorsTelemetry
 import com.motorguard.ivi.data.vehicle.api.Hotspot
+import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
+import com.motorguard.ivi.data.vehicle.api.SeverityResolver
+import com.motorguard.ivi.data.vehicle.api.TireTelemetry
 import com.motorguard.ivi.data.vehicle.api.VehicleDataSource
 import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -24,10 +35,23 @@ import kotlinx.coroutines.launch
  * fragment; this VM is disposable scaffolding on top of it.
  */
 class DiagnosticsViewModel(
-    source: VehicleDataSource = VehicleData.source,
+    private val source: VehicleDataSource = VehicleData.source,
     val debugControls: VehicleDebugControls = VehicleData.debugControls,
 ) : ViewModel() {
-    private val severityFlow = VehicleSeverityFlow(source)
+
+    /**
+     * ONE resolver, shared between the per-hotspot severity map that colours the dots and the
+     * per-field grading that colours the detail card. Two instances would each carry their own
+     * hysteresis state, so near a threshold the card could disagree with the dot it belongs to.
+     *
+     * Sharing is safe because both pipelines run on [viewModelScope] against a main-thread-confined
+     * source — single-threaded, which is exactly the contract [SeverityResolver] documents — and
+     * because resolving the same value twice is idempotent, so the card re-grading the current
+     * sample cannot perturb the hysteresis the dots depend on.
+     */
+    private val resolver = SeverityResolver()
+
+    private val severityFlow = VehicleSeverityFlow(source, resolver)
     private val focused = MutableStateFlow<Hotspot?>(null)
     private val debugVisible = MutableStateFlow(false)
 
@@ -43,6 +67,74 @@ class DiagnosticsViewModel(
     val backConsumed: StateFlow<Boolean> =
         uiState.map { it.focusedHotspot != null || it.debugPanelVisible }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * Telemetry for whichever hotspot is focused, already graded, or null when nothing is focused.
+     *
+     * Deliberately a second [StateFlow] rather than a field of [DiagnosticsUiState]: telemetry
+     * ticks continuously, and folding it into the ui state would invalidate the hotspot overlay
+     * and the car stage — and therefore the Filament surface — several times a second for data
+     * neither of them reads.
+     *
+     * `flatMapLatest` rather than a six-way `combine`: only the focused signal is collected, and
+     * nothing at all is collected while unfocused, which is the common case.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    internal val focusedTelemetry: StateFlow<FocusedTelemetry?> =
+        focused
+            .flatMapLatest { hotspot -> telemetryFlowFor(hotspot) }
+            // The source republishes every flow several times a second with an unchanged payload
+            // and a fresh timestamp. Without this the card would recompose ~5 Hz for numbers that
+            // never moved.
+            .distinctUntilChanged { a, b -> a.rendersSameAs(b) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private fun telemetryFlowFor(hotspot: Hotspot?): Flow<FocusedTelemetry?> = when (hotspot) {
+        null -> flowOf(null)
+        Hotspot.BATTERY -> source.battery.map { FocusedTelemetry.Battery(it.mapData(::gradeBattery)) }
+        Hotspot.MOTOR -> source.motor.map { FocusedTelemetry.Motor(it.mapData(::gradeMotor)) }
+        Hotspot.BRAKES -> source.brakes.map { FocusedTelemetry.Brakes(it.mapData(::gradeBrakes)) }
+        Hotspot.DOORS -> source.doors.map { FocusedTelemetry.Doors(it.mapData(::gradeDoors)) }
+        Hotspot.TIRE_FL, Hotspot.TIRE_FR, Hotspot.TIRE_RL, Hotspot.TIRE_RR ->
+            source.tires.map { list ->
+                FocusedTelemetry.Tire(hotspot, list.forCorner(hotspot).mapData { gradeTire(hotspot, it) })
+            }
+    }
+
+    /*
+     * The entire severity surface of the detail card: five straight delegations to the shared
+     * resolver, no arithmetic of their own. No threshold number appears in the UI layer.
+     *
+     * Motor RPM, tire temperature, battery cycle count and the charging flag are deliberately
+     * ungraded — SeverityThresholds defines no rule for them, and inventing one here would put
+     * severity logic outside SeverityEvaluator, which the brief forbids. They render neutral.
+     *
+     * These run inside a Flow.map, never inside a composable: they mutate the resolver's hysteresis
+     * state, and a composition can be skipped, restarted or discarded at will.
+     */
+    private fun gradeBattery(t: BatteryTelemetry) = BatteryReading(
+        data = t,
+        charge = resolver.batteryCharge(t.chargePercent),
+        cellTemp = resolver.cellTemp(t.cellTempC),
+        health = resolver.batteryHealth(t.healthPercent),
+    )
+
+    private fun gradeMotor(t: MotorTelemetry) = MotorReading(
+        data = t,
+        load = resolver.motorLoad(t.loadPercent),
+        temp = resolver.motorTemp(t.tempC),
+    )
+
+    private fun gradeBrakes(t: BrakeTelemetry) = BrakeReading(
+        data = t,
+        wear = resolver.brakeWear(t.padWearPercent),
+        fluid = resolver.brakeFluid(t.fluidOk),
+    )
+
+    private fun gradeDoors(t: DoorsTelemetry) = DoorsReading(t, resolver.doors(t))
+
+    private fun gradeTire(corner: Hotspot, t: TireTelemetry) =
+        TireReading(t, resolver.tirePsi(corner, t.psi))
 
     private var idleJob: Job? = null
 

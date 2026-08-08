@@ -54,6 +54,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.components.Pill
+import com.motorguard.ivi.ui.diagnostics.component.ComponentDetailPanel
 import com.motorguard.ivi.ui.diagnostics.component.HotspotOverlay
 import com.motorguard.ivi.ui.diagnostics.debug.FakeDataControlPanel
 import com.motorguard.ivi.ui.diagnostics.render.CarRenderState
@@ -72,8 +73,13 @@ fun DiagnosticsScreen(
     viewModel: DiagnosticsViewModel = viewModel(),
 ) {
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
+    // Collected WITHOUT `by`: reading .value here would recompose the whole screen — car stage and
+    // Filament surface included — on every telemetry tick. Deferring the read into the lambda
+    // confines that invalidation to ComponentDetailPanel.
+    val telemetryState = viewModel.focusedTelemetry.collectAsStateWithLifecycle()
     DiagnosticsScreenContent(
         ui = ui,
+        focusedTelemetry = { telemetryState.value },
         debugControls = viewModel.debugControls,
         onHotspotTap = viewModel::onHotspotTap,
         onBackgroundTap = viewModel::onBackgroundTap,
@@ -96,6 +102,8 @@ fun DiagnosticsScreen(
 @Composable
 internal fun DiagnosticsScreenContent(
     ui: DiagnosticsUiState,
+    /** A lambda, not a value: see the collection site in [DiagnosticsScreen] for why. */
+    focusedTelemetry: () -> FocusedTelemetry?,
     /** Null in previews: previews render chrome only, with nothing wired to drive it. */
     debugControls: VehicleDebugControls?,
     onHotspotTap: (Hotspot) -> Unit,
@@ -181,16 +189,14 @@ internal fun DiagnosticsScreenContent(
                         .fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    // These three panels are exactly the Step 5 health ring, Step 4 live card and
-                    // Step 5 alert list. Their relative weights are the layout reservation for them.
+                    // The middle slot is live; the ring and the alert list are still reservations.
                     ReservedPanel(
                         title = "Vehicle health",
                         hint = "Health score appears here once telemetry is connected",
                         modifier = Modifier.weight(1f),
                     )
-                    ReservedPanel(
-                        title = "Component detail",
-                        hint = "Select a component on the car to inspect it",
+                    ComponentDetailPanel(
+                        telemetry = focusedTelemetry,
                         modifier = Modifier.weight(1.2f),
                     )
                     ReservedPanel(
@@ -393,7 +399,7 @@ private fun CarStage(
 @Composable
 private fun DiagnosticsScreenDayPreview() {
     MotorGuardTheme {
-        DiagnosticsScreenContent(DiagnosticsUiState(), null, {}, {}, {}, {}, {})
+        DiagnosticsScreenContent(DiagnosticsUiState(), { null }, null, {}, {}, {}, {}, {})
     }
 }
 
@@ -406,6 +412,6 @@ private fun DiagnosticsScreenDayPreview() {
 @Composable
 private fun DiagnosticsScreenNightPreview() {
     MotorGuardTheme {
-        DiagnosticsScreenContent(DiagnosticsUiState(), null, {}, {}, {}, {}, {})
+        DiagnosticsScreenContent(DiagnosticsUiState(), { null }, null, {}, {}, {}, {}, {})
     }
 }
