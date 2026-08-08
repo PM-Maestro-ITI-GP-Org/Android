@@ -90,8 +90,15 @@ object Car3dTuning {
     /** Degrees around world Y from the car's side. ~35-40 gives the classic 3/4 hero. */
     const val HERO_AZIMUTH_DEG = 38f
 
-    /** Degrees above the horizon. Low = heroic; high = topdown-ish. */
-    const val HERO_ELEVATION_DEG = 13f
+    /**
+     * Degrees above the horizon. Low = heroic; high = topdown-ish.
+     *
+     * Raised from 13: at that height the car was seen almost from its own waistline, which hides
+     * the roof and the shoulders and makes it hard to tell one end from the other at a glance. A
+     * little more elevation reads as looking *at* a vehicle rather than standing beside it, and it
+     * opens up the flank the hotspot dots live on.
+     */
+    const val HERO_ELEVATION_DEG = 22f
 
     /**
      * Eye distance = bounding-sphere radius * this. The bounding *sphere* is a loose fit for a
@@ -158,11 +165,13 @@ object Car3dTuning {
         Hotspot.TIRE_RR to FocusFraming(16f, 5f, 1.15f, 55f),
         // Pulled back enough to hold a whole wheel, since the disc itself is behind the spokes.
         Hotspot.BRAKES to FocusFraming(24f, 7f, 1.75f, 45f),
-        // Below the horizon looking up at the floor pan: the pack is under the floor, and any
-        // camera above the sill shows the door instead and quietly implies the wrong location.
-        // Tight limit: the pack is only visible through its own cutaway, and swinging much off
-        // that window puts opaque sill between the camera and the thing being inspected.
-        Hotspot.BATTERY to FocusFraming(14f, -6f, 2.15f, 25f),
+        // Looking DOWN onto the floor pan through the cutaway. This used to sit below the
+        // horizon, on the reasoning that a pack under the floor cannot honestly be shown from
+        // above — true while the bodywork was opaque, and false since the cutaway started
+        // opening: the sill and floor fade, and looking down through them shows the pack laid out
+        // along the car, which is the shape a skateboard pack actually has. From below it was
+        // only ever an edge.
+        Hotspot.BATTERY to FocusFraming(16f, 24f, 2.15f, 25f),
         // Rear three-quarter, where the drive unit sits. Same reasoning as the battery, with a
         // little more room because the motor's window reaches further around the rear quarter.
         Hotspot.MOTOR to FocusFraming(42f, 9f, 1.7f, 30f),
