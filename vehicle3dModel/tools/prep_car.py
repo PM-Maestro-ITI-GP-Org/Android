@@ -257,7 +257,7 @@ def derive_axes(lo, hi):
 
 # ---------------------------------------------------------------- component building
 
-def align_axes(obj, length_axis, width_axis, height_axis):
+def align_axes(obj, long_target, mid_target, short_target):
     """Rotate in 90-degree steps until the object's longest/mid/shortest sit on the car's
     length/width/height.
 
@@ -266,7 +266,7 @@ def align_axes(obj, length_axis, width_axis, height_axis):
     third of its proper length. Only three swaps are ever needed, each a 90-degree turn about one
     axis, so this is exact rather than a search.
     """
-    want = [length_axis, width_axis, height_axis]
+    want = [long_target, mid_target, short_target]
     for _ in range(3):
         lo, hi = world_bbox([obj])
         order = sorted(range(3), key=lambda k: -(hi[k] - lo[k]))
@@ -285,7 +285,8 @@ def align_axes(obj, length_axis, width_axis, height_axis):
                 break
 
 
-def place_component(obj, ref_lo, ref_hi, axes, target_ext, lon_frac, height_frac):
+def place_component(obj, ref_lo, ref_hi, axes, target_ext, lon_frac, height_frac,
+                    long_axis=None):
     """Scale a component to fit its target box and drop it into the car's frame.
 
     [ref_lo]/[ref_hi] are the BODY SHELL's bounds, not the whole car's. The wheels hang below the
@@ -293,9 +294,16 @@ def place_component(obj, ref_lo, ref_hi, axes, target_ext, lon_frac, height_frac
     shell and pushes the battery out through the bottom.
     """
     length_axis, width_axis, height_axis, ext = axes
+    # Which car axis the component's own longest dimension should lie along. A battery pack runs
+    # fore-and-aft; a transaxle motor's shaft runs ACROSS the car, because it drives the two
+    # wheels either side of it. Defaulting to the car's length would lay the motor along the
+    # centreline like a propshaft, which is the wrong drivetrain entirely.
+    long_axis = length_axis if long_axis is None else long_axis
+    remaining = [a for a in (length_axis, width_axis, height_axis) if a != long_axis]
+    mid_axis = remaining[0] if remaining[0] != height_axis else remaining[1]
     apply_transforms(obj)
     origin_to_geometry(obj)
-    align_axes(obj, length_axis, width_axis, height_axis)
+    align_axes(obj, long_axis, mid_axis, height_axis)
 
     clo, chi = world_bbox([obj])
     cext = [max(1e-6, chi[k] - clo[k]) for k in range(3)]
@@ -448,7 +456,8 @@ def main():
         motor = build_procedural_motor(lo, hi, axes)
         log(f"Comp_Motor procedural {tri_count(motor):,}t")
     place_component(motor, slo, shi, axes, motor_target,
-                    MOTOR_LON_FRAC * front_sign, MOTOR_HEIGHT_FRAC)
+                    MOTOR_LON_FRAC * front_sign, MOTOR_HEIGHT_FRAC,
+                    long_axis=width_axis)
 
     batt_target = [0.0, 0.0, 0.0]
     batt_target[length_axis] = sext[length_axis] * BATTERY_LENGTH_FRAC
