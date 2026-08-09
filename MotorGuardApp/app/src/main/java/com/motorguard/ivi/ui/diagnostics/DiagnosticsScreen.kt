@@ -26,7 +26,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -264,6 +268,29 @@ internal fun DiagnosticsScreenContent(
         // Top-most layer, so it sits over both the car stage and the reserved panels. Null in
         // previews (see [debugControls]'s KDoc) — nothing to drive it with there anyway.
         if (debugControls != null) {
+            // An explicit way in, alongside the long-press. The long-press is a hidden gesture on
+            // a live control: it competes with the ring's own touch handling and misses often
+            // enough that the panel felt broken rather than hidden. A visible button cannot miss.
+            // Hidden while the panel is open so it is not sitting under the drawer it opened.
+            AnimatedVisibility(
+                visible = !ui.debugPanelVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomEnd),
+            ) {
+                FloatingActionButton(
+                    onClick = onStageLongPress,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(28.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Tune,
+                        contentDescription = "Fault injection controls",
+                    )
+                }
+            }
+
             AnimatedVisibility(
                 visible = ui.debugPanelVisible,
                 enter = fadeIn() + slideInHorizontally { it },
