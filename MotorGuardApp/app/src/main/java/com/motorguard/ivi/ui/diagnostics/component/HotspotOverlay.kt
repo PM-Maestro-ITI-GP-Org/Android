@@ -17,6 +17,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.SensorDoor
+import androidx.compose.material.icons.filled.TireRepair
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +41,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
@@ -61,6 +70,13 @@ private object HotspotTokens {
 
     /** The visible dot. */
     val dot = 32.dp
+
+    /**
+     * The component glyph inside the dot. Sized so the disc keeps a ring of its severity colour
+     * all the way round the icon — the fill is still what carries severity, the glyph only says
+     * *which* component it belongs to.
+     */
+    val glyph = 17.dp
     const val pulseMillis = 1400
 
     /**
@@ -370,6 +386,7 @@ fun HotspotOverlay(
                 contentAlignment = Alignment.Center,
             ) {
                 HotspotDot(
+                    hotspot = hotspot,
                     color = color,
                     hasSignal = hasSignal,
                     pulsing = pulsing,
@@ -408,8 +425,23 @@ fun HotspotOverlay(
 }
 
 /**
- * Single small canvas per dot. All animated values are read INSIDE the draw lambda — see the
- * `pulse` comment in [HotspotOverlay] for why that matters.
+ * The glyph each hotspot wears. Chosen so the four tires are the only repeated icon — every other
+ * component is distinguishable at dot size without reading a label.
+ *
+ * `Album` for the brakes is not an arbitrary stand-in: it is a disc with a centre bore, which is
+ * what a brake rotor looks like, and it stays legible at 17 dp where a caliper outline would not.
+ */
+private fun glyphFor(hotspot: Hotspot): ImageVector = when (hotspot) {
+    Hotspot.BATTERY -> Icons.Filled.BatteryChargingFull
+    Hotspot.MOTOR -> Icons.Filled.ElectricBolt
+    Hotspot.TIRE_FL, Hotspot.TIRE_FR, Hotspot.TIRE_RL, Hotspot.TIRE_RR -> Icons.Filled.TireRepair
+    Hotspot.BRAKES -> Icons.Filled.Album
+    Hotspot.DOORS -> Icons.Filled.SensorDoor
+}
+
+/**
+ * Single small canvas per dot, with the component glyph laid over it. All animated values are read
+ * INSIDE the draw lambda — see the `pulse` comment in [HotspotOverlay] for why that matters.
  *
  * This draws the dot unconditionally; whether it should be visible at all is decided by the
  * caller's `graphicsLayer` alpha. In particular, dots whose component sits on the hidden side of
@@ -419,6 +451,7 @@ fun HotspotOverlay(
  */
 @Composable
 private fun HotspotDot(
+    hotspot: Hotspot,
     color: Color,
     hasSignal: Boolean,
     pulsing: Boolean,
@@ -426,23 +459,40 @@ private fun HotspotDot(
     ringColor: Color,
     pulse: State<Float>,
 ) {
-    Canvas(modifier = Modifier.size(HotspotTokens.touchTarget)) {
-        val p = pulse.value // draw-phase read
-        val r = HotspotTokens.dot.toPx() / 2f
+    // Which of black/white reads on this disc is a property of the severity colour, and the
+    // severity palette differs between day and night — so it is measured, not chosen. Picking a
+    // fixed foreground would leave the glyph nearly invisible on whichever theme has the lighter
+    // fill (day `success` is the light one; see the contrast note in docs/05-diagnostics-status).
+    val glyphColor = if (color.luminance() > 0.45f) Color.Black else Color.White
 
-        if (pulsing) {
-            drawCircle(
-                color = color.copy(alpha = 0.42f * (1f - p)),
-                radius = r * (1f + 0.55f * p),
-            )
+    Box(contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.size(HotspotTokens.touchTarget)) {
+            val p = pulse.value // draw-phase read
+            val r = HotspotTokens.dot.toPx() / 2f
+
+            if (pulsing) {
+                drawCircle(
+                    color = color.copy(alpha = 0.42f * (1f - p)),
+                    radius = r * (1f + 0.55f * p),
+                )
+            }
+            // Contrast halo so the dot reads against bodywork of any colour.
+            drawCircle(color = ringColor.copy(alpha = 0.55f), radius = r + 2.dp.toPx())
+            drawCircle(color = color.copy(alpha = if (hasSignal) 1f else 0.55f), radius = r)
+            if (focused) {
+                drawCircle(color = color, radius = r * 1.75f, style = Stroke(width = 2.dp.toPx()))
+            }
         }
-        // Contrast halo so the dot reads against bodywork of any colour.
-        drawCircle(color = ringColor.copy(alpha = 0.55f), radius = r + 2.dp.toPx())
-        drawCircle(color = color.copy(alpha = if (hasSignal) 1f else 0.55f), radius = r)
-        // Glanceable core — a small bright centre reads as "dot" faster than a flat disc.
-        drawCircle(color = Color.White.copy(alpha = 0.85f), radius = r * 0.30f)
-        if (focused) {
-            drawCircle(color = color, radius = r * 1.75f, style = Stroke(width = 2.dp.toPx()))
-        }
+
+        // The glyph replaces the old bright centre dot. It says which component this is without a
+        // label, which is the whole point of an annotation layer over a car the driver already
+        // recognises. `contentDescription` is null because the 76 dp hit target behind it already
+        // carries `onClickLabel = hotspot.label` — announcing both would read the name twice.
+        Icon(
+            imageVector = glyphFor(hotspot),
+            contentDescription = null,
+            tint = glyphColor.copy(alpha = if (hasSignal) 1f else 0.55f),
+            modifier = Modifier.size(HotspotTokens.glyph),
+        )
     }
 }
