@@ -104,8 +104,12 @@ object Car3dTuning {
      * Eye distance = bounding-sphere radius * this. The bounding *sphere* is a loose fit for a
      * car (long and flat, so the sphere is much bigger than the silhouette), which is why this
      * is well above 1 — measured against the real stage, 2.9 clipped the front bumper.
+     *
+     * Pulled in from 3.9 when the stage grew to 80% of the row: the extra width is all horizontal,
+     * and framing is driven by the vertical field of view, so a wider stage on its own makes the
+     * car no bigger — it only buys the headroom to come closer without the ends leaving frame.
      */
-    const val HERO_DISTANCE_FACTOR = 3.9f
+    const val HERO_DISTANCE_FACTOR = 3.2f
 
     /**
      * Look-at point lifted above the bbox centre, as a fraction of the bounding radius. Positive

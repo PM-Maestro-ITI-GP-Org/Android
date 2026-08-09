@@ -209,8 +209,11 @@ internal fun DiagnosticsScreenContent(
                     onHotspotTap = onHotspotTap,
                     onBackgroundTap = onBackgroundTap,
                     onLongPress = onStageLongPress,
+                    // 4:1 — the stage takes 80% of the row. The car is the screen's subject and
+                    // the only element that gets better with area; the right-hand column is text
+                    // and a ring, both of which have a size beyond which they stop improving.
                     modifier = Modifier
-                        .weight(1.35f)
+                        .weight(4f)
                         .fillMaxHeight(),
                 )
                 Column(
