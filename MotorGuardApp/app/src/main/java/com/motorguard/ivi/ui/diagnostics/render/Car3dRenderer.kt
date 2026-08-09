@@ -193,6 +193,35 @@ object Car3dTuning {
      */
     const val ROTATE_DEG_PER_PX = 0.18f
 
+    /**
+     * Degrees of tilt per pixel dragged vertically. Lower than [ROTATE_DEG_PER_PX] because the
+     * travel it maps onto is bounded: yaw has a full turn to spend a long drag on, pitch has
+     * [PITCH_LIMIT_DEG], and at the yaw rate the whole range would be used up in ~250 px — the
+     * camera would slam into its stop before the gesture felt like it had started.
+     */
+    const val PITCH_DEG_PER_PX = 0.10f
+
+    /**
+     * How far the user may tilt either side of the framing the camera opened at. Applies to the
+     * overview and, additionally clamped by the component's own `orbitLimitDeg`, to a focused
+     * view — a focused framing is no freer vertically than it is horizontally.
+     */
+    const val PITCH_LIMIT_DEG = 45f
+
+    /**
+     * Absolute elevation the camera may never leave, whatever [PITCH_LIMIT_DEG] would otherwise
+     * allow. The low end stops the eye dropping under the ground plane, where the car is seen
+     * through a floor the scene does not model. The high end stays clear of straight overhead,
+     * where the view direction becomes parallel to the world-Y up vector `applyPose` passes to
+     * `lookAt` and the camera basis is undefined.
+     *
+     * The clamp is applied to the accumulated offset, not to the resulting angle, so a drag that
+     * runs into a limit does not build up slack the user has to wind back off before the camera
+     * moves again.
+     */
+    const val MIN_ELEVATION_DEG = -10f
+    const val MAX_ELEVATION_DEG = 72f
+
     // --- Far-side occlusion. All three compared against `lateral * viewLat`.
     /** |lateral| at or below this is a centreline anchor, never occluded. */
     const val OCCLUSION_DEADBAND = 0.12f
@@ -550,6 +579,15 @@ class Car3dRenderer internal constructor(
      */
     private var focusAzimuthDeg = 0f
 
+    /**
+     * User-applied tilt of the OVERVIEW and of the FOCUSED view, the vertical counterparts of
+     * [heroAzimuthDeg] and [focusAzimuthDeg] and kept apart for the same reasons.
+     *
+     * Both are bounded, which yaw is not: see [Car3dTuning.MIN_ELEVATION_DEG].
+     */
+    private var heroElevationDeg = 0f
+    private var focusElevationDeg = 0f
+
     /** True while a finger is driving the camera, which suspends animated writes (see [rotateBy]). */
     private var isDragging = false
 
@@ -709,6 +747,7 @@ class Car3dRenderer internal constructor(
             currentFocus = focus
             // Every focus change starts from the tuned framing, including a return to overview.
             focusAzimuthDeg = 0f
+            focusElevationDeg = 0f
             val target = poseFor(focus, n, geo)
             val pivot = (n.worldTransform * Float4(geo.centerLocal, 1f)).xyz
             val millis = if (hasFramed) Car3dTuning.FOCUS_MILLIS else Car3dTuning.ENTRANCE_MILLIS
@@ -895,6 +934,33 @@ class Car3dRenderer internal constructor(
         applyPose(cam, poseFor(currentFocus, node, geo))
     }
 
+    override fun pitchBy(deltaDegrees: Float) {
+        val focus = currentFocus
+        if (focus == null) {
+            heroElevationDeg = clampElevationOffset(
+                current = heroElevationDeg,
+                delta = deltaDegrees,
+                baseDeg = Car3dTuning.HERO_ELEVATION_DEG,
+                limitDeg = Car3dTuning.PITCH_LIMIT_DEG,
+            )
+        } else {
+            val framing = Car3dTuning.FOCUS_FRAMING[focus] ?: Car3dTuning.FOCUS_FRAMING_DEFAULT
+            focusElevationDeg = clampElevationOffset(
+                current = focusElevationDeg,
+                delta = deltaDegrees,
+                baseDeg = framing.elevationDeg,
+                // A focused framing already declares how far it may be swung horizontally; there
+                // is no reason for it to be freer vertically, and one number per component beats
+                // eight more constants that would only ever be tuned to the same value.
+                limitDeg = minOf(Car3dTuning.PITCH_LIMIT_DEG, framing.orbitLimitDeg),
+            )
+        }
+        val cam = cameraNode ?: return
+        val node = modelNode ?: return
+        val geo = geometry ?: return
+        applyPose(cam, poseFor(currentFocus, node, geo))
+    }
+
     /**
      * Re-fits the backdrop to the camera: parked [Car3dTuning.BACKDROP_DISTANCE_FACTOR] radii
      * behind the look-at point, square-on to the eye, and scaled to exactly fill the frustum at
@@ -951,14 +1017,14 @@ class Car3dRenderer internal constructor(
      * different route than the transition it interrupts.
      */
     private fun poseFor(focus: Hotspot?, node: ModelNode, geo: HotspotGeometry): CameraPose {
-        val hero = heroPose(boundingRadius(node), 1f, heroAzimuthDeg)
+        val hero = heroPose(boundingRadius(node), 1f, heroAzimuthDeg, heroElevationDeg)
         return if (focus == null) {
             hero
         } else {
             // heroEye still carries the overview's orbit, which is what decides the side a
             // centreline component is approached from — the focus opens on the flank the user
             // was already looking at, even though its own orbit starts from zero.
-            focusPose(focus, node, geo, hero.eye, focusAzimuthDeg) ?: hero
+            focusPose(focus, node, geo, hero.eye, focusAzimuthDeg, focusElevationDeg) ?: hero
         }
     }
 
@@ -1140,10 +1206,38 @@ private fun boundingRadius(node: ModelNode): Float {
     return sqrt(h[0] * h[0] + h[1] * h[1] + h[2] * h[2]) * s
 }
 
-private fun heroPose(radius: Float, distanceScale: Float, azimuthOffsetDeg: Float = 0f): CameraPose {
+/**
+ * Adds [delta] to an accumulated elevation offset and clamps the result so that
+ * `baseDeg + offset` stays inside [Car3dTuning.MIN_ELEVATION_DEG]..[Car3dTuning.MAX_ELEVATION_DEG]
+ * and the offset itself stays inside +/-[limitDeg].
+ *
+ * Clamping the OFFSET rather than the final angle is what stops a drag held against a limit from
+ * banking up travel that the user then has to unwind before the camera responds again.
+ */
+private fun clampElevationOffset(
+    current: Float,
+    delta: Float,
+    baseDeg: Float,
+    limitDeg: Float,
+): Float {
+    val lo = maxOf(-limitDeg, Car3dTuning.MIN_ELEVATION_DEG - baseDeg)
+    val hi = minOf(limitDeg, Car3dTuning.MAX_ELEVATION_DEG - baseDeg)
+    // A framing already outside the band (none is today) would give lo > hi and make coerceIn
+    // throw, so the band is collapsed to its nearest end rather than trusted to be ordered.
+    return if (lo > hi) hi else (current + delta).coerceIn(lo, hi)
+}
+
+private fun heroPose(
+    radius: Float,
+    distanceScale: Float,
+    azimuthOffsetDeg: Float = 0f,
+    elevationOffsetDeg: Float = 0f,
+): CameraPose {
     val d = radius * Car3dTuning.HERO_DISTANCE_FACTOR * distanceScale
     val az = Math.toRadians((Car3dTuning.HERO_AZIMUTH_DEG + azimuthOffsetDeg).toDouble()).toFloat()
-    val el = Math.toRadians(Car3dTuning.HERO_ELEVATION_DEG.toDouble()).toFloat()
+    val el = Math.toRadians(
+        (Car3dTuning.HERO_ELEVATION_DEG + elevationOffsetDeg).toDouble(),
+    ).toFloat()
     val target = Float3(0f, radius * Car3dTuning.HERO_TARGET_LIFT, 0f)
     val eye = Float3(
         target.x + d * cos(el) * sin(az),
@@ -1175,6 +1269,7 @@ private fun focusPose(
     geo: HotspotGeometry,
     heroEye: Float3,
     azimuthOffsetDeg: Float = 0f,
+    elevationOffsetDeg: Float = 0f,
 ): CameraPose? {
     val local = geo.anchorOf(hotspot) ?: return null
     val m = node.worldTransform
@@ -1198,7 +1293,7 @@ private fun focusPose(
 
     val framing = Car3dTuning.FOCUS_FRAMING[hotspot] ?: Car3dTuning.FOCUS_FRAMING_DEFAULT
     val az = Math.toRadians(framing.azimuthDeg.toDouble()).toFloat()
-    val el = Math.toRadians(framing.elevationDeg.toDouble()).toFloat()
+    val el = Math.toRadians((framing.elevationDeg + elevationOffsetDeg).toDouble()).toFloat()
     val dir = normalize(
         right * (sideSign * cos(el) * cos(az)) +
             fwd * (lonSign * cos(el) * sin(az)) +

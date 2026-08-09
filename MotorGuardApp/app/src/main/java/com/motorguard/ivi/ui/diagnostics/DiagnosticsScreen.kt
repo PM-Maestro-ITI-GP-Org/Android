@@ -13,7 +13,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -397,12 +397,18 @@ private fun CarStage(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // Horizontal drag orbits the vehicle. A separate pointerInput from the taps below
-                // so the two detectors do not compete for the same gesture scope: a drag that
-                // passes touch slop is claimed here and never reaches detectTapGestures, so
-                // rotating the car cannot be mistaken for a background tap that clears focus.
+                // Drag orbits the vehicle: horizontally around it, vertically above and below it.
+                // A separate pointerInput from the taps below so the two detectors do not compete
+                // for the same gesture scope: a drag that passes touch slop is claimed here and
+                // never reaches detectTapGestures, so rotating the car cannot be mistaken for a
+                // background tap that clears focus.
+                //
+                // Both axes come from ONE detector rather than a horizontal and a vertical one
+                // stacked: two detectors would race for the same pointer and whichever claimed it
+                // first would lock out the other axis for the rest of the gesture, so a drag that
+                // started off-axis could never be corrected into a diagonal.
                 .pointerInput(renderer) {
-                    detectHorizontalDragGestures(
+                    detectDragGestures(
                         onDragStart = { renderer.onDragStateChange(true) },
                         // Both end paths must clear the flag, or an interrupted drag would leave
                         // the camera permanently refusing animated writes.
@@ -411,7 +417,10 @@ private fun CarStage(
                     ) { _, dragAmount ->
                         // Dragging right rotates the car as if pushing its near flank away, which
                         // is the direction people expect from turning an object on a turntable.
-                        renderer.rotateBy(-dragAmount * Car3dTuning.ROTATE_DEG_PER_PX)
+                        renderer.rotateBy(-dragAmount.x * Car3dTuning.ROTATE_DEG_PER_PX)
+                        // Same rule applied vertically: dragging down pushes the near bodywork
+                        // down and away, which lifts the eye and brings the roof into view.
+                        renderer.pitchBy(dragAmount.y * Car3dTuning.PITCH_DEG_PER_PX)
                     }
                 }
                 .pointerInput(Unit) {

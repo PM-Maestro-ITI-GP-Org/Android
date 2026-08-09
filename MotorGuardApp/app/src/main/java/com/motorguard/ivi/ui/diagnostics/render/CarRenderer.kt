@@ -112,6 +112,17 @@ interface CarRenderer {
     fun rotateBy(deltaDegrees: Float) = Unit
 
     /**
+     * Tilt the view above or below the vehicle by [deltaDegrees], as a direct response to a
+     * vertical drag. Positive raises the eye, so more of the roof comes into view.
+     *
+     * The vertical counterpart of [rotateBy], and immediate for the same reason. Unlike yaw this
+     * is clamped even with nothing focused: elevation has two hard ends a turntable does not —
+     * straight overhead, where the look-at basis degenerates against a world-Y up vector, and
+     * below the ground plane, where the car is seen through a floor it does not have.
+     */
+    fun pitchBy(deltaDegrees: Float) = Unit
+
+    /**
      * Paint the component behind [hotspot] in [color] — the severity colour the dot and the card
      * already use, applied to the part itself.
      *
