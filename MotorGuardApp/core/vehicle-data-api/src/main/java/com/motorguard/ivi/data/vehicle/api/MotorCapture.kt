@@ -62,13 +62,28 @@ enum class MotorSignalGroup(
      * are the numbers to retune once there is real hardware to look at.
      */
     val windowSec: Float,
+    /**
+     * The vertical scale this signal is always drawn against — the instrument's range, not the
+     * data's.
+     *
+     * Fixed rather than fitted to whatever is on screen, because a scale that rescales itself makes
+     * every window look the same: a healthy motor and a stalled one both fill the plot, and
+     * scrubbing through a run appears to change nothing while the axis silently moves underneath.
+     * With a constant range the height of a trace means something on its own, and two windows can
+     * be compared by eye.
+     *
+     * Chosen to hold a healthy motor with headroom for a faulty one. A value outside the range
+     * draws along the edge rather than vanishing, which reads as off-scale the way an instrument
+     * pinned against its stop does.
+     */
+    val displayRange: ClosedFloatingPointRange<Float>,
 ) {
-    SPEED_COMMAND("Speed cmd", "V", Float.MAX_VALUE),
-    CURRENT("Current x3", "A", 0.05f),
-    VOLTAGE("Voltage x3", "V", 0.05f),
-    VIBRATION("Vibration xyz", "g", 0.5f),
-    DC_BUS("DC bus", "V", 2f),
-    SPEED_ACTUAL("Speed", "rpm", Float.MAX_VALUE),
+    SPEED_COMMAND("Speed cmd", "V", Float.MAX_VALUE, 0f..5f),
+    CURRENT("Current x3", "A", 0.05f, -32f..32f),
+    VOLTAGE("Voltage x3", "V", 0.05f, -240f..240f),
+    VIBRATION("Vibration xyz", "g", 0.5f, -2f..2f),
+    DC_BUS("DC bus", "V", 2f, 330f..420f),
+    SPEED_ACTUAL("Speed", "rpm", Float.MAX_VALUE, 0f..4500f),
 }
 
 /** Where a capture request has got to. */

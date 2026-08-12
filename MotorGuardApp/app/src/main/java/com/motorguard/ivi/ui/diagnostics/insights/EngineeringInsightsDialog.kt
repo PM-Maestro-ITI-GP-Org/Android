@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,10 +26,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -227,6 +231,11 @@ private fun CaptureBody(capture: MotorCapture) {
     // different window lengths agree on where "here" is.
     var windowStartSec by remember(capture) { mutableFloatStateOf(0f) }
 
+    // Whether the plot is showing the signal's own detail window or the whole capture. Kept
+    // separate from the signal group so the choice SURVIVES switching signal: a user comparing the
+    // same moment across three signals should not have to re-zoom each time.
+    var zoomed by remember(capture) { mutableStateOf(true) }
+
     val group = when (stage) {
         Stage.INTRO_SPEED -> MotorSignalGroup.SPEED_COMMAND
         Stage.INTRO_CURRENT -> MotorSignalGroup.CURRENT
@@ -244,12 +253,17 @@ private fun CaptureBody(capture: MotorCapture) {
             // view of nothing, and a poor thing to open on. The scrubber states the time, so the
             // jump is visible rather than hidden.
             windowStartSec = capture.durationSec / 2f
+            zoomed = true
         }
         delay(InsightsTuning.CURRENT_HOLD_MILLIS)
         if (stage == Stage.INTRO_CURRENT) stage = Stage.INTERACTIVE
     }
 
-    val windowSec = minOf(group.windowSec, capture.durationSec)
+    val windowSec = if (zoomed) {
+        minOf(group.windowSec, capture.durationSec)
+    } else {
+        capture.durationSec
+    }
     val maxStart = (capture.durationSec - windowSec).coerceAtLeast(0f)
     val start = windowStartSec.coerceIn(0f, maxStart)
     val fromIndex = (start * MotorCapture.SAMPLE_RATE_HZ).toInt()
@@ -269,8 +283,11 @@ private fun CaptureBody(capture: MotorCapture) {
             WaveformPlot(
                 channels = channels,
                 colors = palette,
+                range = group.displayRange,
                 fromIndex = fromIndex,
                 toIndex = toIndex,
+                startSec = start,
+                windowSec = windowSec,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
@@ -292,32 +309,87 @@ private fun CaptureBody(capture: MotorCapture) {
                 startSec = start,
                 windowSec = windowSec,
                 totalSec = capture.durationSec,
+                onScrubBy = { fraction ->
+                    stage = Stage.INTERACTIVE
+                    windowStartSec = (windowStartSec + fraction * capture.durationSec)
+                        .coerceIn(0f, maxStart)
+                },
+                onScrubTo = { fraction ->
+                    stage = Stage.INTERACTIVE
+                    // The tapped point becomes the CENTRE of the window, not its left edge: on a
+                    // 50 ms window inside a 10 s capture, aligning the edge would put the thing
+                    // the user pointed at just off the left of the plot.
+                    windowStartSec = (fraction * capture.durationSec - windowSec / 2f)
+                        .coerceIn(0f, maxStart)
+                },
             )
         }
 
         Spacer(Modifier.width(16.dp))
 
-        // The switcher appears only once the scripted introduction is done, so the two opening
-        // views are watched rather than clicked past before they have said anything.
-        AnimatedVisibility(
-            visible = stage == Stage.INTERACTIVE,
-            enter = fadeIn(tween(260, easing = FastOutSlowInEasing)),
-            exit = fadeOut(tween(160)),
-        ) {
-            Column(
-                modifier = Modifier.width(158.dp).fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        Column(modifier = Modifier.width(158.dp).fillMaxHeight()) {
+            // The switcher appears only once the scripted introduction is done, so the two opening
+            // views are watched rather than clicked past before they have said anything.
+            AnimatedVisibility(
+                visible = stage == Stage.INTERACTIVE,
+                enter = fadeIn(tween(260, easing = FastOutSlowInEasing)),
+                exit = fadeOut(tween(160)),
             ) {
-                Spacer(Modifier.height(24.dp))
-                MotorSignalGroup.entries.forEach { entry ->
-                    SignalChip(
-                        label = entry.label,
-                        selected = entry == group,
-                        onClick = { chosen = entry },
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(24.dp))
+                    MotorSignalGroup.entries.forEach { entry ->
+                        SignalChip(
+                            label = entry.label,
+                            selected = entry == group,
+                            onClick = { chosen = entry },
+                        )
+                    }
                 }
             }
+
+            Spacer(Modifier.weight(1f))
+
+            // Bottom right, and deliberately OUTSIDE the switcher's AnimatedVisibility: the zoom is
+            // available at any time, including during the opening sequence, for any signal.
+            ZoomToggle(
+                zoomed = zoomed,
+                enabled = group.windowSec < capture.durationSec,
+                onToggle = {
+                    stage = Stage.INTERACTIVE
+                    // Zooming IN keeps the middle of the current view rather than its left edge,
+                    // so the moment being looked at stays on screen instead of scrolling off it.
+                    val centre = windowStartSec + windowSec / 2f
+                    val next = if (zoomed) capture.durationSec else minOf(group.windowSec, capture.durationSec)
+                    windowStartSec = (centre - next / 2f)
+                        .coerceIn(0f, (capture.durationSec - next).coerceAtLeast(0f))
+                    zoomed = !zoomed
+                },
+            )
         }
+    }
+}
+
+/**
+ * Switches between the signal's own detail window and the whole capture.
+ *
+ * Disabled, rather than hidden, for signals whose detail window IS the whole capture: the control
+ * keeps its place in the layout, and a button that vanishes for two of six signals is harder to
+ * trust than one that greys out.
+ */
+@Composable
+private fun ZoomToggle(zoomed: Boolean, enabled: Boolean, onToggle: () -> Unit) {
+    OutlinedButton(
+        onClick = onToggle,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(
+            imageVector = if (zoomed) Icons.Filled.ZoomOut else Icons.Filled.ZoomIn,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(if (zoomed) "Full run" else "Zoom in", maxLines = 1)
     }
 }
 
@@ -353,13 +425,44 @@ private fun SignalChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Where the visible window sits inside the whole capture. Read-only: the plot itself is the
- *  control, and a second draggable thing competing for the same gesture would be one too many. */
+/**
+ * Where the visible window sits inside the whole capture, and a control for moving it.
+ *
+ * Drag moves the window proportionally to the WHOLE capture, unlike dragging the plot, which moves
+ * it proportionally to the visible window. That difference is the point: on a 50 ms window inside a
+ * ten-second capture, crossing the run by dragging the trace takes two hundred swipes, and one
+ * swipe here does it. The plot is for reading, this is for travelling.
+ *
+ * Tapping jumps straight to a point in the run.
+ */
 @Composable
-private fun TimeScrubber(startSec: Float, windowSec: Float, totalSec: Float) {
+private fun TimeScrubber(
+    startSec: Float,
+    windowSec: Float,
+    totalSec: Float,
+    onScrubBy: (Float) -> Unit,
+    onScrubTo: (Float) -> Unit,
+) {
     val fraction = (windowSec / totalSec).coerceIn(0.01f, 1f)
     val offset = if (totalSec > windowSec) startSec / totalSec else 0f
     Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                // A 26 dp target around a 6 dp track: the track is a drawing, the touch area has
+                // to be reachable with a thumb on a moving vehicle.
+                .height(26.dp)
+                .pointerInput(totalSec) {
+                    detectHorizontalDragGestures { change, dragAmount ->
+                        change.consume()
+                        onScrubBy(dragAmount / size.width)
+                    }
+                }
+                .pointerInput(totalSec) {
+                    detectTapGestures { offset -> onScrubTo(offset.x / size.width) }
+                },
+            contentAlignment = Alignment.CenterStart,
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -376,6 +479,7 @@ private fun TimeScrubber(startSec: Float, windowSec: Float, totalSec: Float) {
                     .clip(RoundedCornerShape(3.dp))
                     .background(MaterialTheme.colorScheme.primary),
             )
+        }
         }
         Spacer(Modifier.height(6.dp))
         Text(

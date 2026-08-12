@@ -1,13 +1,26 @@
 package com.motorguard.ivi.ui.diagnostics.insights
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
+import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -103,54 +116,111 @@ internal fun phasePalette(base: Color, count: Int): List<Color> {
     }
 }
 
-/** Smallest range that contains every column of every trace, with a little headroom. */
-internal fun verticalRange(traces: List<FloatArray>): ClosedFloatingPointRange<Float> {
-    var lo = Float.MAX_VALUE
-    var hi = -Float.MAX_VALUE
-    traces.forEach { t ->
-        t.forEach { v ->
-            lo = min(lo, v)
-            hi = max(hi, v)
-        }
-    }
-    if (lo > hi) return -1f..1f
-    // A flat trace has no range to scale against and would divide by zero; give it a band so it
-    // draws as a line through the middle rather than vanishing.
-    if (hi - lo < 1e-4f) return (lo - 1f)..(hi + 1f)
-    val pad = (hi - lo) * 0.08f
-    return (lo - pad)..(hi + pad)
-}
+/** Ticks on both axes. Five reads as a scale; more turns the plot into graph paper. */
+private const val TICKS = 5
+
+/** Width reserved for the vertical scale. Fixed rather than measured so the plot does not shift
+ *  sideways when a label gains a digit — the same class of bug as the card's bouncing rows. */
+private val AXIS_LABEL_WIDTH = 52.dp
 
 /**
- * Draws one or more channels over a shared vertical scale.
+ * Draws one or more channels against [range], with a labelled scale on both axes.
  *
- * Shared, not per-channel: three phase currents normalised independently would each fill the height
- * and the imbalance between them — the whole reason to draw them together — would be scaled out of
- * existence.
+ * The vertical scale is shared by every channel and supplied by the caller, never fitted to the
+ * data. Per-channel normalisation would give three phase currents the same height and scale the
+ * imbalance between them — the whole reason to draw them together — out of existence; per-window
+ * normalisation would make every window look alike, so scrubbing through a run would appear to
+ * change nothing while the axis moved silently underneath.
  */
 @Composable
 internal fun WaveformPlot(
     channels: List<FloatArray>,
     colors: List<Color>,
+    range: ClosedFloatingPointRange<Float>,
     fromIndex: Int,
     toIndex: Int,
+    startSec: Float,
+    windowSec: Float,
     modifier: Modifier = Modifier,
 ) {
     val grid = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
     val axis = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
+    val labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+    val labelStyle = MaterialTheme.typography.labelSmall
 
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth().weight(1f)) {
+            Column(
+                modifier = Modifier.width(AXIS_LABEL_WIDTH).fillMaxHeight(),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                for (i in 0 until TICKS) {
+                    val value = range.endInclusive -
+                        (range.endInclusive - range.start) * i / (TICKS - 1)
+                    Text(
+                        text = axisValue(value),
+                        style = labelStyle,
+                        color = labelColor,
+                        maxLines = 1,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                }
+            }
+            PlotCanvas(
+                channels = channels,
+                colors = colors,
+                range = range,
+                fromIndex = fromIndex,
+                toIndex = toIndex,
+                grid = grid,
+                axis = axis,
+                modifier = Modifier.fillMaxHeight().weight(1f),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Spacer(Modifier.width(AXIS_LABEL_WIDTH))
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                for (i in 0 until TICKS) {
+                    Text(
+                        text = timeValue(startSec + windowSec * i / (TICKS - 1), windowSec),
+                        style = labelStyle,
+                        color = labelColor,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlotCanvas(
+    channels: List<FloatArray>,
+    colors: List<Color>,
+    range: ClosedFloatingPointRange<Float>,
+    fromIndex: Int,
+    toIndex: Int,
+    grid: Color,
+    axis: Color,
+    modifier: Modifier,
+) {
     Canvas(modifier) {
         val columns = size.width.toInt().coerceAtLeast(1)
         val decimated = channels.map { minMaxDecimate(it, fromIndex, toIndex, columns) }
-        val range = verticalRange(decimated)
-        val span = range.endInclusive - range.start
+        val span = (range.endInclusive - range.start).takeIf { it > 1e-6f } ?: 1f
 
-        // Horizontal rules only. Vertical ones would imply a time grid, and the x scale changes
-        // with every signal group, so a fixed vertical spacing would mean different things in
-        // different views.
-        for (i in 1 until 4) {
-            val y = size.height * i / 4f
+        // Both axes get rules now that both are labelled: a gridline with no number against it is
+        // decoration, and a number with no gridline is hard to read a value against.
+        for (i in 1 until TICKS - 1) {
+            val y = size.height * i / (TICKS - 1f)
             drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+            val x = size.width * i / (TICKS - 1f)
+            drawLine(grid, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
         }
         if (range.start < 0f && range.endInclusive > 0f) {
             val zeroY = size.height * (1f - (0f - range.start) / span)
@@ -166,8 +236,13 @@ internal fun WaveformPlot(
                 val lo = trace[c * 2]
                 val hi = trace[c * 2 + 1]
                 val x = c.toFloat()
-                val yLo = size.height * (1f - (lo - range.start) / span)
-                val yHi = size.height * (1f - (hi - range.start) / span)
+                // Clamped to the plot, so a value beyond the fixed scale runs along the edge
+                // rather than being drawn outside it and silently disappearing. An instrument
+                // pinned against its stop still tells you something.
+                val yLo = (size.height * (1f - (lo - range.start) / span))
+                    .coerceIn(0f, size.height)
+                val yHi = (size.height * (1f - (hi - range.start) / span))
+                    .coerceIn(0f, size.height)
 
                 // The vertical extent of everything that fell in this column, drawn once.
                 if (yLo - yHi > 0.5f) {
@@ -190,4 +265,22 @@ internal fun WaveformPlot(
             }
         }
     }
+}
+
+/** Enough precision to separate adjacent ticks, and no more. */
+private fun axisValue(value: Float): String {
+    val magnitude = abs(value)
+    return when {
+        magnitude >= 10f -> String.format(Locale.US, "%.0f", value)
+        magnitude >= 1f -> String.format(Locale.US, "%.1f", value)
+        else -> String.format(Locale.US, "%.2f", value)
+    }
+}
+
+/** Seconds, at whatever precision keeps neighbouring ticks distinct: a 50 ms window needs three
+ *  decimals, and a ten-second one showing three would be unreadable noise. */
+private fun timeValue(seconds: Float, windowSec: Float): String = when {
+    windowSec < 0.2f -> String.format(Locale.US, "%.3f", seconds)
+    windowSec < 2f -> String.format(Locale.US, "%.2f", seconds)
+    else -> String.format(Locale.US, "%.1f", seconds)
 }

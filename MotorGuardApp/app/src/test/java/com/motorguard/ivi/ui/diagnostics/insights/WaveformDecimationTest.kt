@@ -65,20 +65,4 @@ class WaveformDecimationTest {
         assertTrue(minMaxDecimate(samples, -50, 900, columns = 4).isNotEmpty())
         assertTrue(minMaxDecimate(samples, 2, 1, columns = 4).all { it == 0f })
     }
-
-    @Test
-    fun `the vertical range spans every channel so shared scaling is honest`() {
-        val a = floatArrayOf(-2f, 4f)
-        val b = floatArrayOf(-9f, 1f)
-        val range = verticalRange(listOf(a, b))
-        assertTrue(range.start < -9f)
-        assertTrue(range.endInclusive > 4f)
-    }
-
-    /** A flat trace has no range to normalise against; it must draw as a line, not divide by zero. */
-    @Test
-    fun `a flat trace still gets a range`() {
-        val range = verticalRange(listOf(floatArrayOf(3f, 3f, 3f)))
-        assertTrue(range.endInclusive - range.start > 0.5f)
-    }
 }
