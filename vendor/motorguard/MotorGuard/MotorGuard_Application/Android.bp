@@ -15,7 +15,17 @@
 android_app {
     name: "MotorGuard",
 
-    srcs: ["app/MotorGuardApp/app/src/main/java/**/*.kt"],
+    srcs: [
+        "app/MotorGuardApp/app/src/main/java/**/*.kt",
+        // Diagnostics domain + the fake data source it currently runs against. Gradle
+        // builds these as the library modules :core:vehicle-data-api and
+        // :core:vehicle-data-fake; neither carries resources or a manifest, so Soong
+        // compiles them straight into the app instead of as android_library modules.
+        // vehicle-data-fake is the swap target for the real SOME/IP bridge — when that
+        // lands, its sources join this list (and the fake's leave it).
+        "app/MotorGuardApp/core/vehicle-data-api/src/main/java/**/*.kt",
+        "app/MotorGuardApp/core/vehicle-data-fake/src/main/java/**/*.kt",
+    ],
     resource_dirs: [
         "app/MotorGuardApp/app/src/main/res",
         // Overlay that flips bool/use_real_connectivity -> true for the real build.
@@ -23,11 +33,20 @@ android_app {
     ],
     manifest: "app/MotorGuardApp/app/src/main/AndroidManifest.xml",
 
-    // Voice wake-word models (openWakeWord *.onnx). ORT mmaps them, so they must
-    // NOT be compressed in the APK (mirrors android.androidResources.noCompress
-    // "onnx" in build.gradle.kts).
+    // Voice wake-word models (openWakeWord *.onnx) and the diagnostics vehicle model
+    // (car_model.glb). ORT mmaps the .onnx files and the .glb is already-compressed
+    // texture payload, so neither is worth re-zipping — both stay stored (mirrors
+    // android.androidResources.noCompress "onnx"/"glb" in build.gradle.kts).
+    //
+    // car_model.glb is NOT in the app branch (it is .gitignored — 15 MB of binary).
+    // deploy.sh installs it into this directory from vehicle3dModel/ in the same
+    // checkout before the tree is copied. Without that step the diagnostics stage
+    // renders an empty scene.
     asset_dirs: ["app/MotorGuardApp/app/src/main/assets"],
-    aaptflags: ["-0 .onnx"],
+    aaptflags: [
+        "-0 .onnx",
+        "-0 .glb",
+    ],
 
     // The native reasoning/voice core (see cc_library_shared below) and the
     // ONNX Runtime prebuilt (android_library_import below) — the two pieces the
@@ -82,6 +101,10 @@ android_app {
         "androidx.media3_media3-session",
         // MapLibre Native 11.8.0 (nav map) — vendored AARs, see the import below.
         "motorguard-maplibre",
+        // SceneView 2.3.0 + Filament (diagnostics 3D car stage) — vendored AARs, see
+        // the imports below. Pinned to 2.3.0 because it is the last release built
+        // against kotlin-stdlib 2.0.21; 4.x needs Kotlin 2.3+.
+        "motorguard-sceneview",
     ],
 
     // Jetpack Compose compiler plugin: applied AUTOMATICALLY by Soong when
@@ -315,6 +338,82 @@ android_library_import {
     name: "motorguard-maplibre-timber",
     aars: ["prebuilts/timber-5.0.1.aar"],
     sdk_version: "current",
+}
+
+// ---------------------------------------------------------------------------
+// SceneView 2.3.0 (io.github.sceneview.*) — the diagnostics 3D car stage, Filament
+// under the hood. Deps mirrored from its POM: kotlin-math and the three Filament
+// AARs at compile scope, fragment-ktx / compose ui+foundation at runtime (all three
+// already on the app classpath above). The `fuel` runtime deps are for loading glTF
+// over HTTP; this app loads car_model.glb from assets and never reaches that code,
+// so they are deliberately not vendored.
+//
+// The SceneView AAR also SHIPS ASSETS the app loads at runtime:
+// assets/environments/neutral/neutral_ibl.ktx (indirect lighting, see
+// Car3dTuning.NEUTRAL_IBL_ASSET) and assets/materials/*.filamat. Soong merges an
+// AAR's assets into the app package the same way Gradle does. If the stage ever
+// comes up unlit with "asset not found" in logcat, that merge is the thing to check
+// first — the fallback is to unzip the AAR's assets/ into a directory here and add
+// it to asset_dirs above.
+// ---------------------------------------------------------------------------
+android_library_import {
+    name: "motorguard-sceneview",
+    aars: ["prebuilts/sceneview-2.3.0.aar"],
+    sdk_version: "current",
+    static_libs: [
+        "motorguard-filament",
+        "motorguard-filament-gltfio",
+        "motorguard-filament-utils",
+        "motorguard-kotlin-math",
+        "kotlin-stdlib",
+        "androidx.fragment_fragment-ktx",
+        "androidx.compose.ui_ui",
+        "androidx.compose.foundation_foundation",
+    ],
+}
+
+// Filament 1.56.0 — the renderer itself. extract_jni pulls libfilament-jni.so out of
+// the AAR (and libgltfio-jni.so / libfilament-utils-jni.so out of the two below);
+// SceneView loads all three with System.loadLibrary at Engine creation.
+android_library_import {
+    name: "motorguard-filament",
+    aars: ["prebuilts/filament-android-1.56.0.aar"],
+    sdk_version: "current",
+    extract_jni: true,
+}
+
+// glTF loading (com.google.android.filament.gltfio.*) — this is what reads car_model.glb.
+android_library_import {
+    name: "motorguard-filament-gltfio",
+    aars: ["prebuilts/gltfio-android-1.56.0.aar"],
+    sdk_version: "current",
+    extract_jni: true,
+    static_libs: ["motorguard-filament"],
+}
+
+// KTX texture / IBL loading (com.google.android.filament.utils.*) — the neutral
+// environment the stage is lit with.
+android_library_import {
+    name: "motorguard-filament-utils",
+    aars: ["prebuilts/filament-utils-android-1.56.0.aar"],
+    sdk_version: "current",
+    extract_jni: true,
+    static_libs: [
+        "motorguard-filament",
+        "motorguard-filament-gltfio",
+        "motorguard-kotlin-math",
+        "kotlin-stdlib",
+    ],
+}
+
+// dev.romainguy:kotlin-math 1.5.3 — the Float3/Quaternion/lookAt maths SceneView's API
+// speaks, used directly by Car3dRenderer for the camera rig. Multiplatform artifact;
+// the -jvm jar is the Android one.
+java_import {
+    name: "motorguard-kotlin-math",
+    jars: ["prebuilts/kotlin-math-jvm-1.5.3.jar"],
+    sdk_version: "current",
+    static_libs: ["kotlin-stdlib"],
 }
 
 // ---------------------------------------------------------------------------

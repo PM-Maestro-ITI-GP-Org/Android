@@ -7,19 +7,22 @@ build file (Gradle files live in the app submodule and are ignored).
 
 > **The app source is a submodule.** `MotorGuard_Application/app/` is a git submodule
 > checked out to a branch of `PM-Maestro-ITI-GP-Org/Android` (default
-> `media-nav-settings-voice`). `deploy.sh` fetches and checks out the tip of whatever
-> branch you set in `deploy.conf` — that branch is the source of the final application.
+> `media-nav-settings-voice-diagnostics`). `deploy.sh` fetches and checks out the tip of
+> whatever branch you set in `deploy.conf` — that branch is the source of the final application.
 > The blue print (`MotorGuard_Application/Android.bp`) reads the sources it needs from
-> `app/MotorGuardApp/app/src/main/...` and ignores everything else (Gradle files, docs…).
+> `app/MotorGuardApp/app/src/main/...` and `app/MotorGuardApp/core/vehicle-data-*/src/main/...`,
+> and ignores everything else (Gradle files, docs…).
 
 ## Layout
 
 ```
 MotorGuard_Application/
-  app/                git submodule → same repo, branch per deploy.conf (e.g. media-nav-settings-voice)
+  app/                git submodule → same repo, branch per deploy.conf
                       app source at app/MotorGuardApp/app/src/main/{java,res,assets,cpp,AndroidManifest.xml}
+                      diagnostics domain + fake source at app/MotorGuardApp/core/vehicle-data-{api,fake}/
+                      3D model library at app/vehicle3dModel/ (deploy.sh installs one .glb, then prunes it)
   Android.bp          the blue print — all Soong modules, paths relative to this file
-  prebuilts/          fetch.sh + the 17 vendored AARs/jars (fetched, never committed)
+  prebuilts/          fetch.sh + the 22 vendored AARs/jars (fetched, never committed)
   privapp_permissions_com.motorguard.ivi.xml   privileged allow-list → /system/etc/permissions
   res-platform/       overlay flipping use_real_connectivity → true (real radios)
 motorguard.mk         product makefile snippet (PRODUCT_PACKAGES += MotorGuard)
@@ -29,20 +32,27 @@ README.md
 `Android.bp` defines the `MotorGuard` app, `libmotorguardvoice` (the native
 voice/reasoning core — the Soong equivalent of `app/MotorGuardApp/app/src/main/cpp/CMakeLists.txt`,
 since Soong does not run CMake), and the vendored import modules (ONNX Runtime, media3,
-MapLibre, okhttp/okio, …). A commented `android_app_import` at the bottom is path (B):
-bundle a Gradle-built, platform-re-signed APK instead of compiling from source.
+MapLibre, SceneView/Filament, okhttp/okio, …). A commented `android_app_import` at the bottom
+is path (B): bundle a Gradle-built, platform-re-signed APK instead of compiling from source.
+
+**Diagnostics** — the two `core/vehicle-data-*` source roots, the SceneView/Filament prebuilts
+and the `car_model.glb` install step are documented in full in the repo-root `README.md`
+(*What diagnostics adds to the build*), including where the SOME/IP motor service plugs in.
+The one thing worth repeating here: `car_model.glb` is `.gitignored` on the app branch, so a
+tree copied by hand without installing it renders an empty stage.
 
 ## Build (via the repo's deploy.sh — recommended)
 
 ```bash
-cd <repo>                     # media-nav-settings-voice_forAAOS branch
-./deploy.sh                   # reads deploy.conf: APP_BRANCH + AOSP_ROOT
+cd <repo>                     # media-nav-settings-voice-diagnostics_forAAOS branch
+./deploy.sh                   # reads deploy.conf: APP_BRANCH + AOSP_ROOT + CAR_MODEL
 # or: ./deploy.sh /path/to/aosp my-branch
 ```
 
-`deploy.sh` does everything: checks out the app submodule to `APP_BRANCH`, copies this
-drop-in into `<aosp>/vendor/motorguard/MotorGuard/`, applies the device patch, and
-fetches the prebuilts. Then:
+`deploy.sh` does everything: checks out the app submodule to `APP_BRANCH`, installs the
+diagnostics 3D model into its assets, copies this drop-in into
+`<aosp>/vendor/motorguard/MotorGuard/`, applies the device patch, and fetches the
+prebuilts. Then:
 
 ```bash
 cd <aosp>
@@ -61,7 +71,11 @@ nice -n 10 m bootimage systemimage vendorimage -j2   # full image (use -j2: java
 ## Manual install (what deploy.sh automates)
 
 ```bash
-git clone --recurse-submodules -b media-nav-settings-voice_forAAOS git@github.com:PM-Maestro-ITI-GP-Org/Android.git dropin
+git clone --recurse-submodules -b media-nav-settings-voice-diagnostics_forAAOS git@github.com:PM-Maestro-ITI-GP-Org/Android.git dropin
+# the diagnostics 3D model — .gitignored on the app branch, so install it by hand here
+APP=dropin/vendor/motorguard/MotorGuard/MotorGuard_Application/app
+cp $APP/vehicle3dModel/porsche_mission_e/porsche_mission_e_diag_v2.glb \
+   $APP/MotorGuardApp/app/src/main/assets/car_model.glb
 cp -r dropin/vendor/motorguard/MotorGuard <aosp>/vendor/motorguard/
 git -C <aosp>/device/brcm/rpi5 apply dropin/device/brcm/rpi5/aosp_rpi5_car.mk.patch
 git -C <aosp>/device/brcm/rpi5 apply dropin/device/brcm/rpi5/BoardConfig.mk.patch
@@ -95,11 +109,13 @@ service.adb.tcp.port=5555
 
 ## Voice subsystem (Vega) prerequisites
 
-- **Prebuilts** — the 17 AARs/jars (ONNX Runtime, media3, MapLibre, okhttp/okio, …) are
+- **Prebuilts** — the 22 AARs/jars (ONNX Runtime, media3, MapLibre, SceneView/Filament,
+  okhttp/okio, …) are
   never committed; `MotorGuard_Application/prebuilts/fetch.sh` downloads each and SHA256-verifies it, skipping files
   already present (idempotent). `deploy.sh` preserves the fetched files across deploys, so a
   re-deploy only re-fetches what is missing.
-  Without them soong fails to resolve `ai.onnxruntime.*`, `androidx.media3.*`, `org.maplibre.*`.
+  Without them soong fails to resolve `ai.onnxruntime.*`, `androidx.media3.*`, `org.maplibre.*`
+  and `io.github.sceneview.*`.
 - **SQLite** — `app/MotorGuardApp/app/src/main/cpp/sqlite3.c` + `sqlite3.h` (the official
   amalgamation) are committed in the app submodule and compiled straight in, because the
   platform does not expose libsqlite to apps.

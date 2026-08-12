@@ -37,6 +37,11 @@ f794d3fa3a4f2e890f72cf25b8504e47f40a4efbc0ac7ad0401aa137b778b640  maplibre-andro
 c6edddfcc8eff42a1604c8577fcfa4b4ffd9f252122c52ea36cfe7967f512f71  timber-5.0.1.aar                https://repo1.maven.org/maven2/com/jakewharton/timber/timber/5.0.1/timber-5.0.1.aar
 b1050081b14bb7a3a7e55a4d3ef01b5dcfabc453b4573a4fc019767191d5f4e0  okhttp-4.12.0.jar               https://repo1.maven.org/maven2/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar
 67543f0736fc422ae927ed0e504b98bc5e269fda0d3500579337cb713da28412  okio-jvm-3.6.0.jar              https://repo1.maven.org/maven2/com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar
+ba48305e4f26630b37776f6fe1b03bf0e90b2f3036dda6ac029cbc41b981d0d3  sceneview-2.3.0.aar             https://repo1.maven.org/maven2/io/github/sceneview/sceneview/2.3.0/sceneview-2.3.0.aar
+b03d35dd50698d0c61e28eec24734b7b257a0f13017817375598c0d3af49da39  filament-android-1.56.0.aar     https://repo1.maven.org/maven2/com/google/android/filament/filament-android/1.56.0/filament-android-1.56.0.aar
+25370a7b6a5af3be66367b6d609deed18b37333e1963b7ee6856f50e0dab544e  gltfio-android-1.56.0.aar       https://repo1.maven.org/maven2/com/google/android/filament/gltfio-android/1.56.0/gltfio-android-1.56.0.aar
+31c5628d422af803ca6bd1cc93b77782c21ade30184883a529674b01fb611be0  filament-utils-android-1.56.0.aar https://repo1.maven.org/maven2/com/google/android/filament/filament-utils-android/1.56.0/filament-utils-android-1.56.0.aar
+1bed2190b7d7846649538b91d6b7519d7c2e78395a021b59b4f0eefc66c8865d  kotlin-math-jvm-1.5.3.jar       https://repo1.maven.org/maven2/dev/romainguy/kotlin-math-jvm/1.5.3/kotlin-math-jvm-1.5.3.jar
 EOF
 
 echo "All $TOTAL prebuilts present and SHA256-verified."

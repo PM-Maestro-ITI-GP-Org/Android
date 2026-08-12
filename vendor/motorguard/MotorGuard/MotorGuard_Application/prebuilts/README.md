@@ -1,6 +1,6 @@
 # Vendored prebuilts
 
-All files here are fetched, never committed (~20 MB total). See `.gitignore`
+All files here are fetched, never committed (~45 MB total). See `.gitignore`
 (`MotorGuard_Application/prebuilts/*.aar`). None of these artifacts exist in the AOSP prebuilts
 (`prebuilts/sdk/current/androidx/m2repository` has no media3, no onnxruntime, and
 `external/kotlinx.coroutines` has no guava variant), so they are imported with
@@ -9,7 +9,7 @@ All files here are fetched, never committed (~20 MB total). See `.gitignore`
 ## ONNX Runtime — `onnxruntime-android-1.19.2.aar` (~15 MB)
 
 Maven Central — `com.microsoft.onnxruntime:onnxruntime-android:1.19.2`, the same
-version the Gradle build pins on the `media-nav-settings-voice` branch:
+version the Gradle build pins on the `media-nav-settings-voice-diagnostics` branch:
 
     https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.19.2/onnxruntime-android-1.19.2.aar
 
@@ -69,9 +69,36 @@ own `okhttp` module is ART-internal (restricted visibility, `sdk_version: none`)
 and cannot be linked into apps, so okhttp 4.12.0 + okio 3.6.0 are vendored too
 (`motorguard-okhttp` / `motorguard-okio`).
 
+## SceneView + Filament (diagnostics 3D car stage) — `sceneview-2.3.0.aar` + 4 (~25 MB)
+
+Maven Central — `io.github.sceneview:sceneview:2.3.0` and the Filament/kotlin-math
+artifacts its POM pins at compile scope:
+
+    https://repo1.maven.org/maven2/io/github/sceneview/sceneview/2.3.0/sceneview-2.3.0.aar
+    https://repo1.maven.org/maven2/com/google/android/filament/filament-android/1.56.0/filament-android-1.56.0.aar
+    https://repo1.maven.org/maven2/com/google/android/filament/gltfio-android/1.56.0/gltfio-android-1.56.0.aar
+    https://repo1.maven.org/maven2/com/google/android/filament/filament-utils-android/1.56.0/filament-utils-android-1.56.0.aar
+    https://repo1.maven.org/maven2/dev/romainguy/kotlin-math-jvm/1.5.3/kotlin-math-jvm-1.5.3.jar
+
+**Do not bump SceneView past 2.3.0** without a project-wide toolchain decision: it is the
+last release built against kotlin-stdlib 2.0.21, and every 4.x needs Kotlin 2.3+, which
+would move every fragment owner at once. The Filament version is not independently
+choosable either — its JNI and its Java bindings ship together, so 1.56.0 is whatever
+SceneView 2.3.0 asked for.
+
+The three Filament AARs each carry their own `.so` (`libfilament-jni`, `libgltfio-jni`,
+`libfilament-utils-jni`) and are imported with `extract_jni: true`. The SceneView AAR
+additionally ships **assets** — `environments/neutral/neutral_ibl.ktx` and
+`materials/*.filamat` — which the app loads by name at runtime; Soong merges an AAR's
+assets into the app package, and if that ever stops being true the stage comes up unlit.
+
+The POM's runtime-scope `com.github.kittinunf.fuel:*` entries are for loading glTF over
+HTTP. This app loads its model from assets and never reaches that code, so they are not
+vendored.
+
 ## Keeping versions in step
 
-Bump the groups together when the Gradle branch (`media-nav-settings-voice`)
-bumps them: ONNX Runtime, media3, coroutines, MapLibre — filename here, module
-names in `Android.bp`, or the in-tree build silently links an old runtime
+Bump the groups together when the Gradle branch (`media-nav-settings-voice-diagnostics`)
+bumps them: ONNX Runtime, media3, coroutines, MapLibre, SceneView/Filament — filename
+here, module names in `Android.bp`, or the in-tree build silently links an old runtime
 against newer wake-word models.
