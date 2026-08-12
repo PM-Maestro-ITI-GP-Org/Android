@@ -25,6 +25,12 @@ android_app {
         // lands, its sources join this list (and the fake's leave it).
         "app/MotorGuardApp/core/vehicle-data-api/src/main/java/**/*.kt",
         "app/MotorGuardApp/core/vehicle-data-fake/src/main/java/**/*.kt",
+        // The SOME/IP bridge to the diagnostics unit. Unlike everything above
+        // it lives in this drop-in rather than in the app branch, because it
+        // only makes sense next to libmotorguardsomeip and because the Gradle
+        // build has no way to produce that library. deploy.sh applies
+        // motorservice/vehicledata-someip.patch to hand it the motor signal.
+        "motorservice/java/**/*.kt",
     ],
     resource_dirs: [
         "app/MotorGuardApp/app/src/main/res",
@@ -51,7 +57,10 @@ android_app {
     // The native reasoning/voice core (see cc_library_shared below) and the
     // ONNX Runtime prebuilt (android_library_import below) — the two pieces the
     // Vega voice subsystem added on top of the pure-Compose launcher.
-    jni_libs: ["libmotorguardvoice"],
+    jni_libs: [
+        "libmotorguardvoice",
+        "libmotorguardsomeip",
+    ],
 
     // System APIs (WifiManager/BluetoothAdapter control) + platform signing so the app
     // can be HOME and hold privileged permissions.
@@ -160,6 +169,66 @@ cc_library_shared {
     // Platform-variant build (matches the platform_apis app it ships in). If you
     // instead build the app against a numbered sdk_version, add sdk_version +
     // stl: "c++_static" here so the lib is self-contained.
+}
+
+// ---------------------------------------------------------------------------
+// The SOME/IP client for the diagnostics unit's motor service — the transport
+// behind the diagnostics screen's live fault state and its capture button.
+// Sources live in this drop-in, not in the app submodule: they are only
+// buildable in a tree (there is no Gradle path to a platform .so), and they
+// are the AOSP half of a contract whose other half is on the Pi.
+//
+// No vsomeip and no CommonAPI. Both need Boost, which AOSP does not ship, so
+// using them would mean vendoring Boost into the tree and maintaining it for
+// a client that speaks exactly two message types. SOME/IP's whole point is
+// that interoperation happens at the wire, so the peer keeps its vsomeip
+// stack and this speaks the same bytes at it. See motorservice/README.md for
+// the wire contract and the ID assignment.
+// ---------------------------------------------------------------------------
+cc_library_shared {
+    name: "libmotorguardsomeip",
+
+    srcs: ["motorservice/src/*.cpp"],
+    local_include_dirs: ["motorservice/include"],
+    header_libs: ["jni_headers"], // jni.h (libnativehelper/include_jni)
+
+    cppflags: ["-std=c++17"],
+    // Warnings are errors here on purpose: every bug this library can have is
+    // an off-by-one in a byte offset, and -Wall catches a useful fraction of
+    // them before the link fails to come up on a device.
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+
+    shared_libs: ["liblog"],
+}
+
+// Host tests for the parts with no sockets in them: framing, the two payload
+// layouts, and the SD entry/option encoding.
+//
+//     m motorguard_someip_test && out/host/linux-x86/bin/motorguard_someip_test
+//
+// Everything below the socket boundary is deliberately reachable this way.
+// The alternative is discovering a wrong nibble in a subscribe entry by
+// watching a head unit show "No data" with no error anywhere.
+cc_test_host {
+    name: "motorguard_someip_test",
+
+    srcs: [
+        "motorservice/src/wire.cpp",
+        "motorservice/src/sd.cpp",
+        "motorservice/test/wire_test.cpp",
+    ],
+    local_include_dirs: ["motorservice/include"],
+
+    cppflags: ["-std=c++17"],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
 }
 
 // ONNX Runtime for Android (ai.onnxruntime.*). AOSP has no onnxruntime prebuilt,

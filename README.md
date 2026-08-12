@@ -32,6 +32,8 @@ vendor/motorguard/MotorGuard/  the drop-in package (blue print + glue)
     app/                       git submodule → app source at app/MotorGuardApp/app/src/main/
                                plus the diagnostics libraries at app/MotorGuardApp/core/vehicle-data-*/
     Android.bp                 the blue print — all Soong modules (paths relative to this file)
+    motorservice/              the SOME/IP link to the diagnostics unit: native client,
+                               Kotlin bridge, host tests, and the patch that wires it in
     prebuilts/fetch.sh         downloads + SHA256-verifies the 22 prebuilt AARs/jars (never
                                committed; skips files already present — deploy.sh preserves them)
     privapp_permissions_com.motorguard.ivi.xml   privileged allow-list → /system/etc/permissions
@@ -204,30 +206,31 @@ texture payload, so re-zipping it only costs build time.
 after the model is installed, so `deploy.sh` drops it from the *installed* copy (never from
 this repo's checkout) rather than leaving another 121 MB in the AOSP tree per deploy.
 
-Not needed, and deliberately absent: no new permissions (the diagnostics screen adds none, so
-the manifest and `privapp_permissions_com.motorguard.ivi.xml` are untouched), no new native
-code, no device-patch changes.
+**5. The SOME/IP link to the diagnostics unit.** `libmotorguardsomeip` plus its Kotlin bridge,
+in `MotorGuard_Application/motorservice/` — a hand-rolled SOME/IP client (framing, SD, the 1 Hz
+fault event over UDP, the capture method over TCP) that replaces the fake motor signal and the
+fake capture. **No vsomeip and no CommonAPI**: both need Boost, which AOSP does not ship, so
+they would mean vendoring and maintaining Boost in the tree for a client that speaks two
+message types. Interoperation happens at the wire, which is what SOME/IP is for.
 
-### Where the SOME/IP motor service will plug in
+Everything about it — the ID assignment, the byte layouts, the mapping and freshness decisions,
+what is tested and what is still open — is in
+[`motorservice/README.md`](vendor/motorguard/MotorGuard/MotorGuard_Application/motorservice/README.md).
+Two things worth knowing from here:
 
-The diagnostics screen currently renders `FakeVehicleDataSource` / `FakeMotorCaptureSource`.
-The real source is the SOME/IP bridge to the diagnostics Pi, specified in the app branch's
-`docs/09-motor-service-aaos.md` (Android side) and `docs/10-motor-service-someip.md` (Pi
-side). Nothing in this drop-in blocks it; what it will cost here when it lands:
+- It is wired in by `motorservice/vehicledata-someip.patch`, which `deploy.sh` applies to the
+  app checkout the same way it applies `build-fixes.patch`. The app branch is untouched, so the
+  Gradle build keeps running against the fake and is unaware any of this exists.
+- **The peer does not exist yet.** `docs/09`/`docs/10` on the app branch are requirements, and
+  the service on the diagnostics unit is a separate build by someone else. Until it offers
+  service `0x1241`, the link sits down and the motor tile reads "No data" — which is the
+  specified behaviour for an absent source, not a failure. Every other signal on the screen is
+  unaffected: this link carries the motor and nothing else.
 
-- **Sources** — the bridge replaces `vehicle-data-fake` in `srcs`. If it becomes its own
-  Gradle module, add its source root the same way; `vehicle-data-api` stays either way,
-  because the contract is what the UI is written against.
-- **Native transport** — if vsomeip/CommonAPI is used rather than a pure-Kotlin socket client,
-  it needs a `cc_library_shared` beside `libmotorguardvoice`, and a decision this drop-in has
-  not made: vsomeip bundled into the APK, or built into the image as a platform library.
-  Bundled is simpler; in-image is what you want if anything else on the head unit ever speaks
-  SOME/IP.
-- **Manifest and allow-list** — a socket client needs `INTERNET` (already requested). A native
-  daemon needs SELinux policy, which is a device-patch change and not app work. Whatever is
-  added must be in **both** the manifest and the privapp allow-list — see the warning below.
-- **Nothing in the UI changes.** `ui/diagnostics/VehicleData.kt` is the only file permitted to
-  name a concrete source; the acceptance criteria are §9 of `09-motor-service-aaos.md`.
+Not needed, and deliberately absent: no new permissions (the diagnostics screen adds none and
+the link is an ordinary client socket user under `INTERNET`, which the app already requests, so
+the manifest and `privapp_permissions_com.motorguard.ivi.xml` are untouched), and no
+device-patch changes.
 
 ## Voice subsystem (Vega) prerequisites
 
@@ -276,10 +279,14 @@ checked, and what was not:
 
 - **Checked** — all five new prebuilt URLs resolve and their SHA256s match the artifacts Gradle
   resolved for the app branch (so the AAR the image links is byte-identical to the one the
-  Gradle build was developed against); `build-fixes.patch` still applies cleanly to the
-  diagnostics branch; `deploy.sh` step 3 was exercised against a real checkout of that branch,
-  including the re-install, unchanged, missing-model and pre-diagnostics-branch paths.
-- **Not checked** — nothing has been compiled. Expect the usual first-build Soong friction and
+  Gradle build was developed against); both app patches apply cleanly to the diagnostics branch
+  and are idempotent; `deploy.sh` step 3 was exercised against a real checkout of that branch,
+  including the re-install, unchanged, missing-model and pre-diagnostics-branch paths. For the
+  SOME/IP link: the C++ compiles clean under `-Wall -Wextra` on the host, its 16 host tests
+  pass, and the Kotlin bridge plus the patched `VehicleData.kt` type-check against the real
+  `vehicle-data-api` and `vehicle-data-fake` sources.
+- **Not checked** — nothing has been compiled by Soong, and the SOME/IP link has never spoken to
+  a peer (there is not one yet). Expect the usual first-build Soong friction and
   fix it here rather than on the app branch. The two most likely places: whether the tree's
   `androidx.compose.foundation_foundation` / `androidx.fragment_fragment-ktx` module names
   match what `motorguard-sceneview` lists, and whether the SceneView AAR's assets land in the

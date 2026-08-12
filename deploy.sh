@@ -50,20 +50,38 @@ if [ ! -f "$SUBMODULE/MotorGuardApp/app/src/main/AndroidManifest.xml" ]; then
   exit 1
 fi
 
-echo "== 2/6 apply required build fixes (package= + CACHE_BYTES order)"
-FIXES="$ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/build-fixes.patch"
-if grep -q 'package="com.motorguard.ivi"' "$SUBMODULE/MotorGuardApp/app/src/main/AndroidManifest.xml"; then
-  echo "  already applied"
-elif git -C "$SUBMODULE" apply --check "$FIXES" >/dev/null 2>&1; then
-  git -C "$SUBMODULE" apply "$FIXES"
-  echo "  applied (git apply)"
-elif patch -p1 -d "$SUBMODULE" --dry-run < "$FIXES" >/dev/null 2>&1; then
-  patch -p1 -d "$SUBMODULE" < "$FIXES"
-  echo "  applied (patch -p1)"
-else
-  echo "ERROR: could not apply build fixes to $SUBMODULE" >&2
-  exit 1
-fi
+echo "== 2/6 patch the app source for the in-tree build"
+
+apply_app_patch() {
+  local name="$1" marker_file="$2" marker="$3"
+  local src="$ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/$name"
+  if grep -qF "$marker" "$SUBMODULE/$marker_file" 2>/dev/null; then
+    echo "  $name: already applied"
+  elif git -C "$SUBMODULE" apply --check "$src" >/dev/null 2>&1; then
+    git -C "$SUBMODULE" apply "$src"
+    echo "  $name: applied (git apply)"
+  elif patch -p1 -d "$SUBMODULE" --dry-run < "$src" >/dev/null 2>&1; then
+    patch -p1 -d "$SUBMODULE" < "$src"
+    echo "  $name: applied (patch -p1)"
+  else
+    echo "ERROR: could not apply $name to $SUBMODULE" >&2
+    echo "  The app branch has moved under it. Re-cut the patch against branch '$APP_BRANCH'." >&2
+    exit 1
+  fi
+}
+
+# package= on the manifest root (AOSP needs it, Gradle does not) + the
+# CACHE_BYTES declaration-order bug that only the in-tree kotlinc rejects.
+apply_app_patch "build-fixes.patch" \
+  "MotorGuardApp/app/src/main/AndroidManifest.xml" 'package="com.motorguard.ivi"'
+
+# Hands the motor signal and the capture button to the SOME/IP link when the
+# native library is present, and leaves the fake in place when it is not. Only
+# the AOSP build gets this; the Gradle branch keeps building against the fake,
+# which is why it stays a patch instead of living on the app branch.
+apply_app_patch "motorservice/vehicledata-someip.patch" \
+  "MotorGuardApp/app/src/main/java/com/motorguard/ivi/ui/diagnostics/VehicleData.kt" \
+  "SomeIpVehicleData"
 
 echo "== 3/6 install diagnostics assets (3D vehicle model)"
 
