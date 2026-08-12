@@ -432,18 +432,29 @@ object Car3dTuning {
      * Compose content behind it is erased (class KDoc, note 1). Filament's own alternative, a
      * skybox, needs a KTX cubemap and would also feed the image back into the lighting.
      */
-    const val BACKDROP_NIGHT_ASSET = "stage_backdrop_night.png"
-    const val BACKDROP_DAY_ASSET = "stage_backdrop_day.png"
+    const val BACKDROP_NIGHT_ASSET = "stage_floor_night.png"
+    const val BACKDROP_DAY_ASSET = "stage_floor_day.png"
 
     /**
-     * Distance from the eye to the backdrop, as a multiple of the car's bounding radius. Far
-     * enough behind the car that no camera move can push the car through it — the focus poses get
-     * as close as 1.15 radii to their anchor — and near enough to stay well inside [FAR].
+     * Half-width of the floor plane, as a multiple of the car's bounding radius.
+     *
+     * Large, because the plane is finite and its far edge must stay outside the frame at every
+     * angle the camera can reach. The texture's own radial fade dissolves the edge into the stage
+     * colour, so overshooting costs nothing but a few pixels of fill.
      */
-    const val BACKDROP_DISTANCE_FACTOR = 9f
+    const val FLOOR_EXTENT_FACTOR = 9f
 
-    /** Slack on the fitted size, so the quad's vignetted edge stays outside the viewport. */
-    const val BACKDROP_OVERSCAN = 1.15f
+    /**
+     * How far the floor sits below the car's lowest point, as a fraction of the bounding radius.
+     *
+     * Not zero. The wheels are the lowest geometry and the plane is flat, so placing them exactly
+     * coincident makes the two surfaces fight for the same depth values and the contact patch
+     * flickers as the camera moves. A hair of clearance reads as a car standing on a floor; a
+     * z-fighting seam reads as a bug.
+     */
+    const val FLOOR_CLEARANCE_FACTOR = 0.004f
+
+
 
     // --- Paint finish
     /**
@@ -611,13 +622,8 @@ class Car3dRenderer internal constructor(
      *  the model exist, and nulled on disposal along with the rest. */
     private var backdropNode: ImageNode? = null
 
-    /** How far behind the look-at point the backdrop is parked, in world units. Derived from the
-     *  model's bounding radius once it is known, so it scales with the car rather than assuming
-     *  one. */
-    private var backdropOffset = 0f
-
     /** Half-width and half-height of the backdrop quad's own geometry, measured once when it is
-     *  built. [fitBackdrop] divides by it, so the fit holds whatever size SceneView gave it. */
+     *  built. [placeFloor] divides by it, so the sizing holds whatever plane SceneView gave it. */
     private var backdropHalfExtent: Float3? = null
 
     @Composable
@@ -694,7 +700,7 @@ class Car3dRenderer internal constructor(
                 val cutaway = CutawayZones.resolve(node, context.assets, modelAsset) { livery }
                 zones = cutaway
                 cutaway.report.forEach { Log.i(TAG, "cutaway: $it") }
-                backdropOffset = boundingRadius(node) * Car3dTuning.BACKDROP_DISTANCE_FACTOR
+                placeFloor()
                 // Start pulled back; the focus effect below dollies in as the FIRST camera move.
                 frameHero(camera, node, distanceScale = Car3dTuning.ENTRANCE_DISTANCE_FACTOR)
                 Log.i(TAG, "car renderables: " + node.model.renderableNames.joinToString())
@@ -722,7 +728,12 @@ class Car3dRenderer internal constructor(
             ).apply {
                 name = "backdrop"
                 isShadowCaster = false
-                isShadowReceiver = false
+                // Ready to take a cast shadow if CAST_SHADOWS is ever turned on. It is not: a
+                // shadow map costs a pass over the scene every frame on a Pi, and the sun angle
+                // then decides where the shadow lands — away from the camera as often as not.
+                // The contact pool the car sits in is painted into the texture instead, always
+                // under it and always the same shape, which is what the reference design does.
+                isShadowReceiver = true
                 isTouchable = false
             }
             backdropNode = backdrop
@@ -730,7 +741,7 @@ class Car3dRenderer internal constructor(
                 backdropHalfExtent = if (h[0] > 1e-6f && h[1] > 1e-6f) Float3(h[0], h[1], 1f) else null
             }
             childNodes += backdrop
-            currentPose?.let { fitBackdrop(it) }
+                placeFloor()
             onDispose {
                 childNodes -= backdrop
                 backdropNode = null
@@ -791,7 +802,6 @@ class Car3dRenderer internal constructor(
             onDispose {
                 // release() first: it is what stops an in-flight fade from writing into a
                 // MaterialInstance whose Engine is about to be destroyed.
-                backdropOffset = 0f
                 backdropHalfExtent = null
                 zones?.release()
                 zones = null
@@ -979,46 +989,42 @@ class Car3dRenderer internal constructor(
     }
 
     /**
-     * Re-fits the backdrop to the camera: parked [Car3dTuning.BACKDROP_DISTANCE_FACTOR] radii
-     * behind the look-at point, square-on to the eye, and scaled to exactly fill the frustum at
-     * that distance. Called from [applyPose], the single place the camera is written, so the
-     * backdrop can never lag a frame behind the view it is backing.
+     * Lays the floor flat under the car, once.
      *
-     * Fitting rather than picking a fixed size is what keeps the dot grid a constant size on
-     * screen: the quad grows with distance at the same rate the projection shrinks it.
+     * Deliberately NOT camera-relative. The previous version re-aimed a quad at the eye every
+     * frame and scaled it to fill the frustum, which kept the dots a constant size on screen —
+     * and that is exactly what made it read as a wall standing behind the car rather than ground
+     * underneath it. A floor has to be fixed in the world so the camera's own motion shears the
+     * grid: rows converging towards the horizon are the entire illusion, and they only appear if
+     * the plane stays put while the eye moves.
+     *
+     * Called from the model-load path rather than from [applyPose], because nothing about it
+     * depends on where the camera is.
      */
-    private fun fitBackdrop(pose: CameraPose) {
+    private fun placeFloor() {
         val node = backdropNode ?: return
-        val cam = cameraNode ?: return
-
-        val forward = pose.target - pose.eye
-        val len = length(forward)
-        if (len < 1e-4f) return
-        val dir = forward / len
-        val distance = len + backdropOffset
-        val center = pose.eye + dir * distance
-
-        // Read the frustum straight off the live projection instead of re-deriving it from focal
-        // length and viewport: a perspective matrix holds 1/tan(fov/2) in x.x and y.y, so the
-        // visible half-extents at any distance are just that distance over those. Deriving it by
-        // hand needs Filament's sensor size and the exact aspect handling, both of which are
-        // assumptions that were already wrong once — the first attempt fitted the quad to 70% of
-        // the stage and left a visible rectangle floating in the middle of it.
-        val projection = cam.projectionTransform
-        if (projection.x.x <= 0f || projection.y.y <= 0f) return
-        val halfHeight = distance / projection.y.y * Car3dTuning.BACKDROP_OVERSCAN
-        val halfWidth = distance / projection.x.x * Car3dTuning.BACKDROP_OVERSCAN
-
-        // lookAt(eye = center, target = center + dir) points the quad's -Z along the view
-        // direction, i.e. its front face straight back at the camera. Scale is composed into the
-        // same matrix rather than set through Node.scale, so one write leaves no intermediate
-        // frame where the quad is oriented but not yet sized.
-        // Scaled against the quad's OWN measured half-extents rather than an assumed unit size:
-        // ImageNode's default plane is not 1x1, and taking it on faith fitted the backdrop to 81%
-        // of the stage and left a rectangle floating in the middle of it.
+        val model = modelNode ?: return
         val base = backdropHalfExtent ?: return
-        node.worldTransform = lookAt(eye = center, target = center + dir, up = Float3(0f, 1f, 0f)) *
-            scale(Float3(halfWidth / base.x, halfHeight / base.y, 1f))
+
+        val radius = boundingRadius(model)
+        if (radius <= 1e-5f) return
+        val half = radius * Car3dTuning.FLOOR_EXTENT_FACTOR
+
+        // The lowest point of the car, in world units, which is where the tyres are.
+        val box = model.boundingBox
+        val scaleY = model.scale.y
+        val bottomY = (box.center[1] - box.halfExtent[1]) * scaleY -
+            radius * Car3dTuning.FLOOR_CLEARANCE_FACTOR
+
+        // ImageNode's plane faces +Z, so it needs a quarter turn about X to lie flat. lookAt with
+        // the eye above the plane looking straight down gives exactly that, and composing the
+        // scale into the same matrix leaves no frame where the quad is oriented but not yet sized.
+        val centre = Float3(0f, bottomY, 0f)
+        node.worldTransform = lookAt(
+            eye = centre,
+            target = centre + Float3(0f, -1f, 0f),
+            up = Float3(0f, 0f, -1f),
+        ) * scale(Float3(half / base.x, half / base.y, 1f))
     }
 
     /** Set by the drag gesture so an in-flight animation stops writing under the finger. */
@@ -1056,7 +1062,6 @@ class Car3dRenderer internal constructor(
     private fun applyPose(camera: CameraNode, pose: CameraPose) {
         camera.worldTransform = lookAt(eye = pose.eye, target = pose.target, up = Float3(0f, 1f, 0f))
         currentPose = pose
-        fitBackdrop(pose)
     }
 
     /** Snaps [camera] to the hero framing derived from [node]'s current bounding box. */
