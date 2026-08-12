@@ -17,6 +17,8 @@ CarProperty / API it touches, and its states.
 | 07 | [Voice overlay](07-voice.md) | D | Wake word, states, chips |
 | 07a | [Voice — implementation](07-voice-implementation.md) | D | What landed, how to run it, known gaps |
 | 08 | [Navigation fragment](08-navigation.md) | — | Search → route preview → turn-by-turn |
+| 09 | [AAOS motor service](09-motor-service-aaos.md) | C | Android-side requirements for the real motor data source |
+| 10 | [SOME/IP motor service](10-motor-service-someip.md) | C | Raspberry Pi side: wire contract and service behaviour |
 
 ## Conventions used in every doc
 - **Tap** = single touch-up inside. **Long-press** = ≥ 500 ms.

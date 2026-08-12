@@ -24,3 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "MotorGuard"
 include(":app")
+include(":core:vehicle-data-api")
+include(":core:vehicle-data-fake")

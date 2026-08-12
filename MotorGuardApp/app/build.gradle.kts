@@ -14,11 +14,12 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
-        
 
-        // Native deps: the C++ voice/reasoning core (built from src/main/cpp) plus MapLibre
-        // (nav map, prebuilt .so from the AAR). Both run arm64 on the Pi; x86_64 keeps the
-        // emulator working. Add armeabi-v7a here if you ever target a 32-bit board.
+
+        // Native deps: the C++ voice/reasoning core (built from src/main/cpp), MapLibre (nav
+        // map, prebuilt .so from the AAR) and Filament (the diagnostics 3D stage, via
+        // SceneView). All three run arm64 on the Pi; x86_64 keeps the emulator working. Add
+        // armeabi-v7a here if you ever target a 32-bit board.
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
@@ -63,6 +64,11 @@ android {
     buildFeatures {
         compose = true
     }
+    androidResources {
+        // car_model.glb is already-compressed PNG payload; re-zipping it at build time
+        // only costs time and gains nothing.
+        noCompress += "glb"
+    }
 }
 
 dependencies {
@@ -82,6 +88,15 @@ dependencies {
     // Wake word (openWakeWord models run on ONNX Runtime). If the models are
     // absent the detector disables itself and the rail mic button still works.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
+
+    // Diagnostics domain + fake data source (the swap target for the real SOME/IP bridge).
+    implementation(project(":core:vehicle-data-api"))
+    implementation(project(":core:vehicle-data-fake"))
+
+    // Diagnostics 3D car stage (Filament under the hood). Pinned to 2.3.0: it is the last
+    // release built against kotlin-stdlib 2.0.21, which is this project's Kotlin version.
+    // Every 4.x needs Kotlin 2.3+, which would force a toolchain bump on all fragment owners.
+    implementation("io.github.sceneview:sceneview:2.3.0")
 
     // Compose (versions come from the BOM)
     val composeBom = platform("androidx.compose:compose-bom:2024.09.02")

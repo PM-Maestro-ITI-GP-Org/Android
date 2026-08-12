@@ -51,10 +51,18 @@ class VoiceOverlayService : VoiceInteractionService() {
          * it. The session calls this on show and [resumeWakeWord] on hide — otherwise
          * the always-on recorder and the recognizer contend and STT hears nothing.
          */
-        fun pauseWakeWord() = instance.get()?.wakeWord?.pause()
+        fun pauseWakeWord() = WakeWordService.pause()
 
-        /** Reclaim the mic for wake-word listening after a session closes. */
-        fun resumeWakeWord() = instance.get()?.wakeWord?.resume()
+        /**
+         * Reclaim the mic for wake-word listening after a session closes.
+         *
+         * The detection handler is re-supplied here because [WakeWordService.resume] takes one:
+         * it is the same action the service installs when it first starts the detector, which is
+         * to ask this service to show a session.
+         */
+        fun resumeWakeWord() = WakeWordService.resume {
+            if (!requestSession()) Log.w(TAG, "wake word fired but no session could be shown")
+        }
     }
 
     override fun onReady() {

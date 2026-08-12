@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Motor Guard — top-down car placeholder, tuned to the Diagnostics hotspot anchors
+  in TopDownCarRenderer.kt (x% = fraction of intrinsic 200dp width, y% = fraction
+  of intrinsic 420dp height; FRONT IS UP).
+
+  ══ HOW TO SWAP IN YOUR OWN ART ══
+  1. Drop a PNG (transparent background recommended, ideally ≥2× pixel size of
+     200×420dp — e.g. 400×840px) into this folder as e.g. `car_topdown.png`
+     beside this file, then DELETE this `car_topdown.xml` (same name can't exist
+     twice), or give yours a distinct name (`car_topdown_v2.png`).
+  2. Anchor coordinates live in TopDownCarRenderer.kt. If your art has a different
+     aspect ratio than 200×420 (~1:2.1), edit the `x`/`y` fractions of each
+     HotspotAnchor there to match where components actually sit in your image.
+     The zoom animation compensates automatically for aspect differences (the
+     anchors are fractions, not pixels), but eyeballing the dot positions against
+     your art is still required for a polished result.
+  3. Keep FRONT UP in your art — the rest of the surface (and docs) assume it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="420dp"
+    android:viewportWidth="200"
+    android:viewportHeight="420">
+
+    <!-- windshield (top) -->
+    <path
+        android:fillColor="#26303E"
+        android:pathData="M60,78 L140,78 L150,116 L50,116 Z" />
+
+    <!-- roof -->
+    <path
+        android:fillColor="#1E2836"
+        android:pathData="M56,124 C50,150 50,190 56,214 L144,214 C150,190 150,150 144,124 Z" />
+
+    <!-- cabin glass suggestion -->
+    <path
+        android:fillColor="#232D3B"
+        android:pathData="M62,130 L138,130 L140,150 L60,150 Z" />
+
+    <!-- rear window -->
+    <path
+        android:fillColor="#26303E"
+        android:pathData="M58,222 L142,222 L134,260 L66,260 Z" />
+
+    <!-- hood highlight (front third) -->
+    <path
+        android:fillColor="#242E3C"
+        android:pathData="M60,26 L140,26 L148,72 L52,72 Z" />
+
+    <!-- FL tire (upper-left) -->
+    <path
+        android:fillColor="#0E1218"
+        android:pathData="M34,80 h14 a4,4 0,0 1 4,4 v44 a4,4 0,0 1 -4,4 h-14 a4,4 0,0 1 -4,-4 v-44 a4,4 0,0 1 4,-4 z" />
+    <path
+        android:fillColor="#33404F"
+        android:pathData="M38,84 h10 v18 h-10 z" />
+
+    <!-- FR tire (upper-right) -->
+    <path
+        android:fillColor="#0E1218"
+        android:pathData="M152,80 h14 a4,4 0,0 1 4,4 v44 a4,4 0,0 1 -4,4 h-14 a4,4 0,0 1 -4,-4 v-44 a4,4 0,0 1 4,-4 z" />
+    <path
+        android:fillColor="#33404F"
+        android:pathData="M156,84 h10 v18 h-10 z" />
+
+    <!-- RL tire (lower-left) -->
+    <path
+        android:fillColor="#0E1218"
+        android:pathData="M34,290 h14 a4,4 0,0 1 4,4 v44 a4,4 0,0 1 -4,4 h-14 a4,4 0,0 1 -4,-4 v-44 a4,4 0,0 1 4,-4 z" />
+    <path
+        android:fillColor="#33404F"
+        android:pathData="M38,294 h10 v18 h-10 z" />
+
+    <!-- RR tire (lower-right) -->
+    <path
+        android:fillColor="#0E1218"
+        android:pathData="M152,290 h14 a4,4 0,0 1 4,4 v44 a4,4 0,0 1 -4,4 h-14 a4,4 0,0 1 -4,-4 v-44 a4,4 0,0 1 4,-4 z" />
+    <path
+        android:fillColor="#33404F"
+        android:pathData="M156,294 h10 v18 h-10 z" />
+
+    <!-- motor block (mid-front, under hood) -->
+    <path
+        android:fillColor="#2A3547"
+        android:pathData="M70,140 a10,10 0,0 1 10,-10 h40 a10,10 0,0 1 10,10 v24 a10,10 0,0 1 -10,10 h-40 a10,10 0,0 1 -10,-10 z" />
+    <!-- accent mark on motor -->
+    <path
+        android:fillColor="#56C9EF"
+        android:pathData="M98,148 l4,8 l-6,0 l6,12 l-12,-14 l6,0 l-6,-8 z" />
+
+    <!-- battery pack underbelly (mid) -->
+    <path
+        android:fillColor="#1B2230"
+        android:pathData="M60,170 h80 v86 h-80 z" />
+    <path
+        android:fillColor="#26313F"
+        android:pathData="M64,174 h72 v10 h-72 z M64,190 h72 v10 h-72 z M64,206 h72 v10 h-72 z M64,222 h72 v10 h-72 z M64,238 h72 v10 h-72 z" />
+
+    <!-- trunk / rear -->
+    <path
+        android:fillColor="#242E3C"
+        android:pathData="M58,264 L142,264 L138,392 L62,392 Z" />
+
+    <!-- side mirrors -->
+    <path
+        android:fillColor="#1F2836"
+        android:pathData="M40,98 h10 v20 h-10 z M150,98 h10 v20 h-10 z" />
+
+    <!-- body outline -->
+    <path
+        android:strokeColor="#56C9EF"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M60,20 C44,34 34,70 34,110 L34,310 C34,352 42,388 62,398 C74,404 126,404 138,398 C158,388 166,352 166,310 L166,110 C166,70 156,34 140,20 C128,10 72,10 60,20 Z" />
+</vector>
