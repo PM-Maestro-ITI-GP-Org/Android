@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.motorguard.ivi.data.vehicle.api.DoorState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
@@ -205,7 +206,7 @@ private fun DetailContent(telemetry: FocusedTelemetry) {
                 MetricCell("Cell temp", TelemetryFormat.tempC(r.data.cellTempC), r.cellTemp, Modifier.weight(1f))
                 MetricCell("Health", TelemetryFormat.percent(r.data.healthPercent), r.health, Modifier.weight(1f))
                 MetricCell("Cycles", TelemetryFormat.count(r.data.cycleCount), null, Modifier.weight(1f))
-                MetricCell("Status", TelemetryFormat.charging(r.data.charging), null, Modifier.weight(1f))
+                MetricCell("Charging", TelemetryFormat.charging(r.data.charging), null, Modifier.weight(1f))
             }
         }
 
@@ -354,6 +355,10 @@ private fun HeroValue(value: String, caption: String, severity: Severity?, stale
             text = value,
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.SemiBold,
+            // See [MetricCell] for why every text in this card is pinned to one line.
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
             color = if (severity != null && severity != Severity.OK) {
                 SemanticColors.forSeverity(severity)
             } else {
@@ -363,6 +368,8 @@ private fun HeroValue(value: String, caption: String, severity: Severity?, stale
         Text(
             text = if (stale) "$caption · last known" else caption,
             style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
         )
     }
@@ -377,6 +384,16 @@ private fun MetricRow(content: @Composable androidx.compose.foundation.layout.Ro
  * A single labelled value. [severity] of `null` means "the domain defines no rule for this field"
  * — it renders in the normal text colour, NOT the offline grey, because the value is perfectly
  * live and trustworthy; it simply has nothing to be good or bad against.
+ *
+ * **Every text here is pinned to one line, and that is load-bearing rather than cosmetic.** These
+ * cells share a row by weight, so each is a fraction of a panel that is itself a fraction of the
+ * screen. Let a value wrap and its row grows, which pushes everything below it down and pulls it
+ * back up on the next tick that happens to be a character shorter. Measured case: "Not charging"
+ * broke across three lines in a quarter-width cell and collapsed to one the moment charging
+ * started.
+ *
+ * One line makes the card's height a function of its STRUCTURE, never of its values, which is the
+ * only version of this that is stable against data nobody has seen yet.
  */
 @Composable
 private fun MetricCell(
@@ -389,6 +406,8 @@ private fun MetricCell(
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
         )
         Spacer(Modifier.height(2.dp))
@@ -396,6 +415,11 @@ private fun MetricCell(
             text = value,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
+            // softWrap = false as well as maxLines: maxLines alone still lets the layout break the
+            // line and then clip it, so a value could ellipsise while a shorter one did not.
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
             color = if (severity != null && severity != Severity.OK) {
                 SemanticColors.forSeverity(severity)
             } else {

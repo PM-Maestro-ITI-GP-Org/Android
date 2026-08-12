@@ -28,7 +28,10 @@ internal object TelemetryFormat {
 
     fun count(value: Int): String = String.format(Locale.US, "%,d", value)
 
-    fun charging(on: Boolean): String = if (on) "Charging" else "Not charging"
+    /** Answers the cell's own label ("Charging"), so the value stays short enough for a quarter of
+     *  a narrow panel. "Not charging" needed three lines there — see [MetricCell]'s note on why a
+     *  wrapping value is a layout bug and not just a tight fit. */
+    fun charging(on: Boolean): String = if (on) "Yes" else "No"
 
     fun fluid(ok: Boolean): String = if (ok) "OK" else "Low"
 
