@@ -3,8 +3,11 @@ package com.motorguard.ivi.ui.diagnostics
 import com.motorguard.ivi.data.vehicle.api.Door
 import com.motorguard.ivi.data.vehicle.api.DoorState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
+import com.motorguard.ivi.data.vehicle.api.MotorFaultType
+import com.motorguard.ivi.data.vehicle.api.MotorCaptureSource
 import com.motorguard.ivi.data.vehicle.api.VehicleDataSource
 import com.motorguard.ivi.data.vehicle.api.latestValueOrNull
+import com.motorguard.ivi.data.vehicle.fake.FakeMotorCaptureSource
 import com.motorguard.ivi.data.vehicle.fake.FakeVehicleDataSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +71,17 @@ object VehicleData {
 
     /** The debug panel's only window into [fake]. */
     val debugControls: VehicleDebugControls = FakeDebugControls(fake, scope)
+
+    /**
+     * Capture requests. Synthesis runs on [Dispatchers.Default] rather than the main-thread scope
+     * above: 200,000 samples across twelve channels is real arithmetic, and the popup is animating
+     * while it happens. The fault type is read from the live motor signal at request time so the
+     * captured waveform shows the defect the card is reporting rather than a healthy motor.
+     */
+    val captureSource: MotorCaptureSource = FakeMotorCaptureSource(
+        computeContext = Dispatchers.Default,
+        faultTypeProvider = { fake.motor.value.latestValueOrNull?.faultType ?: MotorFaultType.NORMAL },
+    )
 }
 
 private class FakeDebugControls(

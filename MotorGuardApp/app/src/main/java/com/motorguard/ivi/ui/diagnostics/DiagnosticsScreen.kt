@@ -62,6 +62,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.motorguard.ivi.data.vehicle.api.CaptureState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.components.Pill
@@ -71,6 +72,7 @@ import com.motorguard.ivi.ui.diagnostics.component.HealthRing
 import com.motorguard.ivi.ui.diagnostics.component.healthRingSemantics
 import com.motorguard.ivi.ui.diagnostics.component.HotspotOverlay
 import com.motorguard.ivi.ui.diagnostics.debug.FakeDataControlPanel
+import com.motorguard.ivi.ui.diagnostics.insights.EngineeringInsightsDialog
 import com.motorguard.ivi.ui.diagnostics.render.Car3dTuning
 import com.motorguard.ivi.ui.diagnostics.render.CarRenderState
 import com.motorguard.ivi.ui.diagnostics.render.rememberCar3dRenderer
@@ -95,6 +97,7 @@ fun DiagnosticsScreen(
     val telemetryState = viewModel.focusedTelemetry.collectAsStateWithLifecycle()
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val healthScore by viewModel.healthScore.collectAsStateWithLifecycle()
+    val captureState by viewModel.captureState.collectAsStateWithLifecycle()
     DiagnosticsScreenContent(
         ui = ui,
         focusedTelemetry = { telemetryState.value },
@@ -107,6 +110,10 @@ fun DiagnosticsScreen(
         onStageLongPress = viewModel::onStageLongPress,
         onDebugDismiss = viewModel::onDebugPanelDismiss,
         onUserInteraction = viewModel::onUserInteraction,
+        captureState = captureState,
+        onInsightsOpen = viewModel::onInsightsOpen,
+        onInsightsRefresh = viewModel::requestCapture,
+        onInsightsDismiss = viewModel::onInsightsDismiss,
         modifier = modifier,
     )
 }
@@ -135,6 +142,12 @@ internal fun DiagnosticsScreenContent(
     onStageLongPress: () -> Unit,
     onDebugDismiss: () -> Unit,
     onUserInteraction: () -> Unit,
+    /** Null when the engineering-insights panel is closed. Defaulted, with the three callbacks
+     *  below, so the previews stay a positional call that ends at the chrome they render. */
+    captureState: CaptureState? = null,
+    onInsightsOpen: () -> Unit = {},
+    onInsightsRefresh: () -> Unit = {},
+    onInsightsDismiss: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Hoisted to here rather than kept in the renderer, because the debug panel that edits it is
@@ -252,6 +265,7 @@ internal fun DiagnosticsScreenContent(
                     ) {
                         ComponentDetailPanel(
                             telemetry = focusedTelemetry,
+                            onInsights = onInsightsOpen,
                             // Sized to the TALLEST card, which is the motor: hero, three live
                             // values and a four-row capture block. GlassCard does not clip, so a
                             // card that outgrows this does not scroll or truncate — it draws
@@ -267,6 +281,16 @@ internal fun DiagnosticsScreenContent(
                     )
                 }
             }
+        }
+
+        // Above everything, including the debug drawer: it is a modal drill-down, and a debug
+        // control reachable through it would be a control nobody meant to expose.
+        if (captureState != null) {
+            EngineeringInsightsDialog(
+                state = captureState,
+                onRefresh = onInsightsRefresh,
+                onDismiss = onInsightsDismiss,
+            )
         }
 
         // Top-most layer, so it sits over both the car stage and the reserved panels. Null in

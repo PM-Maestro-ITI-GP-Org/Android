@@ -20,9 +20,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +67,7 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun ComponentDetailPanel(
     telemetry: () -> FocusedTelemetry?,
+    onInsights: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val current = telemetry()
@@ -105,7 +111,7 @@ internal fun ComponentDetailPanel(
         if (reading == null) {
             EmptyDetailPanel(Modifier.fillMaxSize())
         } else {
-            DetailCard(reading, Modifier.fillMaxSize())
+            DetailCard(reading, onInsights, Modifier.fillMaxSize())
         }
     }
 }
@@ -142,7 +148,11 @@ private fun EmptyDetailPanel(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun DetailCard(telemetry: FocusedTelemetry, modifier: Modifier = Modifier) {
+private fun DetailCard(
+    telemetry: FocusedTelemetry,
+    onInsights: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val overall = telemetry.overallSeverity()
 
     GlassCard(modifier) {
@@ -171,8 +181,31 @@ private fun DetailCard(telemetry: FocusedTelemetry, modifier: Modifier = Modifie
                 DetailHeader(telemetry, overall)
                 Spacer(Modifier.height(20.dp))
                 DetailContent(telemetry)
+                // Only the motor has raw signals to go and fetch, so only the motor offers the
+                // trip. A button present-but-dead on the other cards would be a worse answer than
+                // its absence.
+                if (telemetry is FocusedTelemetry.Motor) {
+                    Spacer(Modifier.weight(1f))
+                    InsightsButton(onInsights)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun InsightsButton(onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.ShowChart,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text("Engineering insights", maxLines = 1)
     }
 }
 

@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.motorguard.ivi.data.vehicle.api.BatteryTelemetry
 import com.motorguard.ivi.data.vehicle.api.BrakeTelemetry
 import com.motorguard.ivi.data.vehicle.api.DoorsTelemetry
+import com.motorguard.ivi.data.vehicle.api.CaptureState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
+import com.motorguard.ivi.data.vehicle.api.MotorCaptureSource
 import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SeverityResolver
@@ -39,7 +41,43 @@ import kotlinx.coroutines.launch
 class DiagnosticsViewModel(
     private val source: VehicleDataSource = VehicleData.source,
     val debugControls: VehicleDebugControls = VehicleData.debugControls,
+    private val captureSource: MotorCaptureSource = VehicleData.captureSource,
 ) : ViewModel() {
+
+    /**
+     * The engineering-insights popup, or null when it is closed. Held here rather than as local
+     * composable state so a capture already in flight survives the recomposition that opens the
+     * panel, and so closing the popup does not silently abandon a request the diagnostics unit is
+     * still working on.
+     */
+    private val capture = MutableStateFlow<CaptureState?>(null)
+    val captureState: StateFlow<CaptureState?> = capture
+
+    /** Only ever one request in flight: the button is disabled while [CaptureState.Requesting], but
+     *  a double tap that beats the recomposition would otherwise start a second acquisition. */
+    private var captureJob: Job? = null
+
+    fun onInsightsOpen() {
+        if (capture.value == null) capture.value = CaptureState.Idle
+        if (capture.value !is CaptureState.Ready) requestCapture()
+        restartIdleTimer()
+    }
+
+    fun onInsightsDismiss() {
+        capture.value = null
+        captureJob?.cancel()
+        captureJob = null
+        restartIdleTimer()
+    }
+
+    fun requestCapture() {
+        if (captureJob?.isActive == true) return
+        capture.value = CaptureState.Requesting
+        captureJob = viewModelScope.launch {
+            capture.value = captureSource.requestCapture()
+        }
+        restartIdleTimer()
+    }
 
     /**
      * ONE resolver, shared between the per-hotspot severity map that colours the dots and the
