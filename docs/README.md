@@ -15,6 +15,8 @@ CarProperty / API it touches, and its states.
 | 05 | [Diagnostics fragment](05-diagnostics.md) | C | Hotspot tap → zoom, cards |
 | 06 | [Settings fragment](06-settings.md) | E | Left sub-tabs + toggles |
 | 07 | [Voice overlay](07-voice.md) | D | Wake word, states, chips |
+| 08 | [AAOS motor service](08-motor-service-aaos.md) | — | Android-side requirements for the real motor data source |
+| 09 | [SOME/IP motor service](09-motor-service-someip.md) | — | Raspberry Pi side: wire contract and service behaviour |
 
 ## Conventions used in every doc
 - **Tap** = single touch-up inside. **Long-press** = ≥ 500 ms.
