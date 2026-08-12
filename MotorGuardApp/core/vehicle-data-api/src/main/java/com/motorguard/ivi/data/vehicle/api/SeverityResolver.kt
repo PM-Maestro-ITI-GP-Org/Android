@@ -45,13 +45,15 @@ class SeverityResolver(
         resolve("battery.cellTemp", c, cellTempCaution, cellTempCritical, marginTempC, belowIsWorse = false)
     }
 
-    fun motorTemp(c: Float): Severity = with(evaluator.thresholds) {
-        resolve("motor.temp", c, motorTempCaution, motorTempCritical, marginTempC, belowIsWorse = false)
-    }
-
-    fun motorLoad(pct: Float): Severity = with(evaluator.thresholds) {
-        resolve("motor.load", pct, motorLoadCaution, Float.POSITIVE_INFINITY, marginPercent, belowIsWorse = false)
-    }
+    /**
+     * The motor's severity is REPORTED, not derived, so it passes straight through.
+     *
+     * Everything else here resolves a measurement against a threshold, and gets hysteresis so a
+     * value sitting on the boundary cannot flicker the dot. A classification has no boundary to sit
+     * on: the diagnostics unit has already decided, and damping its answer here would mean the car
+     * showed one severity while the unit that made the call was reporting another.
+     */
+    fun motor(t: MotorTelemetry): Severity = t.faultSeverity
 
     fun brakeWear(pct: Float): Severity = with(evaluator.thresholds) {
         resolve("brakes.wear", pct, brakeWearCaution, brakeWearCritical, marginPercent, belowIsWorse = false)
@@ -71,7 +73,7 @@ class SeverityResolver(
             batteryHealth(battery.healthPercent),
             cellTemp(battery.cellTempC),
         )
-        Hotspot.MOTOR -> evaluator.worstOf(motorTemp(motor!!.tempC), motorLoad(motor.loadPercent))
+        Hotspot.MOTOR -> motor(motor!!)
         // Worst-of across the corner's own fields. Temperature is optional so existing callers
         // that only have pressure keep working; when it is supplied a hot tire raises the dot
         // even at a perfectly normal pressure, which is the whole point of grading it.

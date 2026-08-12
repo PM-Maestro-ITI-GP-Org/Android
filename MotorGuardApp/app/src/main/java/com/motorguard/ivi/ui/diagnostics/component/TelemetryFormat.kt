@@ -33,6 +33,39 @@ internal object TelemetryFormat {
      *  wrapping value is a layout bug and not just a tight fit. */
     fun charging(on: Boolean): String = if (on) "Yes" else "No"
 
+    /**
+     * Bare numerals, unit in the caption — the same rule as [tempC], and for a harder reason here.
+     * These three share one row by weight in a narrow panel, so "15.9 kW" ellipsised to "15.9 k…"
+     * while "341 V" beside it fitted. A numeral with no unit attached cannot outgrow its cell.
+     */
+    fun powerKw(value: Float): String = String.format(Locale.US, "%.1f", value)
+
+    fun volts(value: Float): String = value.roundToInt().toString()
+
+    /** Full-width capture rows, not weighted cells, so these keep their units. */
+    fun powerKwWithUnit(value: Float): String = String.format(Locale.US, "%.1f kW", value)
+
+    fun gForce(value: Float): String = String.format(Locale.US, "%.2f g", value)
+
+    /** Hours are what the driver acts on, so they never become "1.2 k" — a service interval read
+     *  as a rounded magnitude is one someone can be a week wrong about. */
+    fun hours(value: Float): String = String.format(Locale.US, "%,d h", value.roundToInt())
+
+    fun percentPrecise(value: Float): String = String.format(Locale.US, "%.1f%%", value)
+
+    /**
+     * How old a capture is, in the coarsest unit that is still honest. A capture minutes old is
+     * fine to show; the point of the label is that nobody mistakes it for live.
+     */
+    fun ageOf(timestampMs: Long, nowMs: Long): String {
+        val seconds = ((nowMs - timestampMs) / 1000L).coerceAtLeast(0L)
+        return when {
+            seconds < 60 -> "${seconds}s ago"
+            seconds < 3600 -> "${seconds / 60}m ago"
+            else -> "${seconds / 3600}h ago"
+        }
+    }
+
     fun fluid(ok: Boolean): String = if (ok) "OK" else "Low"
 
     fun doorOpen(open: Boolean): String = if (open) "Open" else "Closed"

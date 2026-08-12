@@ -38,12 +38,13 @@ internal data class TireReading(
     val overall: Severity get() = maxOf(psi, temp)
 }
 
-internal data class MotorReading(
-    val data: MotorTelemetry,
-    val load: Severity,
-    val temp: Severity,
-) {
-    val overall: Severity get() = maxOf(load, temp)
+/**
+ * Unlike every other reading here, the motor carries no per-field severities. Its live fields —
+ * speed, power, DC bus — have no thresholds to be graded against, and its [overall] is the
+ * classification the diagnostics unit already made rather than anything derived here.
+ */
+internal data class MotorReading(val data: MotorTelemetry) {
+    val overall: Severity get() = data.faultSeverity
 }
 
 internal data class BrakeReading(

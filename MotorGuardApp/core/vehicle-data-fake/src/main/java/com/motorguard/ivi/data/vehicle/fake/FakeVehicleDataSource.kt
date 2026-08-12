@@ -6,7 +6,11 @@ import com.motorguard.ivi.data.vehicle.api.Door
 import com.motorguard.ivi.data.vehicle.api.DoorState
 import com.motorguard.ivi.data.vehicle.api.DoorsTelemetry
 import com.motorguard.ivi.data.vehicle.api.Hotspot
+import com.motorguard.ivi.data.vehicle.api.MotorCaptureSummary
+import com.motorguard.ivi.data.vehicle.api.MotorFaultType
 import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
+import com.motorguard.ivi.data.vehicle.api.RemainingLife
+import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SignalState
 import com.motorguard.ivi.data.vehicle.api.TireTelemetry
 import com.motorguard.ivi.data.vehicle.api.VehicleDataSource
@@ -39,7 +43,15 @@ class FakeVehicleDataSource(
     // ------------------------------------------------ mutable raw state
 
     private var batteryRaw = BatteryTelemetry(chargePercent = 62f, cellTempC = 28f, healthPercent = 96f, cycleCount = 312, charging = false)
-    private var motorRaw = MotorTelemetry(loadPercent = 12f, tempC = 64f, rpm = 0)
+    private var motorRaw = MotorTelemetry(
+        rpm = 0,
+        powerKw = 0f,
+        dcBusVolts = 400f,
+        faultType = MotorFaultType.NORMAL,
+        faultSeverity = Severity.OK,
+        remainingLife = RemainingLife(hours = 1240f, percent = 82f),
+        capture = null,
+    )
     private var brakesRaw = BrakeTelemetry(padWearPercent = 42f, fluidOk = true)
     private var tiresRaw = mutableMapOf(
         Hotspot.TIRE_FL to TireTelemetry(Hotspot.TIRE_FL, psi = 34f, tempC = 21f),
@@ -135,13 +147,20 @@ class FakeVehicleDataSource(
         )
     }
 
+    /**
+     * Stands in for the 1 Hz summary the diagnostics unit computes from its own 20 kHz buffer.
+     * Power follows speed rather than drifting independently, and the DC bus sags slightly as
+     * power rises, because two summary fields that wander unrelated to each other read as noise
+     * rather than as a motor.
+     */
     private fun tickMotor() {
         if (forced.value[Hotspot.MOTOR]?.let { it != ForcedState.AUTO } == true) return
-        val load = motorRaw.loadPercent.drift(6f, 0f, 100f)
+        val rpm = (motorRaw.rpm + Random.nextInt(-320, 340)).coerceIn(0, 9600)
+        val powerKw = (rpm / 9600f * 21f).drift(0.6f, 0f, 24f)
         motorRaw = motorRaw.copy(
-            loadPercent = load,
-            tempC = (motorRaw.tempC + (load - motorRaw.loadPercent) * 0.3f).drift(1.5f, 15f, 140f),
-            rpm = if (load > 4f) (load * 90 + Random.nextInt(-150, 150)).toInt().coerceAtLeast(0) else 0,
+            rpm = rpm,
+            powerKw = powerKw,
+            dcBusVolts = (400f - powerKw * 1.4f).drift(2f, 300f, 410f),
         )
     }
 
@@ -168,7 +187,9 @@ class FakeVehicleDataSource(
     }
 
     private fun tickMetrics() {
-        metricsRaw = metricsRaw.copy(speedKmh = (motorRaw.loadPercent * 1.4f).coerceIn(0f, 220f))
+        // Road speed follows shaft speed now that load is gone. Nothing here models a gearbox —
+        // the ratio just puts a 9,600 rpm motor at roughly a motorway speed.
+        metricsRaw = metricsRaw.copy(speedKmh = (motorRaw.rpm * 0.0146f).coerceIn(0f, 220f))
         _metrics.value = SignalState.Live(metricsRaw, clock())
     }
 
@@ -209,13 +230,54 @@ class FakeVehicleDataSource(
 
     private fun batterySignalNoForce(): SignalState<BatteryTelemetry> = SignalState.Live(batteryRaw, clock())
 
+    /**
+     * A capture summary attached to the FORCED motor states only.
+     *
+     * The real source will populate this only after the user requests a capture — there is no such
+     * thing as a capture nobody asked for, and the card is built to render nothing when it is null,
+     * which is what the AUTO state exercises. It is supplied here so the capture block can be
+     * reviewed on the emulator before the request path exists. Delete the argument, not the block,
+     * once the transport can produce a real one.
+     */
+    private fun healthyCapture() = MotorCaptureSummary(
+        capturedAtMs = clock() - 240_000,
+        averagePowerKw = 11.8f,
+        currentImbalancePercent = 1.2f,
+        vibrationRmsG = 0.31f,
+        speedTrackingErrorPercent = 0.8f,
+    )
+
     private fun motorSignal(): SignalState<MotorTelemetry> = when (forced.value[Hotspot.MOTOR]) {
         ForcedState.OFFLINE -> SignalState.Offline
         ForcedState.STALE -> staleSnapshots[Hotspot.MOTOR] as? SignalState.Stale<MotorTelemetry>
             ?: SignalState.Stale(motorRaw, clock() - 25_000)
-        ForcedState.OK -> SignalState.Live(MotorTelemetry(loadPercent = 8f, tempC = 52f, rpm = 0), clock())
-        ForcedState.CAUTION -> SignalState.Live(MotorTelemetry(loadPercent = 91f, tempC = 98f, rpm = 8200), clock())
-        ForcedState.CRITICAL -> SignalState.Live(MotorTelemetry(loadPercent = 96f, tempC = 128f, rpm = 9000), clock())
+        ForcedState.OK -> SignalState.Live(
+            MotorTelemetry(
+                rpm = 3120, powerKw = 12.4f, dcBusVolts = 396f,
+                faultType = MotorFaultType.NORMAL, faultSeverity = Severity.OK,
+                remainingLife = RemainingLife(hours = 1240f, percent = 82f),
+                capture = healthyCapture(),
+            ),
+            clock(),
+        )
+        ForcedState.CAUTION -> SignalState.Live(
+            MotorTelemetry(
+                rpm = 8200, powerKw = 18.1f, dcBusVolts = 372f,
+                faultType = MotorFaultType.MECHANICAL, faultSeverity = Severity.CAUTION,
+                remainingLife = RemainingLife(hours = 310f, percent = 24f),
+                capture = healthyCapture().copy(vibrationRmsG = 1.18f, averagePowerKw = 17.6f),
+            ),
+            clock(),
+        )
+        ForcedState.CRITICAL -> SignalState.Live(
+            MotorTelemetry(
+                rpm = 2970, powerKw = 15.9f, dcBusVolts = 341f,
+                faultType = MotorFaultType.ELECTRICAL, faultSeverity = Severity.CRITICAL,
+                remainingLife = RemainingLife(hours = 38f, percent = 9f),
+                capture = healthyCapture().copy(currentImbalancePercent = 14.2f, averagePowerKw = 15.2f),
+            ),
+            clock(),
+        )
         else -> SignalState.Live(motorRaw, clock())
     }
 

@@ -41,6 +41,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.motorguard.ivi.data.vehicle.api.DoorState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
+import com.motorguard.ivi.data.vehicle.api.MotorCaptureSummary
+import com.motorguard.ivi.data.vehicle.api.MotorFaultType
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SignalState
 import com.motorguard.ivi.ui.components.GlassCard
@@ -223,17 +225,28 @@ private fun DetailContent(telemetry: FocusedTelemetry) {
             }
         }
 
+        // Remaining life is the hero because it is the only number here that implies an action;
+        // speed, power and bus voltage explain the motor's present, not its future. The fault type
+        // becomes the caption, so the block reads as one sentence: electrical fault, 38 h left.
         is FocusedTelemetry.Motor -> DetailBody(telemetry.signal, skeletonSlots = 2) { r, stale ->
+            val life = r.data.remainingLife
             HeroValue(
-                value = TelemetryFormat.percent(r.data.loadPercent),
-                caption = "Load",
-                severity = r.load,
+                value = if (life != null) TelemetryFormat.hours(life.hours) else "No estimate",
+                caption = motorHeroCaption(r.data.faultType),
+                severity = r.overall,
                 stale = stale,
             )
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(18.dp))
             MetricRow {
-                MetricCell("Temp", TelemetryFormat.tempC(r.data.tempC), r.temp, Modifier.weight(1f))
-                MetricCell("RPM", TelemetryFormat.rpm(r.data.rpm), null, Modifier.weight(1f))
+                MetricCell("Speed rpm", TelemetryFormat.rpm(r.data.rpm), null, Modifier.weight(1f))
+                MetricCell("Power kW", TelemetryFormat.powerKw(r.data.powerKw), null, Modifier.weight(1f))
+                MetricCell("DC bus V", TelemetryFormat.volts(r.data.dcBusVolts), null, Modifier.weight(1f))
+            }
+            // Absent until a capture has been requested — there is no such thing as a capture
+            // nobody asked for, and an empty block would imply one is pending.
+            r.data.capture?.let { capture ->
+                Spacer(Modifier.height(18.dp))
+                CaptureBlock(capture, r.data.faultType)
             }
         }
 
@@ -348,6 +361,90 @@ private fun SkeletonBody(slots: Int) {
     }
 }
 
+/**
+ * The caption under the remaining-life figure. [MotorFaultType.NORMAL] names the number instead of
+ * announcing the absence of a fault: "no fault detected" next to a life estimate invites the number
+ * to be read as a countdown to one.
+ */
+private fun motorHeroCaption(fault: MotorFaultType): String = when (fault) {
+    MotorFaultType.NORMAL -> "Remaining useful life"
+    MotorFaultType.ELECTRICAL -> "Electrical fault · life left"
+    MotorFaultType.MECHANICAL -> "Mechanical fault · life left"
+    MotorFaultType.SENSOR -> "Sensor fault · life left"
+}
+
+/**
+ * The last capture, reduced to four numbers.
+ *
+ * Full-width label/value rows rather than the weighted [MetricCell] grid: these labels are phrases
+ * and the panel is narrow, and cells that share a row by weight are exactly what made the card
+ * bounce. A row that owns the full width can hold a long label and a short value without either
+ * one wrapping.
+ *
+ * The row matching [fault] is emphasised, so the card shows the evidence for the claim it is
+ * making rather than only the claim. When that row looks unremarkable, that is diagnostic too.
+ */
+@Composable
+private fun CaptureBlock(capture: MotorCaptureSummary, fault: MotorFaultType) {
+    val nowMs = remember(capture.capturedAtMs) { System.currentTimeMillis() }
+    Column {
+        Text(
+            text = "From capture · ${TelemetryFormat.ageOf(capture.capturedAtMs, nowMs)}",
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+        )
+        Spacer(Modifier.height(8.dp))
+        CaptureRow("Average power", TelemetryFormat.powerKwWithUnit(capture.averagePowerKw), false)
+        CaptureRow(
+            "Current balance",
+            TelemetryFormat.percentPrecise(capture.currentImbalancePercent),
+            fault == MotorFaultType.ELECTRICAL,
+        )
+        CaptureRow(
+            "Vibration",
+            TelemetryFormat.gForce(capture.vibrationRmsG),
+            fault == MotorFaultType.MECHANICAL,
+        )
+        CaptureRow(
+            "Tracking error",
+            TelemetryFormat.percentPrecise(capture.speedTrackingErrorPercent),
+            fault == MotorFaultType.SENSOR,
+        )
+    }
+}
+
+@Composable
+private fun CaptureRow(label: String, value: String, emphasised: Boolean) {
+    val color = if (emphasised) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (emphasised) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            softWrap = false,
+            color = color,
+        )
+    }
+}
+
 @Composable
 private fun HeroValue(value: String, caption: String, severity: Severity?, stale: Boolean) {
     Column {
@@ -388,9 +485,9 @@ private fun MetricRow(content: @Composable androidx.compose.foundation.layout.Ro
  * **Every text here is pinned to one line, and that is load-bearing rather than cosmetic.** These
  * cells share a row by weight, so each is a fraction of a panel that is itself a fraction of the
  * screen. Let a value wrap and its row grows, which pushes everything below it down and pulls it
- * back up on the next tick that happens to be a character shorter. Measured case: "Not charging"
- * broke across three lines in a quarter-width cell and collapsed to one the moment charging
- * started.
+ * back up on the next tick that happens to be a character shorter — the card visibly bounces on
+ * live data. Measured case: "Not charging" broke across three lines in a quarter-width cell and
+ * collapsed to one the moment charging started.
  *
  * One line makes the card's height a function of its STRUCTURE, never of its values, which is the
  * only version of this that is stable against data nobody has seen yet.

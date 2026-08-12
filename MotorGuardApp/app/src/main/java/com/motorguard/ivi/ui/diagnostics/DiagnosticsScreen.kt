@@ -252,7 +252,11 @@ internal fun DiagnosticsScreenContent(
                     ) {
                         ComponentDetailPanel(
                             telemetry = focusedTelemetry,
-                            modifier = Modifier.height(376.dp),
+                            // Sized to the TALLEST card, which is the motor: hero, three live
+                            // values and a four-row capture block. GlassCard does not clip, so a
+                            // card that outgrows this does not scroll or truncate — it draws
+                            // straight over the alert list underneath.
+                            modifier = Modifier.height(452.dp),
                         )
                     }
                     AlertList(

@@ -23,9 +23,8 @@ data class SeverityThresholds(
     // Temperatures (C)
     val cellTempCaution: Float = 45f,
     val cellTempCritical: Float = 60f,
-    val motorTempCaution: Float = 90f,
-    val motorTempCritical: Float = 120f,
-    val motorLoadCaution: Float = 85f,
+    // No motor thresholds: this vehicle has no load or temperature sensor, and the motor's
+    // severity arrives already classified by the diagnostics unit (see SeverityResolver.motor).
     // Brakes
     val brakeWearCaution: Float = 70f,
     val brakeWearCritical: Float = 90f,
@@ -66,13 +65,6 @@ class SeverityEvaluator(val thresholds: SeverityThresholds = SeverityThresholds(
     fun cellTemp(c: Float): Severity = aboveIsWorse(
         c, thresholds.cellTempCaution, thresholds.cellTempCritical,
     )
-
-    fun motorTemp(c: Float): Severity = aboveIsWorse(
-        c, thresholds.motorTempCaution, thresholds.motorTempCritical,
-    )
-
-    fun motorLoad(pct: Float): Severity =
-        if (pct >= thresholds.motorLoadCaution) Severity.CAUTION else Severity.OK
 
     fun brakeWear(pct: Float): Severity = aboveIsWorse(
         pct, thresholds.brakeWearCaution, thresholds.brakeWearCritical,

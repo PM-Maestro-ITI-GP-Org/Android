@@ -35,20 +35,15 @@ class SeverityEvaluatorTest {
     }
 
     @Test
-    fun `cell and motor temp high-is-worse`() {
+    fun `cell temp high-is-worse`() {
         assertEquals(Severity.OK, evaluator.cellTemp(28f))
         assertEquals(Severity.CAUTION, evaluator.cellTemp(45f))
         assertEquals(Severity.CRITICAL, evaluator.cellTemp(60f))
-        assertEquals(Severity.OK, evaluator.motorTemp(64f))
-        assertEquals(Severity.CAUTION, evaluator.motorTemp(90f))
-        assertEquals(Severity.CRITICAL, evaluator.motorTemp(120f))
     }
 
-    @Test
-    fun `motor load only has caution`() {
-        assertEquals(Severity.OK, evaluator.motorLoad(12f))
-        assertEquals(Severity.CAUTION, evaluator.motorLoad(85f))
-    }
+    // The motor's load and temperature cases that used to live here are gone with the sensors:
+    // this vehicle measures neither, and the motor's severity now arrives already classified.
+    // SeverityResolverMotorTest covers what replaced them.
 
     @Test
     fun `brake wear and fluid`() {

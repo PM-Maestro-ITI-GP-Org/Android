@@ -122,11 +122,8 @@ class DiagnosticsViewModel(
         health = resolver.batteryHealth(t.healthPercent),
     )
 
-    private fun gradeMotor(t: MotorTelemetry) = MotorReading(
-        data = t,
-        load = resolver.motorLoad(t.loadPercent),
-        temp = resolver.motorTemp(t.tempC),
-    )
+    /** Nothing to grade: the motor reports its own severity. See [MotorReading]. */
+    private fun gradeMotor(t: MotorTelemetry) = MotorReading(data = t)
 
     private fun gradeBrakes(t: BrakeTelemetry) = BrakeReading(
         data = t,

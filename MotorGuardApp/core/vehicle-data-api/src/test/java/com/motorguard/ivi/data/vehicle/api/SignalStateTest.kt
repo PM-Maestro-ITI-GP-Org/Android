@@ -45,7 +45,17 @@ class SignalStateTest {
             SignalState.Live(BatteryTelemetry(62f, 28f, 96f, 312, false), 1),
         )
         val motor = MutableStateFlow<SignalState<MotorTelemetry>>(
-            SignalState.Live(MotorTelemetry(12f, 64f, 0), 1),
+            SignalState.Live(
+                MotorTelemetry(
+                    rpm = 0,
+                    powerKw = 0f,
+                    dcBusVolts = 400f,
+                    faultType = MotorFaultType.NORMAL,
+                    faultSeverity = Severity.OK,
+                    remainingLife = RemainingLife(hours = 1240f),
+                ),
+                1,
+            ),
         )
         val brakes = MutableStateFlow<SignalState<BrakeTelemetry>>(
             SignalState.Live(BrakeTelemetry(42f, fluidOk = true), 1),
