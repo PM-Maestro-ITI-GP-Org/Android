@@ -5,5 +5,5 @@
 
     <!-- Diagnostics -->
     <dimen name="car_card_radius">26dp</dimen>
-    <dimen name="hotspot_dot">32dp</dimen>
+    <dimen name="hotspot_dot">38dp</dimen>
 </resources>

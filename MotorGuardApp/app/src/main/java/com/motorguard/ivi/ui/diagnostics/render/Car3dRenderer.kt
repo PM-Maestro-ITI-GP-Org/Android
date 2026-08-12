@@ -105,11 +105,12 @@ object Car3dTuning {
      * car (long and flat, so the sphere is much bigger than the silhouette), which is why this
      * is well above 1 — measured against the real stage, 2.9 clipped the front bumper.
      *
-     * Pulled in from 3.9 when the stage grew to 80% of the row: the extra width is all horizontal,
-     * and framing is driven by the vertical field of view, so a wider stage on its own makes the
-     * car no bigger — it only buys the headroom to come closer without the ends leaving frame.
+     * Pulled in from 3.9 when the stage grew to 80% of the row, then to 2.85 when the page header
+     * moved onto the stage: framing is driven by the VERTICAL field of view, so a wider stage on
+     * its own makes the car no bigger — height is what buys the room to come closer, and losing
+     * the header returned about 74 dp of it.
      */
-    const val HERO_DISTANCE_FACTOR = 3.2f
+    const val HERO_DISTANCE_FACTOR = 2.85f
 
     /**
      * Look-at point lifted above the bbox centre, as a fraction of the bounding radius. Positive

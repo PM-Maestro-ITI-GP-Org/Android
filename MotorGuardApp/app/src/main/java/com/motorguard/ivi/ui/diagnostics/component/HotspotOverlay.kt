@@ -57,7 +57,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.isActive
 
 /**
- * Mirrors `res/values/dimens.xml` (`touch_min` = 76dp, `hotspot_dot` = 32dp), which stays the
+ * Mirrors `res/values/dimens.xml` (`touch_min` = 76dp, `hotspot_dot` = 38dp), which stays the
  * source of truth for those values. Re-declared as Compose constants rather than read via
  * `dimensionResource()` because: nothing else in this file uses resources; `dimensionResource`
  * needs a `LocalContext`, which a pure-Compose overlay otherwise has no reason to depend on;
@@ -69,14 +69,14 @@ private object HotspotTokens {
     val touchTarget = 76.dp
 
     /** The visible dot. */
-    val dot = 32.dp
+    val dot = 38.dp
 
     /**
      * The component glyph inside the dot. Sized so the disc keeps a ring of its severity colour
      * all the way round the icon — the fill is still what carries severity, the glyph only says
      * *which* component it belongs to.
      */
-    val glyph = 17.dp
+    val glyph = 21.dp
     const val pulseMillis = 1400
 
     /**

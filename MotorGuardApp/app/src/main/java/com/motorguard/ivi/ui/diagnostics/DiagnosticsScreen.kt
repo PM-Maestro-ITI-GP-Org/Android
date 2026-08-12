@@ -66,7 +66,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.motorguard.ivi.data.vehicle.api.CaptureState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.ui.components.GlassCard
-import com.motorguard.ivi.ui.components.Pill
 import com.motorguard.ivi.ui.diagnostics.component.AlertList
 import com.motorguard.ivi.ui.diagnostics.component.ComponentDetailPanel
 import com.motorguard.ivi.ui.diagnostics.component.HealthRing
@@ -190,31 +189,12 @@ internal fun DiagnosticsScreenContent(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(horizontal = 28.dp, vertical = 22.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        text = "Diagnostics",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = "Porsche Mission E",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Pill(text = "Preview", bg = MaterialTheme.colorScheme.primary)
-            }
-
-            Spacer(Modifier.height(18.dp))
-
+            // No page header row. The title sits INSIDE the stage (see [CarStage]), which hands
+            // the car the ~74 dp the header and its spacer used to take — on a screen whose
+            // subject is the vehicle, a band of chrome above it is the first thing to spend.
+            //
+            // The "Preview" pill went with it: it labelled the whole screen as a mock-up, which
+            // stopped being true, and it was never a control.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -489,6 +469,26 @@ private fun CarStage(
                     )
                 },
         )
+
+        // Over the stage rather than above it. Drawn after the gesture layer so it is never
+        // covered, before the loading scrim so it is hidden until the car is actually there.
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(horizontal = 26.dp, vertical = 20.dp),
+        ) {
+            Text(
+                text = "Diagnostics",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Porsche Mission E",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+            )
+        }
 
         HotspotOverlay(
             renderer = renderer,
