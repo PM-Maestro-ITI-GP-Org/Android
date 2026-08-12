@@ -215,16 +215,23 @@ object Car3dTuning {
 
     /**
      * Absolute elevation the camera may never leave, whatever [PITCH_LIMIT_DEG] would otherwise
-     * allow. The low end stops the eye dropping under the ground plane, where the car is seen
-     * through a floor the scene does not model. The high end stays clear of straight overhead,
-     * where the view direction becomes parallel to the world-Y up vector `applyPose` passes to
-     * `lookAt` and the camera basis is undefined.
+     * allow.
+     *
+     * The low end used to be -10, from when the ground was a picture on a wall and dipping below
+     * the horizon cost nothing. The floor is real geometry now: at -10 and the hero distance the
+     * eye sits about a tenth of a unit BELOW the plane, so the stage fills with the underside of
+     * a floor and the car vanishes behind it. Slightly positive keeps the eye above the plane at
+     * every distance the framings use — including a focused wheel, which is both the closest and
+     * the lowest thing the camera is ever asked to look at.
+     *
+     * The high end stays clear of straight overhead, where the view direction becomes parallel to
+     * the world-Y up vector `applyPose` passes to `lookAt` and the camera basis is undefined.
      *
      * The clamp is applied to the accumulated offset, not to the resulting angle, so a drag that
      * runs into a limit does not build up slack the user has to wind back off before the camera
      * moves again.
      */
-    const val MIN_ELEVATION_DEG = -10f
+    const val MIN_ELEVATION_DEG = 2f
     const val MAX_ELEVATION_DEG = 72f
 
     // --- Far-side occlusion. All three compared against `lateral * viewLat`.
