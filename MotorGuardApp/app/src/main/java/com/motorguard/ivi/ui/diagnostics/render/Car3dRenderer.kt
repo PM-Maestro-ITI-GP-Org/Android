@@ -734,7 +734,19 @@ class Car3dRenderer internal constructor(
                 childNodes -= backdrop
                 backdropNode = null
                 backdropHalfExtent = null
-                backdrop.destroy()
+                // Deliberately NOT backdrop.destroy().
+                //
+                // Destroying the node destroys the texture it loaded, but the MaterialInstance
+                // that texture is bound to belongs to `materialLoader` and outlives it by a few
+                // frames. Filament validates that binding on its next commit and aborts the
+                // PROCESS — `Invalid texture still bound to MaterialInstance: 'Transparent
+                // Textured'` — which is what took the whole app down when leaving the diagnostics
+                // tab, not just this fragment.
+                //
+                // Removing the node from the scene is enough to make it disappear. The texture
+                // then lives until the Engine is destroyed, which happens moments later and frees
+                // everything it owns in an order it controls. The cost is one texture held a
+                // little longer, per theme flip; the alternative is a crash.
             }
         }
 
