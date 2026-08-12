@@ -8,12 +8,15 @@ import com.motorguard.ivi.data.vehicle.api.DoorsTelemetry
 import com.motorguard.ivi.data.vehicle.api.CaptureState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.data.vehicle.api.MotorCaptureSource
+import com.motorguard.ivi.data.vehicle.api.MotorCaptureSummary
+import com.motorguard.ivi.data.vehicle.api.summarise
 import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SeverityResolver
 import com.motorguard.ivi.data.vehicle.api.TireTelemetry
 import com.motorguard.ivi.data.vehicle.api.VehicleDataSource
 import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -29,6 +32,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Owns the Diagnostics screen's state: severities derived from [VehicleData.source], plus the
@@ -70,11 +74,29 @@ class DiagnosticsViewModel(
         restartIdleTimer()
     }
 
+    /**
+     * The analysis of the most recent successful capture, which is where every quantitative claim
+     * about the motor now comes from — the vehicle publishes only a classification.
+     *
+     * Survives closing the popup: having fetched a capture, the card keeps showing what it said
+     * until a newer one replaces it. Cleared only by a failed or in-flight request replacing it,
+     * never by dismissing the panel.
+     */
+    private val captureSummary = MutableStateFlow<MotorCaptureSummary?>(null)
+
     fun requestCapture() {
         if (captureJob?.isActive == true) return
         capture.value = CaptureState.Requesting
         captureJob = viewModelScope.launch {
-            capture.value = captureSource.requestCapture()
+            val result = captureSource.requestCapture()
+            capture.value = result
+            // Summarised once, here, rather than on every recomposition of the card — and OFF the
+            // main thread, because it is a pass over 200,000 samples across twelve channels and
+            // viewModelScope runs on Main. Doing it inline stalls the frame that is animating the
+            // popup open.
+            if (result is CaptureState.Ready) {
+                captureSummary.value = withContext(Dispatchers.Default) { result.capture.summarise() }
+            }
         }
         restartIdleTimer()
     }
@@ -132,7 +154,11 @@ class DiagnosticsViewModel(
     private fun telemetryFlowFor(hotspot: Hotspot?): Flow<FocusedTelemetry?> = when (hotspot) {
         null -> flowOf(null)
         Hotspot.BATTERY -> source.battery.map { FocusedTelemetry.Battery(it.mapData(::gradeBattery)) }
-        Hotspot.MOTOR -> source.motor.map { FocusedTelemetry.Motor(it.mapData(::gradeMotor)) }
+        // The only hotspot whose card shows something the vehicle did not send: the capture
+        // analysis is joined in here so the card receives one already-assembled reading.
+        Hotspot.MOTOR -> combine(source.motor, captureSummary) { signal, summary ->
+            FocusedTelemetry.Motor(signal.mapData { MotorReading(it, summary) })
+        }
         Hotspot.BRAKES -> source.brakes.map { FocusedTelemetry.Brakes(it.mapData(::gradeBrakes)) }
         Hotspot.DOORS -> source.doors.map { FocusedTelemetry.Doors(it.mapData(::gradeDoors)) }
         Hotspot.TIRE_FL, Hotspot.TIRE_FR, Hotspot.TIRE_RL, Hotspot.TIRE_RR ->
@@ -159,9 +185,6 @@ class DiagnosticsViewModel(
         cellTemp = resolver.cellTemp(t.cellTempC),
         health = resolver.batteryHealth(t.healthPercent),
     )
-
-    /** Nothing to grade: the motor reports its own severity. See [MotorReading]. */
-    private fun gradeMotor(t: MotorTelemetry) = MotorReading(data = t)
 
     private fun gradeBrakes(t: BrakeTelemetry) = BrakeReading(
         data = t,

@@ -33,19 +33,23 @@ internal object TelemetryFormat {
      *  wrapping value is a layout bug and not just a tight fit. */
     fun charging(on: Boolean): String = if (on) "Yes" else "No"
 
-    /**
-     * Bare numerals, unit in the caption — the same rule as [tempC], and for a harder reason here.
-     * These three share one row by weight in a narrow panel, so "15.9 kW" ellipsised to "15.9 k…"
-     * while "341 V" beside it fitted. A numeral with no unit attached cannot outgrow its cell.
-     */
-    fun powerKw(value: Float): String = String.format(Locale.US, "%.1f", value)
+    /** Watts, not kilowatts: this is a 450 W machine, and "0.4 kW" throws away the resolution
+     *  that makes two runs comparable. */
+    fun watts(value: Float): String = String.format(Locale.US, "%.0f W", value)
+
+    fun amps(value: Float): String = String.format(Locale.US, "%.2f A", value)
 
     fun volts(value: Float): String = value.roundToInt().toString()
 
-    /** Full-width capture rows, not weighted cells, so these keep their units. */
-    fun powerKwWithUnit(value: Float): String = String.format(Locale.US, "%.1f kW", value)
+    fun rpmWithUnit(value: Float): String =
+        String.format(Locale.US, "%,d rpm", value.roundToInt())
 
     fun gForce(value: Float): String = String.format(Locale.US, "%.2f g", value)
+
+    /** Capture window length, in the coarsest form that stays exact. */
+    fun seconds(value: Float): String =
+        if (value >= 1f) String.format(Locale.US, "%.0f s", value)
+        else String.format(Locale.US, "%.0f ms", value * 1000f)
 
     /** Hours are what the driver acts on, so they never become "1.2 k" — a service interval read
      *  as a rounded magnitude is one someone can be a week wrong about. */

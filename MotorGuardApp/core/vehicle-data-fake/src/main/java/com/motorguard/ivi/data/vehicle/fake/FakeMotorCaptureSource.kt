@@ -69,25 +69,28 @@ class FakeMotorCaptureSource(
                 t < DURATION_SEC - RAMP_SEC -> 1f
                 else -> ((DURATION_SEC - t) / RAMP_SEC).coerceAtLeast(0.25f)
             }
-            speedCmd[i] = 4.2f * envelope + noise(0.012f)
+            speedCmd[i] = SPEED_CMD_FULL_SCALE_V * envelope + noise(0.008f)
 
-            val electricalHz = 180f * envelope + 12f
+            // Electrical frequency follows shaft speed through the pole pairs, which is why the
+            // current view shows far more cycles than the speed view does.
+            val shaftHz = MAX_RPM * envelope / 60f
+            val electricalHz = shaftHz * POLE_PAIRS
             val theta = 2f * PI.toFloat() * electricalHz * t
-            val amplitude = 26f * envelope
+            val amplitude = PHASE_CURRENT_PEAK_A * envelope
 
             for (p in 0 until 3) {
                 val offset = 2f * PI.toFloat() * p / 3f
-                current[p][i] = amplitude * phaseGain[p] * sin(theta + offset) + noise(0.5f)
-                // Voltage leads current by roughly a quarter cycle in an inductive load.
-                voltage[p][i] = 190f * envelope * sin(theta + offset + PI.toFloat() / 5f) +
-                    noise(1.4f)
+                current[p][i] = amplitude * phaseGain[p] * sin(theta + offset) + noise(0.25f)
+                // Voltage leads current by roughly a quarter cycle in an inductive load, and can
+                // never exceed the bus that produced it.
+                voltage[p][i] = (BUS_NOMINAL_V / 2f) * envelope * sin(theta + offset + PI.toFloat() / 5f) +
+                    noise(0.4f)
             }
 
-            // The bus sags with load and carries the switching ripple, which is what makes it worth
-            // its own view at all.
-            dcBus[i] = 400f - 38f * envelope + 2.1f * sin(theta * 6f) + noise(0.6f)
+            // The bus sags under load and carries the switching ripple, which is what makes it
+            // worth its own view at all.
+            dcBus[i] = BUS_NOMINAL_V - 4.5f * envelope + 0.35f * sin(theta * 6f) + noise(0.12f)
 
-            val shaftHz = electricalHz / 3f
             val shaftTheta = 2f * PI.toFloat() * shaftHz * t
             val mechanical = if (fault == MotorFaultType.MECHANICAL) 0.9f else 0.05f
             vibration[0][i] = 0.22f * envelope * sin(shaftTheta) +
@@ -104,7 +107,7 @@ class FakeMotorCaptureSource(
             } else {
                 1f
             }
-            rpm[i] = shaftHz * 60f * trackingError + noise(9f)
+            rpm[i] = shaftHz * 60f * trackingError + noise(2.5f)
         }
 
         return MotorCapture(
@@ -124,6 +127,23 @@ class FakeMotorCaptureSource(
         /** Long enough for the envelope to have a beginning, middle and end. */
         const val DURATION_SEC = 10f
         const val RAMP_SEC = 2.5f
+
+        // The real machine: a 48 V, 450 W BLDC turning at up to about 750 rpm.
+        const val BUS_NOMINAL_V = 48f
+        const val MAX_RPM = 750f
+
+        /**
+         * Pole PAIRS, not poles. Reported as "11 or 13" and not yet confirmed; 13 is used here.
+         * It only sets how many electrical cycles appear per revolution, so a wrong value makes
+         * the current view denser or sparser and changes nothing else — but it is the number to
+         * correct first when the real waveform is compared against this one.
+         */
+        const val POLE_PAIRS = 13f
+
+        /** 450 W at 48 V is about 9.4 A of bus current; a phase peak somewhat above that. */
+        const val PHASE_CURRENT_PEAK_A = 11f
+
+        const val SPEED_CMD_FULL_SCALE_V = 4.2f
 
         /** Stands in for the round trip and the acquisition window on the diagnostics unit. */
         const val ACQUISITION_MILLIS = 1_400L

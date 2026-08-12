@@ -39,19 +39,19 @@ data class RemainingLife(
 )
 
 /**
- * Motor summary, computed on the diagnostics unit and pushed at ~1 Hz.
+ * What the diagnostics unit pushes about the motor, and all it pushes.
  *
- * Deliberately small. The raw signals behind these numbers are sampled at 20 kHz across thirteen
- * channels — around a megabyte a second — which is why the transport carries this handful of
- * derived scalars continuously and the raw samples only on request (see [MotorCaptureSummary]).
+ * Three fields, deliberately. Everything measurable — speed, power, currents, vibration — is
+ * derived from the raw signals, and those are only ever fetched on request (see [MotorCapture]).
+ * Publishing a running speed and power alongside would mean a second, continuous stream of numbers
+ * that duplicates what a capture already answers better, for a motor whose interesting behaviour
+ * is not visible at 1 Hz anyway.
  *
- * There is no load or temperature here because this vehicle has no sensor for either. Anything the
- * card shows has to come from the signals that actually exist.
+ * What remains is what cannot wait for a request: whether something is wrong, how badly, and how
+ * long there is left. Those drive the hotspot dot, the health ring and the alert list, which have
+ * to be right without the user having asked for anything.
  */
 data class MotorTelemetry(
-    val rpm: Int,
-    val powerKw: Float,
-    val dcBusVolts: Float,
     val faultType: MotorFaultType,
     /**
      * The classifier's own severity, already expressed in this app's vocabulary so the dot, the
@@ -60,28 +60,33 @@ data class MotorTelemetry(
      */
     val faultSeverity: Severity,
     val remainingLife: RemainingLife?,
-    /** The most recent on-demand capture, or null when none has been requested this session. */
-    val capture: MotorCaptureSummary? = null,
 )
 
 /**
- * What one requested capture of the raw 20 kHz signals reduces to.
+ * Everything one capture says about the motor, reduced to numbers.
  *
- * Each field except [averagePowerKw] is the evidence for one [MotorFaultType], which is what lets
- * the card show why it is claiming a fault rather than only asserting one:
- * [currentImbalancePercent] for [MotorFaultType.ELECTRICAL], [vibrationRmsG] for
- * [MotorFaultType.MECHANICAL], [speedTrackingErrorPercent] for [MotorFaultType.SENSOR].
+ * Computed by [MotorCapture.summarise] from the samples themselves, not reported by the vehicle:
+ * these exist because the user asked for a capture, and they describe that capture's window rather
+ * than the motor right now. [capturedAtMs] is what keeps that distinction visible on the card.
  *
- * [capturedAtMs] is not decoration. These are a snapshot of a window that has already passed, and
- * a card showing them next to live values must say how old they are or it is implying they are
- * current.
+ * Three of these fields are evidence for one fault type each — [currentImbalancePercent] for
+ * [MotorFaultType.ELECTRICAL], [vibrationRmsG] for [MotorFaultType.MECHANICAL],
+ * [speedTrackingErrorPercent] for [MotorFaultType.SENSOR] — which is what lets the card show why
+ * a fault is being claimed rather than only that it is.
  */
 data class MotorCaptureSummary(
     val capturedAtMs: Long,
-    val averagePowerKw: Float,
+    val windowSec: Float,
+    val averageSpeedRpm: Float,
+    val maxSpeedRpm: Float,
+    val averagePowerW: Float,
+    val peakPowerW: Float,
+    val energyWh: Float,
+    val rmsCurrentA: Float,
     val currentImbalancePercent: Float,
     val vibrationRmsG: Float,
     val speedTrackingErrorPercent: Float,
+    val averageDcBusVolts: Float,
 )
 
 data class BrakeTelemetry(

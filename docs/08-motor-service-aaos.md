@@ -19,7 +19,7 @@ Two interfaces, both already defined in `core/vehicle-data-api`. Do not change t
 agreeing it here first — the diagnostics screen, the hotspot overlay, the health ring and the alert
 list are all written against them.
 
-### 1.1 `VehicleDataSource.motor` — the 1 Hz summary
+### 1.1 `VehicleDataSource.motor` — the fault state
 
 ```kotlin
 val motor: StateFlow<SignalState<MotorTelemetry>>
@@ -46,32 +46,42 @@ data source. Bind your implementations there, replacing `FakeVehicleDataSource` 
 
 ---
 
-## 2. The 1 Hz summary contract
+## 2. The periodic message contract
 
-`MotorTelemetry`, in `core/vehicle-data-api/.../Telemetry.kt`:
+`MotorTelemetry`, in `core/vehicle-data-api/.../Telemetry.kt`. **Three fields, and no measurements:**
 
-| Field | Type | Unit | Range | Notes |
-|---|---|---|---|---|
-| `rpm` | `Int` | rev/min | 0 … 12 000 | Shaft speed, not electrical frequency |
-| `powerKw` | `Float` | kW | −30 … 30 | Negative during regeneration; the UI displays it signed |
-| `dcBusVolts` | `Float` | V | 0 … 500 | |
-| `faultType` | `MotorFaultType` | — | enum | `NORMAL`, `ELECTRICAL`, `MECHANICAL`, `SENSOR` |
-| `faultSeverity` | `Severity` | — | enum | `OK`, `CAUTION`, `CRITICAL` |
-| `remainingLife` | `RemainingLife?` | — | — | Null when the model has no estimate |
-| `capture` | `MotorCaptureSummary?` | — | — | See §2.3 |
+| Field | Type | Notes |
+|---|---|---|
+| `faultType` | `MotorFaultType` | `NORMAL`, `ELECTRICAL`, `MECHANICAL`, `SENSOR` |
+| `faultSeverity` | `Severity` | `OK`, `CAUTION`, `CRITICAL` |
+| `remainingLife` | `RemainingLife?` | Null when the model has no estimate |
 
 `RemainingLife(hours: Float, percent: Float?)` — `hours` is what the driver acts on. `percent` is
-optional and is only used to draw a bar; **do not synthesise it** by dividing hours by an assumed
-design life. If the Pi does not send a percentage, pass null and the bar is omitted.
+optional and only draws a bar; **do not synthesise it** by dividing hours by an assumed design
+life. Null means no bar.
 
-### 2.1 Rate and jitter
+### 2.1 Why there is no speed, power or bus voltage here
 
-- Nominal **1 Hz**. The UI is designed for this and does not benefit from faster.
-- Emit every message you receive; do not throttle, batch or interpolate.
-- Do not emit unchanged values on a timer to "keep it alive". Freshness is carried by
-  `SignalState`, not by repetition.
+There was, and it was removed. Every measurable quantity is now derived from a capture the user
+requested — see §5 — and published continuously by nobody.
 
-### 2.2 Severity mapping — this is your responsibility
+This is deliberate and it is not an optimisation. A 1 Hz sample of a motor whose electrical
+frequency is ~160 Hz tells you almost nothing, and putting a running speed on the card invites it
+to be read as an instrument when it is a once-a-second snapshot of something that moves far faster.
+The capture answers the same questions properly, over a window whose length is stated.
+
+**Do not add measurements back to this message.** If the diagnostics unit starts publishing speed
+or power, drop them at the boundary rather than widening `MotorTelemetry`.
+
+### 2.2 Rate
+
+- Nominal **1 Hz**. Only the classification changes, so this is mostly a heartbeat, and the
+  freshness machinery in §4 depends on it arriving regularly.
+- Emit every message you receive. Do not throttle or coalesce.
+- Do not emit synthetic keep-alives when the source is silent. Absence is what `Stale` and
+  `Offline` are for.
+
+### 2.3 Severity mapping — this is your responsibility
 
 The Pi's severity scale is defined in `09-motor-service-someip.md` §3.4. **You map it into
 `Severity` at the boundary.** Do not pass a raw integer up and do not add a second severity concept
@@ -98,40 +108,47 @@ have not been told about is far more likely to mean "worse" than "fine", and sil
 green is the failure mode that matters.
 
 `faultType` maps by ordinal; an unrecognised value maps to `NORMAL` **only if** severity is also 0,
-otherwise keep the severity and pick the nearest known type or `NORMAL` — the severity is what
-drives safety-relevant colour, the type only labels it.
+otherwise keep the severity and fall back to `NORMAL` for the label — the severity is what drives
+safety-relevant colour, the type only names it.
 
-### 2.3 `capture` on the summary
+### 2.4 The capture summary is not yours
 
-`MotorCaptureSummary` carries the reduction of the **last requested capture**:
+`MotorCaptureSummary` used to hang off `MotorTelemetry`. It no longer does. The app computes it
+itself with `MotorCapture.summarise()` from the samples you deliver, and the ViewModel holds it.
 
-| Field | Type | Unit | Meaning |
-|---|---|---|---|
-| `capturedAtMs` | `Long` | ms, `System.currentTimeMillis` epoch | When acquisition started |
-| `averagePowerKw` | `Float` | kW | Mean over the capture window |
-| `currentImbalancePercent` | `Float` | % | Spread of the three phase RMS values |
-| `vibrationRmsG` | `Float` | g | RMS of √(x²+y²+z²) |
-| `speedTrackingErrorPercent` | `Float` | % | Commanded vs actual speed |
-
-**It must be null until a capture has actually been requested and completed in this session.** The
-card renders the block only when non-null; an empty block would imply a request is pending. Do not
-populate it from a capture the user did not ask for.
-
-Whether the Pi computes these or you compute them from the capture payload is your choice — see
-`09-...` §5.3 for which the Pi offers. Computing them on the Pi is preferred: it already has the
-samples in memory, and it avoids a second definition of "imbalance" that could drift from the one
-the classifier uses.
-
----
+You are not required to send it. If the Pi computes equivalent figures anyway, they can be used as
+a cross-check — but the numbers on the card come from `summarise()`, which is unit-tested against
+analytic waveforms in `MotorCaptureAnalysisTest`. If your side's figures disagree with it, that
+disagreement is worth investigating before either is trusted.
 
 ## 3. What was removed, and why you must not add it back
 
-`MotorTelemetry` previously had `loadPercent` and `tempC`. **This vehicle has no load or
-temperature sensor.** Both fields, and their entries in `SeverityThresholds`, have been deleted.
+`MotorTelemetry` previously had `loadPercent`, `tempC`, and later `rpm`, `powerKw` and
+`dcBusVolts`. All are gone.
 
-Do not reintroduce either as an estimate — a computed "load %" derived from current, or a
-temperature model, is a number the driver will read as a measurement. If the Pi ever gains real
-sensors for these, add them as new fields with their own thresholds and raise it here first.
+- **There is no load or temperature sensor on this vehicle.** Both were fiction, and their entries
+  in `SeverityThresholds` are deleted with them.
+- **Speed, power and bus voltage were removed by decision**, not for lack of a sensor: see §2.1.
+
+Do not reintroduce any of them as an estimate. A computed "load %" derived from current, or a
+temperature model, is a number the driver will read as a measurement. If the Pi gains real sensors,
+add them as new fields with their own thresholds and raise it here first.
+
+### 3.1 The motor being specified
+
+A **48 V, 450 W BLDC**, maximum ~**750 rpm**, **11 or 13 pole pairs** (unconfirmed — see
+`09-...` §6). These set every plausible range in the app:
+
+| Quantity | Expected | Plot scale used |
+|---|---|---|
+| Bus voltage | 48 V nominal, sagging under load | 40 … 52 V |
+| Phase current | ~9.4 A of bus current at rated power | −16 … 16 A |
+| Phase voltage | cannot exceed the bus | −30 … 30 V |
+| Speed | 0 … 750 rpm | 0 … 800 rpm |
+| Electrical frequency | ~160 Hz at full speed with 13 pole pairs | — |
+
+If the real hardware differs, the plot's fixed vertical scales in `MotorSignalGroup.displayRange`
+are the single place to correct.
 
 ---
 

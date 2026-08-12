@@ -15,11 +15,7 @@ class MotorSeverityTest {
     private fun motor(
         severity: Severity,
         fault: MotorFaultType = MotorFaultType.NORMAL,
-        rpm: Int = 3120,
     ) = MotorTelemetry(
-        rpm = rpm,
-        powerKw = 12.4f,
-        dcBusVolts = 396f,
         faultType = fault,
         faultSeverity = severity,
         remainingLife = RemainingLife(hours = 1240f, percent = 82f),
@@ -58,10 +54,11 @@ class MotorSeverityTest {
         assertEquals(Severity.OK, resolver.motor(motor(Severity.OK)))
     }
 
-    /** Speed, power and bus voltage have no thresholds — a fast motor is not a faulty one. */
+    /** The fault TYPE labels a fault; only the severity says how bad it is. */
     @Test
-    fun `live summary values do not affect severity`() {
-        assertEquals(Severity.OK, resolver.motor(motor(Severity.OK, rpm = 9600)))
-        assertEquals(Severity.OK, resolver.motor(motor(Severity.OK, rpm = 0)))
+    fun `fault type does not affect severity`() {
+        MotorFaultType.entries.forEach { type ->
+            assertEquals(Severity.CAUTION, resolver.motor(motor(Severity.CAUTION, type)))
+        }
     }
 }

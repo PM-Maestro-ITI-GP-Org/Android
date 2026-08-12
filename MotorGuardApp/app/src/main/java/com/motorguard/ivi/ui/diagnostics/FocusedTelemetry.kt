@@ -4,6 +4,7 @@ import com.motorguard.ivi.data.vehicle.api.BatteryTelemetry
 import com.motorguard.ivi.data.vehicle.api.BrakeTelemetry
 import com.motorguard.ivi.data.vehicle.api.DoorsTelemetry
 import com.motorguard.ivi.data.vehicle.api.Hotspot
+import com.motorguard.ivi.data.vehicle.api.MotorCaptureSummary
 import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SignalState
@@ -43,7 +44,17 @@ internal data class TireReading(
  * speed, power, DC bus — have no thresholds to be graded against, and its [overall] is the
  * classification the diagnostics unit already made rather than anything derived here.
  */
-internal data class MotorReading(val data: MotorTelemetry) {
+internal data class MotorReading(
+    val data: MotorTelemetry,
+    /**
+     * The analysis of the last capture the user requested, or null if they have not requested one.
+     *
+     * Carried alongside the telemetry rather than inside it because it is not telemetry: the
+     * vehicle never sends it, the app derives it, and it describes a window that has already
+     * passed rather than the motor now. Keeping the two apart is what lets the card date it.
+     */
+    val capture: MotorCaptureSummary? = null,
+) {
     val overall: Severity get() = data.faultSeverity
 }
 

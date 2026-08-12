@@ -286,16 +286,14 @@ private fun DetailContent(telemetry: FocusedTelemetry) {
                 severity = r.overall,
                 stale = stale,
             )
+            // No live measurements: the vehicle publishes a classification and nothing else.
+            // Everything numeric below comes from a capture the user asked for, and is absent
+            // until they do — an empty block would imply one is already pending.
+            val capture = r.capture
             Spacer(Modifier.height(18.dp))
-            MetricRow {
-                MetricCell("Speed rpm", TelemetryFormat.rpm(r.data.rpm), null, Modifier.weight(1f))
-                MetricCell("Power kW", TelemetryFormat.powerKw(r.data.powerKw), null, Modifier.weight(1f))
-                MetricCell("DC bus V", TelemetryFormat.volts(r.data.dcBusVolts), null, Modifier.weight(1f))
-            }
-            // Absent until a capture has been requested — there is no such thing as a capture
-            // nobody asked for, and an empty block would imply one is pending.
-            r.data.capture?.let { capture ->
-                Spacer(Modifier.height(18.dp))
+            if (capture == null) {
+                NoCaptureHint()
+            } else {
                 CaptureBlock(capture, r.data.faultType)
             }
         }
@@ -434,19 +432,35 @@ private fun motorHeroCaption(fault: MotorFaultType): String = when (fault) {
  * The row matching [fault] is emphasised, so the card shows the evidence for the claim it is
  * making rather than only the claim. When that row looks unremarkable, that is diagnostic too.
  */
+/** What stands in for the capture block before one exists. Describes the control that produces
+ *  the numbers, and states no vehicle fact, because there is no data behind one yet. */
+@Composable
+private fun NoCaptureHint() {
+    Text(
+        text = "Run engineering insights to measure speed, power and vibration",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+    )
+}
+
 @Composable
 private fun CaptureBlock(capture: MotorCaptureSummary, fault: MotorFaultType) {
     val nowMs = remember(capture.capturedAtMs) { System.currentTimeMillis() }
     Column {
         Text(
-            text = "From capture · ${TelemetryFormat.ageOf(capture.capturedAtMs, nowMs)}",
+            text = "From ${TelemetryFormat.seconds(capture.windowSec)} capture · " +
+                TelemetryFormat.ageOf(capture.capturedAtMs, nowMs),
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
         )
         Spacer(Modifier.height(8.dp))
-        CaptureRow("Average power", TelemetryFormat.powerKwWithUnit(capture.averagePowerKw), false)
+        CaptureRow("Average speed", TelemetryFormat.rpmWithUnit(capture.averageSpeedRpm), false)
+        CaptureRow("Max speed", TelemetryFormat.rpmWithUnit(capture.maxSpeedRpm), false)
+        CaptureRow("Average power", TelemetryFormat.watts(capture.averagePowerW), false)
+        CaptureRow("Peak power", TelemetryFormat.watts(capture.peakPowerW), false)
+        CaptureRow("RMS current", TelemetryFormat.amps(capture.rmsCurrentA), false)
         CaptureRow(
             "Current balance",
             TelemetryFormat.percentPrecise(capture.currentImbalancePercent),
@@ -473,7 +487,9 @@ private fun CaptureRow(label: String, value: String, emphasised: Boolean) {
         MaterialTheme.colorScheme.onSurface
     }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        // 1 dp, not 3: eight rows at the old spacing pushed the insights button off the bottom
+        // of a fixed-height card, and GlassCard does not clip.
+        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

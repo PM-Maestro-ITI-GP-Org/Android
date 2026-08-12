@@ -47,9 +47,6 @@ class SignalStateTest {
         val motor = MutableStateFlow<SignalState<MotorTelemetry>>(
             SignalState.Live(
                 MotorTelemetry(
-                    rpm = 0,
-                    powerKw = 0f,
-                    dcBusVolts = 400f,
                     faultType = MotorFaultType.NORMAL,
                     faultSeverity = Severity.OK,
                     remainingLife = RemainingLife(hours = 1240f),

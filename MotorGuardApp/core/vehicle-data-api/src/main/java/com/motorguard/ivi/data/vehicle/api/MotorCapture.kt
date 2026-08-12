@@ -88,12 +88,15 @@ enum class MotorSignalGroup(
      */
     val opensZoomedIn: Boolean,
 ) {
+    // Ranges are the instrument's, sized for a 48 V / 450 W / 750 rpm BLDC with headroom for a
+    // fault: 450 W at 48 V is about 9.4 A of bus current, so a phase peak of 16 A is generous;
+    // phase voltage cannot exceed the bus.
     SPEED_COMMAND("Speed cmd", "V", 0.5f, 0f..5f, opensZoomedIn = false),
-    CURRENT("Current x3", "A", 0.05f, -32f..32f, opensZoomedIn = true),
-    VOLTAGE("Voltage x3", "V", 0.05f, -240f..240f, opensZoomedIn = true),
+    CURRENT("Current x3", "A", 0.04f, -16f..16f, opensZoomedIn = true),
+    VOLTAGE("Voltage x3", "V", 0.04f, -30f..30f, opensZoomedIn = true),
     VIBRATION("Vibration xyz", "g", 0.5f, -2f..2f, opensZoomedIn = true),
-    DC_BUS("DC bus", "V", 2f, 330f..420f, opensZoomedIn = true),
-    SPEED_ACTUAL("Speed", "rpm", 0.5f, 0f..4500f, opensZoomedIn = false),
+    DC_BUS("DC bus", "V", 2f, 40f..52f, opensZoomedIn = true),
+    SPEED_ACTUAL("Speed", "rpm", 0.5f, 0f..800f, opensZoomedIn = false),
 }
 
 /** Where a capture request has got to. */

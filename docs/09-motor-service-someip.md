@@ -13,13 +13,24 @@ and semantics are defined there and are not repeated in full here; this document
 
 You own one service offering:
 
-1. A **1 Hz summary event** — a small, continuously published state.
-2. A **capture request/response method** — a large payload, only on demand.
+1. A **1 Hz fault event** — the classification, and nothing measured.
+2. A **capture request/response method** — the raw samples, only on demand.
 
 That split is the central design decision and is not negotiable without re-planning both sides. The
 raw signals are 12 channels at 20 kHz — roughly **1 MB/s** — which is why they are never streamed.
-The summary is ~40 bytes/s. Four orders of magnitude apart, and the head unit is on the other end
-of a link shared with everything else in the vehicle.
+
+Note what the periodic event does **not** carry: no speed, no power, no bus voltage. Those were
+specified and then removed. A 1 Hz sample of a motor whose electrical frequency is ~160 Hz says
+almost nothing, and the head unit now derives every measured quantity from the capture instead,
+over a window whose length it can state. Publish the classification; let the capture answer
+everything else.
+
+### 1.1 The motor
+
+A **48 V, 450 W BLDC**, maximum ~**750 rpm**, **11 or 13 pole pairs** (see §10). At rated power
+that is roughly 9.4 A of bus current, and at full speed roughly 160 Hz electrical with 13 pole
+pairs. Every range in this document and every plot scale in the app is sized from those numbers,
+so confirm them before implementation rather than after.
 
 ---
 
@@ -48,7 +59,7 @@ To be fixed before implementation and recorded here:
 
 ---
 
-## 3. The 1 Hz summary event
+## 3. The 1 Hz fault event
 
 ### 3.1 Cadence
 
@@ -67,24 +78,17 @@ To be fixed before implementation and recorded here:
 | 2 | `uint8` | `severity` | — | 0 none, 1 advisory, 2 urgent |
 | 3 | `uint8` | `flags` | — | bit0 `rulValid`, bit1 `rulPercentValid`, others reserved 0 |
 | 4 | `uint32` | `timestampMs` | ms | Monotonic since boot, see §3.5 |
-| 8 | `int32` | `rpm` | rev/min | Shaft speed, **not** electrical frequency |
-| 12 | `float32` | `powerKw` | kW | Signed; negative during regeneration |
-| 16 | `float32` | `dcBusVolts` | V | |
-| 20 | `float32` | `rulHours` | h | Ignored unless `rulValid` |
-| 24 | `float32` | `rulPercent` | % 0–100 | Ignored unless `rulPercentValid` |
+| 8 | `float32` | `rulHours` | h | Ignored unless `rulValid` |
+| 12 | `float32` | `rulPercent` | % 0–100 | Ignored unless `rulPercentValid` |
 
-28 bytes plus SOME/IP header. Keep the reserved bits zero so they can be claimed later.
+16 bytes plus SOME/IP header. Keep the reserved bits zero so they can be claimed later.
 
-### 3.3 Deriving the summary
+### 3.3 Nothing measured belongs here
 
-These are computed on your side from the same buffer that feeds the classifier:
-
-- `powerKw` = mean of `v₀i₀ + v₁i₁ + v₂i₂` over the last second, divided by 1000.
-- `dcBusVolts` = mean of `DC_bus_volt` over the last second.
-- `rpm` = mean of `rpm` over the last second.
-
-Mean over the window, not the instantaneous last sample. A 20 kHz instantaneous value sampled once
-a second is noise, and it will visibly jitter on the card.
+Do not add speed, power, current or bus voltage to this event, even if they are cheap to include
+and already in memory. The head unit's `MotorTelemetry` has exactly three fields and will discard
+anything else at the boundary; adding them here only creates a second, worse answer to questions
+the capture already answers properly.
 
 ### 3.4 Severity is yours to decide, and to damp
 
@@ -168,14 +172,11 @@ Empty payload, or optionally:
 | `uint64` | `capturedAtMs` | Same time base as §3.5 |
 | `float32[]` | `samples` | `channelCount × sampleCount`, **channel-major** |
 
-Then the derived summary, so the head unit does not have to recompute it:
-
-| Type | Field | Unit |
-|---|---|---|
-| `float32` | `averagePowerKw` | kW |
-| `float32` | `currentImbalancePercent` | % |
-| `float32` | `vibrationRmsG` | g |
-| `float32` | `speedTrackingErrorPercent` | % |
+**Derived figures are optional.** The head unit computes its own from the samples —
+`MotorCapture.summarise()`, unit-tested against analytic waveforms — so you do not have to send
+average power, RMS current, imbalance, vibration or tracking error. If you send them anyway they
+are a useful cross-check, and a disagreement between the two is worth investigating before either
+is trusted.
 
 **Channel order, fixed:**
 
@@ -238,6 +239,8 @@ a response nobody will read, and a bounded write timeout.
 - **20 kHz per channel, simultaneously sampled** across all 12 channels, or with a known and
   documented skew. Phase relationships are the point of this data; a channel skewed by even a few
   samples changes the apparent phase angle and therefore the imbalance figure.
+- At ~160 Hz electrical, 20 kHz is about 125 samples per electrical cycle — ample. The rate is
+  driven by the vibration and switching content, not by the fundamental.
 - Capture window: **10 s** by default. This is the value compiled into the plot's expectations;
   changing it is fine but must be reported in `sampleCount` / `sampleRateHz` and never assumed.
 - The capture should reflect the motor's **current** operating state at the moment of the request.
@@ -291,4 +294,9 @@ but the constraints in §5.4 and §3.4 are behavioural and survive any encoding 
 3. Whether the derived summary values are computed on the Pi (preferred) or on the head unit.
 4. Whether a single 9.6 MB response is viable in your vsomeip build, or whether §5.5 applies.
 5. Confirmation that the 12 channels are simultaneously sampled, and the skew if not.
-6. Whether `powerKw` can be negative on this hardware, i.e. whether regeneration is measured.
+6. Whether the drive regenerates, i.e. whether instantaneous power can be negative — the app plots
+   and averages signed power either way, but the expected range depends on it.
+7. **Pole pairs: 11 or 13.** Reported as one or the other and not confirmed. It sets the electrical
+   frequency for a given shaft speed, so it determines how many cycles appear in the plot's 40 ms
+   current window; the app currently assumes 13 for its synthetic data only.
+8. Confirmation of the motor plate figures: 48 V, 450 W, 750 rpm maximum.
