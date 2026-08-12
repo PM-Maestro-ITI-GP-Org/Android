@@ -41,4 +41,16 @@
         app:layout_constraintTop_toBottomOf="@id/status_bar"
         app:layout_constraintBottom_toBottomOf="parent" />
 
+    <!-- Above fragment_container in z-order (declared after it) so a live call takes over
+         whatever tab is showing, not just the Phone tab. Renders nothing (and so passes
+         touches through) when PhoneRepository.call is null. -->
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/call_overlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintStart_toEndOf="@id/nav_rail"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/status_bar"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>

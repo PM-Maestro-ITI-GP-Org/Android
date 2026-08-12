@@ -8,6 +8,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -55,6 +58,12 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
     private val adapter: BluetoothAdapter? =
         (app.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
 
+    private val audioManager: AudioManager? =
+        app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+    /** Held for the lifetime of a call so media apps duck; null when idle. */
+    private var duckingFocus: AudioFocusRequest? = null
+
     private val _link = MutableStateFlow(PhoneLink.DISCONNECTED)
     private val _deviceName = MutableStateFlow<String?>(null)
     private val _call = MutableStateFlow<ActiveCall?>(null)
@@ -95,7 +104,10 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
         // Any Call.Callback tick or mute change re-projects the platform call into our model.
         combine(InCallBridge.call, InCallBridge.revision, InCallBridge.muted) { call, _, muted ->
             project(call, muted)
-        }.onEach { _call.value = it }.launchIn(scope)
+        }.onEach {
+            updateDucking(it != null)
+            _call.value = it
+        }.launchIn(scope)
 
         refresh()
     }
@@ -181,6 +193,34 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
             startedAtElapsedMs = answeredAtElapsedMs,
             muted = muted,
         )
+    }
+
+    /**
+     * Ducks (not pauses) whatever media is playing for the life of a call — from the
+     * first ring through hang-up — by holding transient "may duck" focus. Other apps
+     * decide for themselves whether to lower volume or pause outright; most media apps
+     * duck on this gain type rather than stop.
+     */
+    private fun updateDucking(callActive: Boolean) {
+        val am = audioManager ?: return
+        if (callActive) {
+            if (duckingFocus != null) return
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+                .build()
+            val result = runCatching { am.requestAudioFocus(request) }
+                .onFailure { Log.w(TAG, "audio focus request failed", it) }
+                .getOrNull()
+            if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) duckingFocus = request
+        } else {
+            duckingFocus?.let { runCatching { am.abandonAudioFocusRequest(it) } }
+            duckingFocus = null
+        }
     }
 
     private fun applyLink(state: Int, device: BluetoothDevice?) {

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallMade
 import androidx.compose.material.icons.filled.CallMissed
 import androidx.compose.material.icons.filled.CallReceived
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,7 +44,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -59,19 +64,17 @@ import com.motorguard.ivi.ui.theme.Tokens
  * neither ever scrolls out of reach while driving. Reflows to a narrower pad and 76 dp
  * keys under 1100 dp of width (the 1024×600 target).
  *
- * A live call takes over the whole surface: nothing else on this screen matters then.
+ * A live call is rendered by MainActivity's call_overlay, on top of every tab, not just
+ * this one — so this screen only ever needs to draw the idle dialer/contacts surface.
  */
 @Composable
 fun DialerScreen(vm: DialerViewModel) {
-    val call by vm.repo.call.collectAsState()
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        val current = call
-        if (current != null) InCallScreen(vm, current) else DialerHome(vm)
+        DialerHome(vm)
     }
 }
 
@@ -108,6 +111,8 @@ private fun DialerHome(vm: DialerViewModel) {
                     TabStrip(vm)
                 }
                 Spacer(Modifier.height(16.dp))
+                SearchField(vm)
+                Spacer(Modifier.height(12.dp))
                 GlassCard(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
@@ -275,14 +280,74 @@ private fun TabStrip(vm: DialerViewModel) {
 }
 
 @Composable
+private fun SearchField(vm: DialerViewModel) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.weight(1f)) {
+            if (vm.searchQuery.isEmpty()) {
+                Text(
+                    text = "Search contacts",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    fontSize = 17.sp,
+                )
+            }
+            BasicTextField(
+                value = vm.searchQuery,
+                onValueChange = { vm.searchQuery = it },
+                singleLine = true,
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 17.sp,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (vm.searchQuery.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable { vm.searchQuery = "" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Clear search",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun PeopleList(
     vm: DialerViewModel,
     link: PhoneLink,
     contacts: List<Contact>,
     recents: List<CallLogEntry>,
 ) {
+    val query = vm.searchQuery.trim()
+
     val empty: String = when {
         link == PhoneLink.DISCONNECTED -> "No phone connected. Pair one in Settings › Bluetooth."
+        query.isNotEmpty() -> "No matches for \"$query\"."
         vm.listTab == DialerViewModel.ListTab.FAVOURITES -> "Star someone on your phone and they show up here."
         vm.listTab == DialerViewModel.ListTab.RECENTS -> "No calls yet."
         else -> "Contacts sync from your phone once it is paired."
@@ -292,6 +357,17 @@ private fun PeopleList(
         DialerViewModel.ListTab.FAVOURITES -> contacts.filter { it.favorite }
         DialerViewModel.ListTab.RECENTS -> recents
         DialerViewModel.ListTab.CONTACTS -> contacts
+    }.filter { row ->
+        if (query.isEmpty()) {
+            true
+        } else {
+            when (row) {
+                is Contact -> row.name.contains(query, ignoreCase = true) || row.number.contains(query)
+                is CallLogEntry -> (row.name?.contains(query, ignoreCase = true) ?: false) ||
+                    row.number.contains(query)
+                else -> true
+            }
+        }
     }
 
     if (rows.isEmpty()) {

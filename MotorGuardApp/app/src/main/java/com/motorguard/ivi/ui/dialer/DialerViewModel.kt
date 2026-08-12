@@ -27,6 +27,9 @@ class DialerViewModel(app: Application) : AndroidViewModel(app) {
 
     var listTab by mutableStateOf(ListTab.RECENTS)
 
+    /** Filters the current list tab by name/number substring, case-insensitive. */
+    var searchQuery by mutableStateOf("")
+
     /** In-call DTMF pad visibility. Reset whenever a call ends. */
     var inCallKeypad by mutableStateOf(false)
 
