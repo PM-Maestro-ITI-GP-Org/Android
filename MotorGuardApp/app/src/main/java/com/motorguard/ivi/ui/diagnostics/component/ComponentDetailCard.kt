@@ -64,12 +64,29 @@ internal fun ComponentDetailPanel(
     telemetry: () -> FocusedTelemetry?,
     modifier: Modifier = Modifier,
 ) {
+    val current = telemetry()
+
+    // The last reading seen for each component, so a card animating OUT keeps its numbers for the
+    // whole slide instead of blanking the instant focus moves. This is what `targetState` used to
+    // provide by carrying the reading itself.
+    //
+    // A plain map, deliberately not a snapshot map: it is written during composition, and the
+    // recomposition that refreshes the card is already driven by the `current` read above. A
+    // snapshot map would add a second, redundant invalidation source for the same data.
+    val lastSeen = remember { mutableMapOf<Hotspot, FocusedTelemetry>() }
+    if (current != null) lastSeen[current.hotspot] = current
+
+    // targetState is the HOTSPOT, never the reading.
+    //
+    // It used to be the reading with `contentKey = { it?.hotspot }`, on the assumption that the key
+    // was what decided whether to animate. It is not: the key only stops a second entry being
+    // added for an equal key. The entry already on screen still compares itself against
+    // `targetState` by equality, and every tick delivers a NEW FocusedTelemetry instance — so the
+    // visible card concluded it was no longer the target and played its exit, once per tick, for
+    // as long as a component was focused. Keying the state itself is the only version where a tick
+    // is not a state change at all.
     AnimatedContent(
-        targetState = telemetry(),
-        // Keyed on the hotspot, not the whole state. Without this, every telemetry tick would be a
-        // new target and the card would re-slide once a second. With it, a tick recomposes the
-        // current content in place and only an actual component change animates.
-        contentKey = { it?.hotspot },
+        targetState = current?.hotspot,
         transitionSpec = {
             (
                 slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { it / 3 } +
@@ -82,13 +99,13 @@ internal fun ComponentDetailPanel(
         modifier = modifier,
         label = "componentDetail",
     ) { target ->
-        // AnimatedContent keeps the OUTGOING entry composing against its own captured target, so
-        // the departing card keeps its numbers for the whole slide-out instead of blanking the
-        // instant focus clears. That is why this targets the telemetry and not ui.focusedHotspot.
-        if (target == null) {
+        // The outgoing entry composes against ITS OWN hotspot, which is how the departing card
+        // still finds its last reading in [lastSeen] rather than blanking mid-slide.
+        val reading = target?.let(lastSeen::get)
+        if (reading == null) {
             EmptyDetailPanel(Modifier.fillMaxSize())
         } else {
-            DetailCard(target, Modifier.fillMaxSize())
+            DetailCard(reading, Modifier.fillMaxSize())
         }
     }
 }
