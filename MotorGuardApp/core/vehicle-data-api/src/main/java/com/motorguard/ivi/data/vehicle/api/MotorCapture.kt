@@ -77,13 +77,23 @@ enum class MotorSignalGroup(
      * pinned against its stop does.
      */
     val displayRange: ClosedFloatingPointRange<Float>,
+    /**
+     * Whether this signal opens at [windowSec] or at the whole capture.
+     *
+     * Per signal because the interesting scale is a property of the signal, not a preference. A
+     * phase current is a solid band of ink unless you are inside a tenth of a second; the two
+     * speeds are envelopes whose whole point is the shape of the run, and opening them zoomed in
+     * shows a nearly flat line that says nothing. Every signal remains zoomable both ways — this
+     * only decides where it starts.
+     */
+    val opensZoomedIn: Boolean,
 ) {
-    SPEED_COMMAND("Speed cmd", "V", Float.MAX_VALUE, 0f..5f),
-    CURRENT("Current x3", "A", 0.05f, -32f..32f),
-    VOLTAGE("Voltage x3", "V", 0.05f, -240f..240f),
-    VIBRATION("Vibration xyz", "g", 0.5f, -2f..2f),
-    DC_BUS("DC bus", "V", 2f, 330f..420f),
-    SPEED_ACTUAL("Speed", "rpm", Float.MAX_VALUE, 0f..4500f),
+    SPEED_COMMAND("Speed cmd", "V", 0.5f, 0f..5f, opensZoomedIn = false),
+    CURRENT("Current x3", "A", 0.05f, -32f..32f, opensZoomedIn = true),
+    VOLTAGE("Voltage x3", "V", 0.05f, -240f..240f, opensZoomedIn = true),
+    VIBRATION("Vibration xyz", "g", 0.5f, -2f..2f, opensZoomedIn = true),
+    DC_BUS("DC bus", "V", 2f, 330f..420f, opensZoomedIn = true),
+    SPEED_ACTUAL("Speed", "rpm", 0.5f, 0f..4500f, opensZoomedIn = false),
 }
 
 /** Where a capture request has got to. */

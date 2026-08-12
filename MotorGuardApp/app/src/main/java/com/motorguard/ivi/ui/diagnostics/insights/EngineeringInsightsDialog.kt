@@ -5,10 +5,12 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,12 +41,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
@@ -231,10 +238,13 @@ private fun CaptureBody(capture: MotorCapture) {
     // different window lengths agree on where "here" is.
     var windowStartSec by remember(capture) { mutableFloatStateOf(0f) }
 
-    // Whether the plot is showing the signal's own detail window or the whole capture. Kept
-    // separate from the signal group so the choice SURVIVES switching signal: a user comparing the
-    // same moment across three signals should not have to re-zoom each time.
-    var zoomed by remember(capture) { mutableStateOf(true) }
+    // Zoom is remembered PER SIGNAL, seeded from each signal's own default.
+    //
+    // One shared flag would force a single answer onto signals that want different ones: the
+    // speeds are envelopes and open zoomed out, the currents are waveforms and open zoomed in.
+    // What stays shared is the window START, so switching signal still lands on the same moment —
+    // which is the property that actually matters for comparing them.
+    val zoomOverrides = remember(capture) { mutableStateMapOf<MotorSignalGroup, Boolean>() }
 
     val group = when (stage) {
         Stage.INTRO_SPEED -> MotorSignalGroup.SPEED_COMMAND
@@ -253,12 +263,13 @@ private fun CaptureBody(capture: MotorCapture) {
             // view of nothing, and a poor thing to open on. The scrubber states the time, so the
             // jump is visible rather than hidden.
             windowStartSec = capture.durationSec / 2f
-            zoomed = true
+            zoomOverrides[MotorSignalGroup.CURRENT] = true
         }
         delay(InsightsTuning.CURRENT_HOLD_MILLIS)
         if (stage == Stage.INTRO_CURRENT) stage = Stage.INTERACTIVE
     }
 
+    val zoomed = zoomOverrides[group] ?: group.opensZoomedIn
     val windowSec = if (zoomed) {
         minOf(group.windowSec, capture.durationSec)
     } else {
@@ -305,18 +316,15 @@ private fun CaptureBody(capture: MotorCapture) {
                     },
             )
             Spacer(Modifier.height(10.dp))
-            TimeScrubber(
+            CaptureNavigator(
+                capture = capture,
+                group = group,
+                color = palette.first(),
                 startSec = start,
                 windowSec = windowSec,
-                totalSec = capture.durationSec,
-                onScrubBy = { fraction ->
+                onPressAt = { fraction ->
                     stage = Stage.INTERACTIVE
-                    windowStartSec = (windowStartSec + fraction * capture.durationSec)
-                        .coerceIn(0f, maxStart)
-                },
-                onScrubTo = { fraction ->
-                    stage = Stage.INTERACTIVE
-                    // The tapped point becomes the CENTRE of the window, not its left edge: on a
+                    // The pressed point becomes the CENTRE of the window, not its left edge: on a
                     // 50 ms window inside a 10 s capture, aligning the edge would put the thing
                     // the user pointed at just off the left of the plot.
                     windowStartSec = (fraction * capture.durationSec - windowSec / 2f)
@@ -353,7 +361,6 @@ private fun CaptureBody(capture: MotorCapture) {
             // available at any time, including during the opening sequence, for any signal.
             ZoomToggle(
                 zoomed = zoomed,
-                enabled = group.windowSec < capture.durationSec,
                 onToggle = {
                     stage = Stage.INTERACTIVE
                     // Zooming IN keeps the middle of the current view rather than its left edge,
@@ -362,7 +369,7 @@ private fun CaptureBody(capture: MotorCapture) {
                     val next = if (zoomed) capture.durationSec else minOf(group.windowSec, capture.durationSec)
                     windowStartSec = (centre - next / 2f)
                         .coerceIn(0f, (capture.durationSec - next).coerceAtLeast(0f))
-                    zoomed = !zoomed
+                    zoomOverrides[group] = !zoomed
                 },
             )
         }
@@ -372,15 +379,13 @@ private fun CaptureBody(capture: MotorCapture) {
 /**
  * Switches between the signal's own detail window and the whole capture.
  *
- * Disabled, rather than hidden, for signals whose detail window IS the whole capture: the control
- * keeps its place in the layout, and a button that vanishes for two of six signals is harder to
- * trust than one that greys out.
+ * Always enabled: every signal now has both a detail window and a whole-capture view worth
+ * looking at, they simply differ in which one they open on.
  */
 @Composable
-private fun ZoomToggle(zoomed: Boolean, enabled: Boolean, onToggle: () -> Unit) {
+private fun ZoomToggle(zoomed: Boolean, onToggle: () -> Unit) {
     OutlinedButton(
         onClick = onToggle,
-        enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Icon(
@@ -426,60 +431,87 @@ private fun SignalChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Where the visible window sits inside the whole capture, and a control for moving it.
+ * A map of the whole capture with the visible window marked on it, and the control for moving that
+ * window: press anywhere and that moment becomes the middle of the plot.
  *
- * Drag moves the window proportionally to the WHOLE capture, unlike dragging the plot, which moves
- * it proportionally to the visible window. That difference is the point: on a 50 ms window inside a
- * ten-second capture, crossing the run by dragging the trace takes two hundred swipes, and one
- * swipe here does it. The plot is for reading, this is for travelling.
- *
- * Tapping jumps straight to a point in the run.
+ * This replaced a thin drag-only bar. Dragging a 6 dp track to travel a ten-second capture at a
+ * 50 ms window meant aiming at a target a couple of pixels wide and then nudging it — the control
+ * was the hard part, not the decision. Pressing is the decision: the strip shows the shape of the
+ * run, so the peak, the ramp or the tail-off is visible BEFORE it is chosen rather than found by
+ * hunting. Dragging still works, and keeps tracking the finger, but it is now the refinement
+ * rather than the mechanism.
  */
 @Composable
-private fun TimeScrubber(
+private fun CaptureNavigator(
+    capture: MotorCapture,
+    group: MotorSignalGroup,
+    color: Color,
     startSec: Float,
     windowSec: Float,
-    totalSec: Float,
-    onScrubBy: (Float) -> Unit,
-    onScrubTo: (Float) -> Unit,
+    onPressAt: (Float) -> Unit,
 ) {
-    val fraction = (windowSec / totalSec).coerceIn(0.01f, 1f)
-    val offset = if (totalSec > windowSec) startSec / totalSec else 0f
+    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+    val trace = color.copy(alpha = 0.55f)
+    val windowFill = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+    val windowEdge = MaterialTheme.colorScheme.primary
+    val channels = capture.channelsOf(group)
+    val range = group.displayRange
+
     Column {
-        Box(
+        Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                // A 26 dp target around a 6 dp track: the track is a drawing, the touch area has
-                // to be reachable with a thumb on a moving vehicle.
-                .height(26.dp)
-                .pointerInput(totalSec) {
-                    detectHorizontalDragGestures { change, dragAmount ->
-                        change.consume()
-                        onScrubBy(dragAmount / size.width)
+                .height(NAVIGATOR_HEIGHT)
+                .clip(RoundedCornerShape(10.dp))
+                .pointerInput(capture, group) {
+                    // One gesture handler for press AND drag, rather than a tap detector stacked
+                    // on a drag detector: stacked, whichever claimed the pointer first locked the
+                    // other out, and a press that moved by a pixel resolved as neither. Acting on
+                    // the down event is also what makes this feel immediate — there is no wait to
+                    // see whether the finger is going to travel.
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        down.consume()
+                        onPressAt(down.position.x / size.width)
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            onPressAt(change.position.x / size.width)
+                            change.consume()
+                        }
                     }
-                }
-                .pointerInput(totalSec) {
-                    detectTapGestures { offset -> onScrubTo(offset.x / size.width) }
                 },
-            contentAlignment = Alignment.CenterStart,
         ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(fraction)
-                    .fillMaxHeight()
-                    .padding(start = 0.dp)
-                    .offsetFraction(offset)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(MaterialTheme.colorScheme.primary),
+            drawRect(track)
+
+            // The whole capture, decimated to the strip's width. Cheap: one pass over the samples
+            // at a width of a few hundred columns.
+            val columns = size.width.toInt().coerceAtLeast(1)
+            val span = (range.endInclusive - range.start).takeIf { it > 1e-6f } ?: 1f
+            channels.forEach { channel ->
+                val decimated = minMaxDecimate(channel, 0, channel.size, columns)
+                for (c in 0 until columns) {
+                    val yLo = (size.height * (1f - (decimated[c * 2] - range.start) / span))
+                        .coerceIn(0f, size.height)
+                    val yHi = (size.height * (1f - (decimated[c * 2 + 1] - range.start) / span))
+                        .coerceIn(0f, size.height)
+                    drawLine(trace, Offset(c.toFloat(), yLo), Offset(c.toFloat(), yHi), strokeWidth = 1f)
+                }
+            }
+
+            // The visible window, drawn over the map. At a 50 ms window inside ten seconds this is
+            // sub-pixel wide, so it is floored at something a thumb can see and aim at.
+            val total = capture.durationSec
+            val x = size.width * (startSec / total)
+            val w = (size.width * (windowSec / total)).coerceAtLeast(3.dp.toPx())
+            drawRect(windowFill, topLeft = Offset(x, 0f), size = Size(w, size.height))
+            drawRect(
+                windowEdge,
+                topLeft = Offset(x, 0f),
+                size = Size(w, size.height),
+                style = Stroke(width = 1.5.dp.toPx()),
             )
-        }
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -490,22 +522,14 @@ private fun TimeScrubber(
     }
 }
 
-/** Shifts a child by a fraction of the PARENT's width, which `Modifier.offset` cannot express
- *  because it only knows the child's own size. */
-private fun Modifier.offsetFraction(fraction: Float): Modifier = this.then(
-    Modifier.layout { measurable, constraints ->
-        val placeable = measurable.measure(constraints)
-        layout(placeable.width, placeable.height) {
-            placeable.placeRelative((constraints.maxWidth * fraction).toInt(), 0)
-        }
-    },
-)
+/** Tall enough to show the shape of the run and to be pressed accurately on a moving vehicle. */
+private val NAVIGATOR_HEIGHT = 58.dp
 
 private fun timeLabel(startSec: Float, windowSec: Float): String {
     val end = startSec + windowSec
     return if (windowSec < 1f) {
-        "t = %.3f – %.3f s · swipe to scrub".format(startSec, end)
+        "t = %.3f – %.3f s · press the strip to move".format(startSec, end)
     } else {
-        "t = %.2f – %.2f s · swipe to scrub".format(startSec, end)
+        "t = %.2f – %.2f s · press the strip to move".format(startSec, end)
     }
 }
