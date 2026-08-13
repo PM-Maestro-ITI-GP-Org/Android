@@ -96,7 +96,7 @@ fun NotificationBanner(modifier: Modifier = Modifier) {
                 )
                 if (!shown?.text.isNullOrBlank()) {
                     Text(
-                        text = shown.text,
+                        text = shown?.text.orEmpty(),
                         fontSize = 13.sp,
                         color = colors.onBaseDim,
                         maxLines = 2,

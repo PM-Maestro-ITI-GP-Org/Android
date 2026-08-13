@@ -22,21 +22,46 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
-        externalNativeBuild {
-            cmake {
-                cppFlags += "-std=c++17"
-                arguments += listOf("-DCMAKE_BUILD_TYPE=Release")
-                targets += "motorguardvoice"
+        // Gate the CMake native build behind -PskipNativeBuild: without it we ship the
+        // prebuilt libmotorguardvoice.so via jniLibs/ (no NDK / whisper.cpp / espeak-ng
+        // subtree required), which is the reliable way to produce a full-featured APK here.
+        if (!providers.gradleProperty("skipNativeBuild").orNull.isNullOrBlank()) {
+            externalNativeBuild {
+                cmake {
+                    cppFlags += "-std=c++17"
+                    arguments += listOf("-DCMAKE_BUILD_TYPE=Release")
+                    targets += "motorguardvoice"
+                }
             }
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+    if (!providers.gradleProperty("skipNativeBuild").orNull.isNullOrBlank()) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
     }
+
+    // The Pi is real hardware: the connectivity bool must be true there (WifiManager /
+    // BluetoothAdapter instead of the mock repos). Mirror the Soong overlay by adding
+    // res-platform/values/bools.xml through a dedicated flavor res dir — AGP overlays a
+    // flavor res dir over main, so it wins without duplicate-resource errors.
+    flavorDimensions += "target"
+    productFlavors {
+        create("mock") {
+            dimension = "target"
+        }
+        create("aaos") {
+            dimension = "target"
+        }
+    }
+
+    sourceSets["aaos"].res.srcDirs(
+        "../aosp/res-platform",
+    )
 
     // .onnx wake-word models must not be compressed, or ORT can't mmap them.
     androidResources {

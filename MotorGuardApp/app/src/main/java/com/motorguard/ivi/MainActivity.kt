@@ -68,7 +68,7 @@ class MainActivity : AppCompatActivity() {
          * screen can label the call before the far end answers.
          */
         const val EXTRA_DIAL_NUMBER = "com.motorguard.ivi.EXTRA_DIAL_NUMBER"
-        const val EXTRA_DIAL_NAME = "com.motorguard.ivi.EXTRA_DIAL_NAME
+        const val EXTRA_DIAL_NAME = "com.motorguard.ivi.EXTRA_DIAL_NAME"
     }
 
     private var selected by mutableStateOf(Tab.HOME)

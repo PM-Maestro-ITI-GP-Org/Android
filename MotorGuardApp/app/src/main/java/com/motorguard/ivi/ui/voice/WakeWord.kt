@@ -263,9 +263,9 @@ class OnnxWakeWordDetector(
     }
 
     private fun micCandidates(): List<MicConfig> = listOf(
-        MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, 44_100, 1),
         MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, 48_000, 1),
         MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, 48_000, 2),
+        MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, 44_100, 1),
         MicConfig(android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, sampleRate, 1),
     )
 
