@@ -205,9 +205,19 @@
         <!--
           Bound by the platform once Motor Guard holds the DIALER role:
             adb shell cmd role add-role-holder android.app.role.DIALER com.motorguard.ivi
-          IN_CALL_SERVICE_CAR_MODE_UI tells Telecom this UI is the car's, so it is
-          preferred over a phone-style in-call screen. Not needed while
-          PhoneRepository.USE_MOCK is true.
+          Not needed while PhoneRepository.USE_MOCK is true.
+
+          IN_CALL_SERVICE_CAR_MODE_UI must NOT be declared here. It looks like the right
+          flag for a car head unit, but RoleControllerService's qualification check for
+          the DIALER role explicitly *prohibits* that meta-data on the InCallService
+          component (packages/apps/PermissionController's roles.xml marks it
+          prohibited="true") — CAR_MODE_UI is for a *second*, additive InCallService that
+          rides alongside a phone's own dialer (e.g. Android Auto projection), not for a
+          standalone car dialer claiming the role outright. Declaring it here silently
+          disqualified this app from ever holding DIALER, so `add-role-holder` failed,
+          MotorGuardInCallService was never bound, and no call ever reached InCallBridge —
+          calls rang the phone but showed nothing on the IVI regardless of which side
+          placed them.
         -->
         <service
             android:name=".ui.dialer.MotorGuardInCallService"
@@ -215,9 +225,6 @@
             android:exported="true">
             <meta-data
                 android:name="android.telecom.IN_CALL_SERVICE_UI"
-                android:value="true" />
-            <meta-data
-                android:name="android.telecom.IN_CALL_SERVICE_CAR_MODE_UI"
                 android:value="true" />
             <intent-filter>
                 <action android:name="android.telecom.InCallService" />

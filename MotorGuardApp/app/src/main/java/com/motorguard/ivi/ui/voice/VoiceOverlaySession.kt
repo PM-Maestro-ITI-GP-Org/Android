@@ -8,6 +8,7 @@ import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.service.voice.VoiceInteractionSession
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -54,6 +55,18 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         const val SILENCE_MS = 1_500L
         const val DISMISS_DELAY_MS = 1_000L
         const val UTTERANCE_ID = "motorguard-reply"
+
+        /**
+         * Floor on how long the overlay stays up, measured from onShow(). Exists because
+         * onCreateContentView()'s window is stood up by the platform asynchronously, and
+         * on a cold process that can take longer than the old DISMISS_DELAY_MS alone gave
+         * it: a fast fail() (recognizer not ready yet) or a quick false-positive "heard
+         * speech" from ambient noise could call hide() before the window ever drew a
+         * first frame, tearing the Compose content down before anyone saw it. Every path
+         * that can end the session routes through requestHide() so none of them can race
+         * ahead of this floor.
+         */
+        const val MIN_VISIBLE_MS = 1_800L
     }
 
     private var model by mutableStateOf(VoiceUiModel())
@@ -63,6 +76,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
     private var focusRequest: AudioFocusRequest? = null
     private val handler = Handler(Looper.getMainLooper())
     private var overlayHost: OverlayHost? = null
+    private var shownAtElapsedMs = 0L
 
     // --- view --------------------------------------------------------------
 
@@ -77,7 +91,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                     VoiceOverlay(
                         model = model,
                         onChip = ::route,
-                        onDismiss = { hide() },
+                        onDismiss = ::requestHide,
                     )
                 }
             }
@@ -91,6 +105,8 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         // Hand the mic from the always-on wake-word recorder to our recognizer;
         // running both at once starves STT and it reports "I didn't hear anything".
         VoiceOverlayService.pauseWakeWord()
+        shownAtElapsedMs = SystemClock.elapsedRealtime()
+        WakeTone.play(context)
         VoiceEngine.ensureReady()
         overlayHost?.resume()
         requestFocus()
@@ -104,12 +120,25 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         stopListening()
         runCatching { tts?.stop() }
         abandonFocus()
-        overlayHost?.destroy()
-        overlayHost = null
+        // Paused, not destroyed: the platform reuses this same session object across
+        // repeated show/hide cycles rather than minting a new one each time, and
+        // onCreateContentView() is only ever called once per session object. Destroying
+        // the host's lifecycle here left it permanently DESTROYED — a terminal state —
+        // so every show after the first found a dead lifecycle and Compose silently
+        // declined to recompose into it: the overlay would work exactly once per
+        // process and then never draw again. The real teardown now happens in
+        // onDestroy(), which fires when the platform is actually done with this session.
+        overlayHost?.pause()
         model = VoiceUiModel()
         // Give the mic back to wake-word listening for the next "Hey Vega".
         VoiceOverlayService.resumeWakeWord()
         super.onHide()
+    }
+
+    override fun onDestroy() {
+        overlayHost?.destroy()
+        overlayHost = null
+        super.onDestroy()
     }
 
     // --- speech in ---------------------------------------------------------
@@ -246,7 +275,13 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     /** Auto-dismiss 1 s after the reply finishes (docs/07-voice.md). */
     private fun scheduleDismiss() {
-        handler.postDelayed({ hide() }, DISMISS_DELAY_MS)
+        handler.postDelayed(::requestHide, DISMISS_DELAY_MS)
+    }
+
+    /** Every path that can end the session calls this instead of hide() directly. */
+    private fun requestHide() {
+        val remaining = MIN_VISIBLE_MS - (SystemClock.elapsedRealtime() - shownAtElapsedMs)
+        if (remaining > 0) handler.postDelayed(::hide, remaining) else hide()
     }
 
     // --- routing -----------------------------------------------------------
@@ -259,7 +294,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         }
         runCatching { context.startActivity(intent) }
             .onFailure { Log.e(TAG, "could not route to ${target.name}", it) }
-        hide()
+        requestHide()
     }
 
     // --- audio focus -------------------------------------------------------
@@ -307,6 +342,10 @@ private class OverlayHost : LifecycleOwner, SavedStateRegistryOwner, ViewModelSt
     }
 
     fun resume() { registry.currentState = Lifecycle.State.RESUMED }
+
+    /** Drops back to CREATED, not DESTROYED — DESTROYED is terminal and this host is
+     *  reused across repeated show/hide cycles on the same session object. */
+    fun pause() { registry.currentState = Lifecycle.State.CREATED }
 
     fun destroy() {
         registry.currentState = Lifecycle.State.DESTROYED

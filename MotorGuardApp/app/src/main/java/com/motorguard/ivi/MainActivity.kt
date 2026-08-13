@@ -6,9 +6,15 @@ import android.os.Build
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -35,6 +41,7 @@ import com.motorguard.ivi.ui.components.StatusBar
 import com.motorguard.ivi.ui.diagnostics.DiagnosticsFragment
 import com.motorguard.ivi.ui.dialer.DialerFragment
 import com.motorguard.ivi.ui.dialer.DialerViewModel
+import com.motorguard.ivi.ui.dialer.InCallScreen
 import com.motorguard.ivi.ui.home.HomeFragment
 import com.motorguard.ivi.ui.media.MediaFragment
 import com.motorguard.ivi.ui.video.VideoFragment
@@ -94,6 +101,25 @@ class MainActivity : AppCompatActivity() {
                     onSelect = ::show,
                     onVoice = { VoiceTrigger.show(this) },
                 )
+            }
+        }
+
+        // Same DialerViewModel instance DialerFragment binds to (both activityViewModels),
+        // so a call placed or answered from either surface is the one and only call.
+        val dialerVm = ViewModelProvider(this)[DialerViewModel::class.java]
+        findViewById<ComposeView>(R.id.call_overlay).setContent {
+            MotorGuardTheme {
+                val call by dialerVm.repo.call.collectAsState()
+                val current = call
+                if (current != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background),
+                    ) {
+                        InCallScreen(dialerVm, current)
+                    }
+                }
             }
         }
 
