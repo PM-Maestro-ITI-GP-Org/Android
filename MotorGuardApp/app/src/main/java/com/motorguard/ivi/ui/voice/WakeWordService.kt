@@ -103,20 +103,25 @@ class WakeWordService : Service() {
         }
 
         if (detector == null) {
-            val d = createWakeWordDetector(this)
-            val started = d.start {
-                // Fired off the audio thread; keep this tiny.
-                if (!VoiceOverlayService.requestSession()) {
-                    Log.w(TAG, "wake word fired but no session could be shown")
+            // Opening the mic probes several candidate configs, each waiting up
+            // to PROBE_MS on a blocking read. Done on the start-binder thread that
+            // would otherwise be a 4-12 s main-thread stall -> ANR.
+            Thread({
+                val d = createWakeWordDetector(this)
+                val started = d.start {
+                    // Fired off the audio thread; keep this tiny.
+                    if (!VoiceOverlayService.requestSession()) {
+                        Log.w(TAG, "wake word fired but no session could be shown")
+                    }
                 }
-            }
-            if (started) {
-                detector = d
-            } else {
-                Log.w(TAG, "no wake word running — use the rail mic button instead")
-                // Stay foreground anyway: the service is cheap, and a later
-                // resume() can still succeed once the mic frees up.
-            }
+                if (started) {
+                    detector = d
+                } else {
+                    Log.w(TAG, "no wake word running — use the rail mic button instead")
+                    // Stay foreground anyway: the service is cheap, and a later
+                    // resume() can still succeed once the mic frees up.
+                }
+            }, "wake-word-start").start()
         }
         return START_STICKY
     }

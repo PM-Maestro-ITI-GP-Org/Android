@@ -53,7 +53,7 @@ class VoiceOverlayService : VoiceInteractionService() {
          */
         fun pauseWakeWord() = WakeWordService.pause()
 
-        /**
+/**
          * Reclaim the mic for wake-word listening after a session closes.
          *
          * The detection handler is re-supplied here because [WakeWordService.resume] takes one:
