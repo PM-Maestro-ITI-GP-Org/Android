@@ -37,7 +37,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,6 +56,7 @@ import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
 import com.motorguard.ivi.data.vehicle.api.latestValueOrNull
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.diagnostics.VehicleData
+import com.motorguard.ivi.ui.diagnostics.render.CarRenderer
 import com.motorguard.ivi.ui.diagnostics.render.rememberCar3dRenderer
 import com.motorguard.ivi.ui.theme.MotorGuard
 import com.motorguard.ivi.ui.theme.SemanticColors
@@ -127,37 +135,41 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Spacer(Modifier.weight(1f))
                     if (batteryData?.charging == true) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.Bolt,
-                                contentDescription = null,
-                                tint = colors.accent,
-                                modifier = Modifier.size(15.dp),
-                            )
-                            Spacer(Modifier.width(3.dp))
-                            Text("Charging", fontSize = 12.sp, color = colors.accent)
-                        }
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            Icons.Filled.Bolt,
+                            contentDescription = "Charging",
+                            tint = colors.accent,
+                            modifier = Modifier.size(15.dp),
+                        )
                     }
+                    Spacer(Modifier.weight(1f))
+                    // Charge moved up here from a 46sp figure and a full-width bar below the
+                    // car. It is one number read at a glance, and giving it a sixth of the card
+                    // was spending the card's height on the thing that needed it least.
+                    ChargePill(percent = batteryData?.chargePercent)
                 }
 
-                // The car itself, the same Filament stage the Diagnostics tab renders.
-                //
-                // Safe to have here because tabs are replaced rather than hidden: opening
-                // Diagnostics destroys this fragment, so there is only ever one engine and one
-                // copy of the 15 MB model alive. It is given a fixed slice of the card rather
-                // than a weight so the figures below keep their room on a short card.
-                //
-                // No hotspot focus and no cutaway: this is the car at a glance, and the tap
-                // goes to Diagnostics where those controls actually exist.
+                Spacer(Modifier.height(10.dp))
+
                 val car = rememberCar3dRenderer(stageColor = MaterialTheme.colorScheme.surface)
 
                 // Paint every component by its severity, not just the faulted ones: the green
                 // of a healthy pack is what makes an amber one mean something.
-                Hotspot.entries.forEach { hotspot ->
-                    val tint = SemanticColors.forSeverity(severities[hotspot])
-                    SideEffect { car.setComponentColor(hotspot, tint) }
+                //
+                // Applied on change rather than on every composition. The focused part is
+                // repainted every frame just below, and doing all eight at that rate would be
+                // 480 material writes a second to animate one of them.
+                // Resolved in composition because the severity palette is theme-aware, then
+                // applied in the effect: a @Composable getter cannot be read from inside one.
+                val severityColors = Hotspot.entries.associateWith {
+                    SemanticColors.forSeverity(severities[it])
+                }
+                LaunchedEffect(severityColors, focused) {
+                    severityColors.forEach { (hotspot, tint) ->
+                        car.setComponentColor(hotspot, tint)
+                    }
                 }
 
                 Box(
@@ -173,6 +185,18 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                         onBackgroundTap = onOpenDiagnostics,
                         modifier = Modifier.fillMaxSize(),
                     )
+
+                    // The faulted part breathes. A tint alone says "this one is amber"; a pulse
+                    // says "look here", which is the actual job when the camera has just moved
+                    // and the driver has not yet found what changed. Isolated in its own
+                    // composable so the animation recomposes a few lines rather than the card.
+                    focused?.let { hotspot ->
+                        FaultPulse(
+                            renderer = car,
+                            hotspot = hotspot,
+                            base = SemanticColors.forSeverity(severities[hotspot]),
+                        )
+                    }
 
                     // Say which part is being shown. Zooming into a wheel arch is meaningless
                     // on its own — from the outside a framed brake and a framed tyre look much
@@ -190,53 +214,7 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
-
-                // Charge, given the room it deserves: it is the number a driver actually
-                // looks for on a home screen.
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = batteryData?.chargePercent?.roundToInt()?.toString() ?: "—",
-                        fontSize = 46.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = "%",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = colors.onBaseDim,
-                        modifier = Modifier.padding(bottom = 7.dp, start = 2.dp),
-                    )
-                }
-
-                Spacer(Modifier.height(10.dp))
-                ChargeBar(percent = batteryData?.chargePercent)
-
-                Spacer(Modifier.height(18.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Stat(
-                        icon = Icons.Filled.Speed,
-                        value = metricsData?.speedKmh?.roundToInt()?.toString() ?: "—",
-                        unit = "km/h",
-                        modifier = Modifier.weight(1f),
-                    )
-                    Stat(
-                        icon = Icons.Filled.Straighten,
-                        value = metricsData?.odometerKm?.roundToInt()?.toString() ?: "—",
-                        unit = "km",
-                        modifier = Modifier.weight(1f),
-                    )
-                    Stat(
-                        icon = Icons.Filled.Thermostat,
-                        value = batteryData?.cellTempC?.roundToInt()?.toString() ?: "—",
-                        unit = "°C",
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(12.dp))
 
                 // Doors last, and only as a warning line. Everything shut is the normal case
                 // and does not need a row of green ticks restating it.
@@ -292,27 +270,72 @@ private fun FaultChip(
     }
 }
 
+/**
+ * Breathes the faulted component between a dimmed and a full-strength version of its severity
+ * colour.
+ *
+ * Its own composable on purpose. Reading an animating value recomposes whatever reads it, and
+ * inside the card that would be the whole card sixty times a second — the map, the stats and
+ * the now-playing row are not animating and should not be asked to prove it. Here it is a few
+ * lines and one material write per frame.
+ *
+ * Renders nothing: it exists for the side effect on the 3D scene.
+ */
 @Composable
-private fun ChargeBar(percent: Float?) {
+private fun FaultPulse(renderer: CarRenderer, hotspot: Hotspot, base: Color) {
+    val transition = rememberInfiniteTransition(label = "fault")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(PULSE_MS, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "phase",
+    )
+    // Down to 45% and back, never to black: a part that vanishes on the dim half of the cycle
+    // reads as a rendering glitch rather than an alarm.
+    val dim = Color(base.red * 0.45f, base.green * 0.45f, base.blue * 0.45f, base.alpha)
+    val tint = lerp(dim, base, phase)
+    SideEffect { renderer.setComponentColor(hotspot, tint) }
+}
+
+/** Charge as a number and a short bar, sized to sit in the card's header. */
+@Composable
+private fun ChargePill(percent: Float?) {
     val colors = MotorGuard.colors
     val fraction = ((percent ?: 0f) / 100f).coerceIn(0f, 1f)
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(7.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(colors.onBaseDim.copy(alpha = 0.18f)),
-    ) {
-        if (percent != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(fraction)
-                    .height(7.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    // Low charge is the one state worth colouring differently; anything else
-                    // is just the accent, so the card does not cry wolf.
-                    .background(if (fraction <= 0.15f) MaterialTheme.colorScheme.error else colors.accent),
-            )
+    val low = percent != null && fraction <= 0.15f
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = percent?.roundToInt()?.toString() ?: "—",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = "%",
+            fontSize = 12.sp,
+            color = colors.onBaseDim,
+            modifier = Modifier.padding(start = 1.dp, bottom = 2.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .width(56.dp)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(colors.onBaseDim.copy(alpha = 0.18f)),
+        ) {
+            if (percent != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(if (low) MaterialTheme.colorScheme.error else colors.accent),
+                )
+            }
         }
     }
 }
@@ -371,3 +394,6 @@ private fun DoorLine(anyOpen: Boolean?, anyUnlocked: Boolean?) {
 
 /** How long each fault is framed before moving to the next. */
 private const val FAULT_DWELL_MS = 4_000L
+
+/** Half a breath. Slow enough to read as attention-seeking rather than a strobe. */
+private const val PULSE_MS = 750
