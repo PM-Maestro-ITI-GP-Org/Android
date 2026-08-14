@@ -65,17 +65,29 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 unzip -o -j -q "$APK" 'lib/arm64-v8a/*.so' -d "$TMP"
 sh_ "mkdir -p $LIB_DIR" >/dev/null
+# Everything the APK carries is installed, symlink or not.
+#
+# An earlier version of this script preserved symlinks into /system/lib64, on the theory
+# that the image's own library should win. That was exactly backwards for the voice
+# library: Android.bp compiles only native-lib.cpp, sqlite3.c and assistant-core/, never
+# espeak_jni.cpp or whisper_jni.cpp, so the platform build is a 1.3 MB reasoning core with
+# no speech in it at all --
+#
+#     $ strings /system/lib64/libmotorguardvoice.so | grep -ci 'piper\|espeak'
+#     0
+#     $ strings jniLibs/arm64-v8a/libmotorguardvoice.so | grep -ci 'piper\|espeak'
+#     70
+#
+# -- and preserving the symlink meant the app loaded it and reported
+# "tts requested but Piper is not loaded" forever. The APK is built from the same source
+# as the code being deployed, so its libraries are the ones that match.
+#
+# Libraries the APK does NOT carry (libmotorguardsomeip.so) keep their symlinks untouched,
+# because nothing here supersedes them.
 for so in "$TMP"/*.so; do
     name="$(basename "$so")"
-    # Symlinks into /system/lib64 are how the image build supplies its own libs; leave
-    # those alone and only add what is genuinely missing, so a stale prebuilt here can
-    # never shadow the platform's copy.
-    if sh_ "test -L $LIB_DIR/$name" 2>/dev/null; then
-        printf '    skip %s (symlink to a platform library)\n' "$name"
-        continue
-    fi
     adb -s "$SERIAL" push "$so" "/data/local/tmp/$name" >/dev/null
-    sh_ "cp /data/local/tmp/$name $LIB_DIR/$name && chmod 644 $LIB_DIR/$name && (restorecon $LIB_DIR/$name || true); rm -f /data/local/tmp/$name"
+    sh_ "rm -f $LIB_DIR/$name; cp /data/local/tmp/$name $LIB_DIR/$name && chmod 644 $LIB_DIR/$name && (restorecon $LIB_DIR/$name || true); rm -f /data/local/tmp/$name"
     printf '    %s\n' "$name"
 done
 

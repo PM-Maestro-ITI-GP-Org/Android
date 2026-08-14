@@ -108,13 +108,17 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
     }
 
     init {
-        // targetSdk 34 rejects a context-registered receiver with no export flag.
+        // targetSdk 34 rejects a context-registered receiver with no export flag, and the
+        // flag has to be EXPORTED: this broadcast comes from com.android.bluetooth, and
+        // NOT_EXPORTED limits delivery to broadcasts this app sends itself, so the receiver
+        // never fired and the link state only ever updated on the refresh() poll. It is a
+        // protected broadcast, so only the system can send it either way.
         runCatching {
             ContextCompat.registerReceiver(
                 app,
                 hfpReceiver,
                 IntentFilter(ACTION_HFP_CLIENT_CONNECTION_STATE_CHANGED),
-                ContextCompat.RECEIVER_NOT_EXPORTED,
+                ContextCompat.RECEIVER_EXPORTED,
             )
         }.onFailure { Log.w(TAG, "HFP state receiver not registered", it) }
 

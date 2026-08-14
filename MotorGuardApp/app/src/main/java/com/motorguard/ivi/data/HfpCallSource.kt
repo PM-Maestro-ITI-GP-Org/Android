@@ -92,7 +92,12 @@ class HfpCallSource(private val app: Context) {
                     addAction(ACTION_CALL_CHANGED)
                     addAction(ACTION_AUDIO_STATE_CHANGED)
                 },
-                ContextCompat.RECEIVER_NOT_EXPORTED,
+                // EXPORTED, not NOT_EXPORTED. These come from com.android.bluetooth, a
+                // different uid, and NOT_EXPORTED restricts delivery to broadcasts sent by
+                // this app itself -- so the filter matched, the receiver registered, and
+                // every call event was silently dropped. Both are protected broadcasts
+                // that only the system may send, so exporting grants nothing to anyone else.
+                ContextCompat.RECEIVER_EXPORTED,
             )
         }.onFailure { Log.w(TAG, "HFP receiver not registered", it) }
 
