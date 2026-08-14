@@ -64,6 +64,13 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
     /** Held for the lifetime of a call so media apps duck; null when idle. */
     private var duckingFocus: AudioFocusRequest? = null
 
+    /**
+     * The hands-free link. On this board it is the only thing that ever sees a call — see
+     * [HfpCallSource] for why Telecom cannot be used here — and it owns the SCO link that
+     * carries the driver's voice to the phone.
+     */
+    private val hfp = HfpCallSource(app)
+
     private val _link = MutableStateFlow(PhoneLink.DISCONNECTED)
     private val _deviceName = MutableStateFlow<String?>(null)
     private val _call = MutableStateFlow<ActiveCall?>(null)
@@ -111,9 +118,16 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
             )
         }.onFailure { Log.w(TAG, "HFP state receiver not registered", it) }
 
-        // Any Call.Callback tick or mute change re-projects the platform call into our model.
-        combine(InCallBridge.call, InCallBridge.revision, InCallBridge.muted) { call, _, muted ->
-            project(call, muted)
+        // Two possible sources for one call, in priority order.
+        //
+        // Telecom is preferred where it works, but on this board no InCallService is ever
+        // bound (the DIALER role needs telephony hardware the Pi does not have), so
+        // InCallBridge stays empty forever and the hands-free link is the only source that
+        // ever reports anything. Keeping both means this still does the right thing on an
+        // image that does have telephony, without a build flag deciding it.
+        combine(InCallBridge.call, InCallBridge.revision, InCallBridge.muted, hfp.call) {
+            call, _, muted, hfpCall ->
+            project(call, muted) ?: hfpCall?.let { named(it) }
         }.onEach {
             updateDucking(it != null)
             _call.value = it
@@ -135,14 +149,38 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
             .onFailure { Log.e(TAG, "placeCall failed for $displayName", it) }
     }
 
+    /**
+     * Put a name on a hands-free call.
+     *
+     * HFP carries the number, never the name, so the caller would otherwise show as digits
+     * even for someone in the synced phonebook. Same resolution the Telecom path uses.
+     */
+    private fun named(call: ActiveCall): ActiveCall {
+        if (call.name != null || call.number.isBlank()) return call
+        val known = numberIndex[numberKey(call.number)]
+            ?: _contacts.value.firstOrNull { sameNumber(it.number, call.number) }?.name
+        if (known == null) resolveNameLater(call.number)
+        return if (known != null) call.copy(name = known) else call
+    }
+
     override fun answer() {
-        runCatching { InCallBridge.call.value?.answer(VideoProfile.STATE_AUDIO_ONLY) }
-            .onFailure { Log.e(TAG, "answer failed", it) }
+        val telecomCall = InCallBridge.call.value
+        if (telecomCall != null) {
+            runCatching { telecomCall.answer(VideoProfile.STATE_AUDIO_ONLY) }
+                .onFailure { Log.e(TAG, "answer failed", it) }
+            return
+        }
+        hfp.answer()
     }
 
     override fun hangUp() {
-        runCatching { InCallBridge.call.value?.disconnect() }
-            .onFailure { Log.e(TAG, "disconnect failed", it) }
+        val telecomCall = InCallBridge.call.value
+        if (telecomCall != null) {
+            runCatching { telecomCall.disconnect() }
+                .onFailure { Log.e(TAG, "disconnect failed", it) }
+            return
+        }
+        hfp.hangUp()
     }
 
     override fun setMuted(muted: Boolean) = InCallBridge.setMuted(muted)
