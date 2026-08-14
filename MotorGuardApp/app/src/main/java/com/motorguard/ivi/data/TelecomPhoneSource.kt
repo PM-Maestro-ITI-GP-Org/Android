@@ -79,6 +79,16 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
     /** Answer time is ours to keep: Telecom's connectTimeMillis is wall clock, not monotonic. */
     private var answeredAtElapsedMs = 0L
 
+    /**
+     * Every known number → display name, including a person's second and third numbers.
+     *
+     * [_contacts] deliberately keeps one entry per person, because that is what the list
+     * shows. This keeps them all: the caller is whichever number actually rang, and
+     * matching only the first one is how someone in the phonebook still comes up as a
+     * bare number on the in-call screen.
+     */
+    private val numberIndex = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private val hfpReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != ACTION_HFP_CLIENT_CONNECTION_STATE_CHANGED) return
@@ -182,8 +192,15 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
 
         val details = call.details
         val number = details?.handle?.schemeSpecificPart.orEmpty()
+        // In order of trust: what the phone itself said, then every number we have synced,
+        // then the visible list. HFP rarely sends a display name, so in practice the index
+        // is what puts a name on the in-call screen.
         val name = details?.callerDisplayName?.takeIf { it.isNotBlank() }
+            ?: numberIndex[numberKey(number)]
             ?: _contacts.value.firstOrNull { sameNumber(it.number, number) }?.name
+        // Nothing matched: ask the provider directly. Off the main thread, so the result
+        // arrives later and re-emits — see resolveNameLater.
+        if (name == null) resolveNameLater(number)
 
         return ActiveCall(
             number = number,
@@ -270,9 +287,15 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
         )?.use { c ->
             while (c.moveToNext()) {
                 val id = c.getLong(0)
-                if (out.containsKey(id)) continue          // one number per contact is enough here
                 val name = c.getString(1) ?: continue
                 val number = c.getString(2) ?: continue
+                // Every number goes in the lookup index, including the second and third
+                // one a person has — the caller is whichever of them rang.
+                numberIndex[numberKey(number)] = name
+                // ...but the visible list keeps one row per person, both because that is
+                // the useful thing to scroll and because Contact.id keys the list: three
+                // rows sharing an id would collide.
+                if (out.containsKey(id)) continue
                 out[id] = Contact(id, name, number, favorite = c.getInt(3) == 1)
             }
         }
@@ -318,8 +341,50 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
         emptyList()
     }
 
-    private fun sameNumber(a: String, b: String): Boolean =
-        a.filter(Char::isDigit).takeLast(9) == b.filter(Char::isDigit).takeLast(9)
+    /**
+     * Resolve a number the synced phonebook did not cover, then re-emit the call with it.
+     *
+     * [PhoneLookup] is the provider's own reverse index: it normalises numbers properly
+     * (country codes, punctuation, short codes) rather than comparing trailing digits the
+     * way [sameNumber] has to, and it searches every number a contact owns. It is a
+     * database query though, so it cannot run inside [project] — that is called on the
+     * main thread from a flow, and the in-call screen must appear the instant the phone
+     * rings, not after a query. The name lands a moment later and the card updates.
+     */
+    private fun resolveNameLater(number: String) {
+        if (number.isBlank() || numberIndex.containsKey(numberKey(number))) return
+        scope.launch {
+            val resolved = withContext(Dispatchers.IO) { phoneLookup(number) } ?: return@launch
+            numberIndex[numberKey(number)] = resolved
+            // Only touch the call still on screen; by now it may have ended or moved on.
+            _call.value = _call.value?.takeIf { it.number == number }?.copy(name = resolved)
+                ?: _call.value
+        }
+    }
+
+    private fun phoneLookup(number: String): String? = runCatching {
+        val uri = Uri.withAppendedPath(
+            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+            Uri.encode(number),
+        )
+        app.contentResolver.query(
+            uri,
+            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { c ->
+            if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null
+        }
+    }.getOrElse {
+        Log.w(TAG, "PhoneLookup unavailable", it)
+        null
+    }
+
+    /** Trailing digits only, so +20 100 123 4567 and 01001234567 are the same person. */
+    private fun numberKey(raw: String): String = raw.filter(Char::isDigit).takeLast(9)
+
+    private fun sameNumber(a: String, b: String): Boolean = numberKey(a) == numberKey(b)
 
     private companion object {
         const val TAG = "MotorGuardPhone"
