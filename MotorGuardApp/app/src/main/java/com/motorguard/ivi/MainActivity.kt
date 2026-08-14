@@ -26,6 +26,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.motorguard.ivi.data.Conn
+import com.motorguard.ivi.data.vehicle.api.Severity
+import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
+import com.motorguard.ivi.ui.diagnostics.FaultTone
+import com.motorguard.ivi.ui.diagnostics.VehicleData
 import com.motorguard.ivi.data.LocalStore
 import com.motorguard.ivi.data.PhoneRepository
 import com.motorguard.ivi.ui.theme.ThemeState
@@ -139,6 +143,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         followAlbumArtwork()
+        announceFaults()
     }
 
     /**
@@ -152,6 +157,30 @@ class MainActivity : AppCompatActivity() {
         val mode = if (visible) android.view.View.VISIBLE else android.view.View.GONE
         findViewById<ComposeView>(R.id.nav_rail)?.visibility = mode
         findViewById<ComposeView>(R.id.status_bar)?.visibility = mode
+    }
+
+    /**
+     * Beep when a fault appears, whichever tab is showing.
+     *
+     * Driven from the Activity rather than the Vehicle card, because a card only collects
+     * while it is composed: a tyre going soft while the driver is on Media or Nav would have
+     * arrived in silence and then beeped later, when they happened to open Home, about
+     * something that had been true for ten minutes.
+     *
+     * [FaultTone] decides what is worth announcing — this only supplies the current set.
+     */
+    private fun announceFaults() {
+        val severities = VehicleSeverityFlow(VehicleData.source)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                severities.severities.collect { map ->
+                    FaultTone.onFaults(
+                        map.filterValues { it != null && it != Severity.OK }
+                            .mapValues { (_, severity) -> severity!! },
+                    )
+                }
+            }
+        }
     }
 
     /**
