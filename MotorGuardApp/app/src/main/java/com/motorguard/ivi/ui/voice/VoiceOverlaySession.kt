@@ -102,6 +102,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        hideSystemBars()
         // Hand the mic from the always-on wake-word recorder to our recognizer;
         // running both at once starves STT and it reports "I didn't hear anything".
         VoiceOverlayService.pauseWakeWord()
@@ -113,6 +114,28 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         ensureTts()
         model = VoiceUiModel(state = VoiceState.LISTENING)
         startListening()
+    }
+
+    /**
+     * Take the system bars down for the life of the session.
+     *
+     * MainActivity hides them for its own window, but this session is a *separate*
+     * window owned by the platform, and the flags do not carry across — so summoning
+     * Vega over the kiosk launcher made the AAOS status and nav bars slide back in
+     * behind it, which is exactly the chrome the launcher exists to keep off screen.
+     *
+     * Applied on every show, not once at construction: the platform reuses one session
+     * object across show/hide cycles, and the window is recreated underneath it.
+     */
+    private fun hideSystemBars() {
+        val win = runCatching { window?.window }.getOrNull() ?: return
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(win, false)
+        androidx.core.view.WindowInsetsControllerCompat(win, win.decorView).apply {
+            hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            // A swipe should not be able to pull the bars back over the assistant.
+            systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
     }
 
     override fun onHide() {
