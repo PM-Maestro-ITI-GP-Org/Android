@@ -28,6 +28,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,10 +43,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.motorguard.ivi.data.vehicle.api.Hotspot
+import com.motorguard.ivi.data.vehicle.api.Severity
+import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
 import com.motorguard.ivi.data.vehicle.api.latestValueOrNull
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.diagnostics.VehicleData
+import com.motorguard.ivi.ui.diagnostics.render.rememberCar3dRenderer
 import com.motorguard.ivi.ui.theme.MotorGuard
+import com.motorguard.ivi.ui.theme.SemanticColors
 import kotlin.math.roundToInt
 
 /**
@@ -63,7 +73,36 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
     val battery by VehicleData.source.battery.collectAsStateWithLifecycle()
     val metrics by VehicleData.source.metrics.collectAsStateWithLifecycle()
     val doors by VehicleData.source.doors.collectAsStateWithLifecycle()
-    val tires by VehicleData.source.tires.collectAsStateWithLifecycle()
+
+    // The same severity derivation the Diagnostics tab renders, so Home cannot disagree with
+    // it about what is wrong. It is a combine over flows this card already collects, not a
+    // second source of truth.
+    val severityFlow = remember { VehicleSeverityFlow(VehicleData.source) }
+    val severities by remember(severityFlow) { severityFlow.severities }
+        .collectAsStateWithLifecycle(initialValue = emptyMap())
+
+    // Worst first, so a critical fault is the one seen if the driver only glances once.
+    val faults = remember(severities) {
+        severities.entries
+            .filter { it.value != null && it.value != Severity.OK }
+            .sortedByDescending { it.value!!.ordinal }
+            .map { it.key }
+    }
+
+    // With several faults, dwell on each in turn rather than picking one and hiding the rest.
+    // Reset to the worst whenever the set changes, so a newly arrived critical is not queued
+    // behind a caution the driver has already seen.
+    var faultIndex by remember { mutableStateOf(0) }
+    LaunchedEffect(faults) {
+        faultIndex = 0
+        if (faults.size > 1) {
+            while (true) {
+                kotlinx.coroutines.delay(FAULT_DWELL_MS)
+                faultIndex = (faultIndex + 1) % faults.size
+            }
+        }
+    }
+    val focused = faults.getOrNull(faultIndex)
 
     val batteryData = battery.latestValueOrNull
     val metricsData = metrics.latestValueOrNull
@@ -103,7 +142,55 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                // The car itself, the same Filament stage the Diagnostics tab renders.
+                //
+                // Safe to have here because tabs are replaced rather than hidden: opening
+                // Diagnostics destroys this fragment, so there is only ever one engine and one
+                // copy of the 15 MB model alive. It is given a fixed slice of the card rather
+                // than a weight so the figures below keep their room on a short card.
+                //
+                // No hotspot focus and no cutaway: this is the car at a glance, and the tap
+                // goes to Diagnostics where those controls actually exist.
+                val car = rememberCar3dRenderer(stageColor = MaterialTheme.colorScheme.surface)
+
+                // Paint every component by its severity, not just the faulted ones: the green
+                // of a healthy pack is what makes an amber one mean something.
+                Hotspot.entries.forEach { hotspot ->
+                    val tint = SemanticColors.forSeverity(severities[hotspot])
+                    SideEffect { car.setComponentColor(hotspot, tint) }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) {
+                    // Passing the faulted hotspot as the focus is all the zoom takes: the
+                    // renderer already frames a component and animates the move, which is how
+                    // the Diagnostics tab behaves when one is tapped.
+                    car.Render(
+                        focus = focused,
+                        onBackgroundTap = onOpenDiagnostics,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+
+                    // Say which part is being shown. Zooming into a wheel arch is meaningless
+                    // on its own — from the outside a framed brake and a framed tyre look much
+                    // the same, and the driver should not have to work out which they are
+                    // looking at.
+                    focused?.let { hotspot ->
+                        FaultChip(
+                            hotspot = hotspot,
+                            severity = severities[hotspot],
+                            position = if (faults.size > 1) "${faultIndex + 1}/${faults.size}" else null,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(8.dp),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
 
                 // Charge, given the room it deserves: it is the number a driver actually
                 // looks for on a home screen.
@@ -149,28 +236,7 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                     )
                 }
 
-                Spacer(Modifier.height(18.dp))
-
-                // Tyres, because the card had the room and this is the other thing an owner
-                // checks before setting off. Four corners in wheel order, so the layout maps
-                // onto the car rather than needing the labels read.
-                Text(
-                    text = "TYRES",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.sp,
-                    color = colors.onBaseDim,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    val corners = listOf("FL", "FR", "RL", "RR")
-                    corners.forEachIndexed { index, label ->
-                        val psi = tires.getOrNull(index)?.latestValueOrNull?.psi
-                        Tyre(label = label, psi = psi, modifier = Modifier.weight(1f))
-                    }
-                }
-
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(14.dp))
 
                 // Doors last, and only as a warning line. Everything shut is the normal case
                 // and does not need a row of green ticks restating it.
@@ -179,6 +245,49 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                     anyUnlocked = doorsData?.anyUnlocked,
                 )
             }
+        }
+    }
+}
+
+/**
+ * Names the part currently framed, and how bad it is.
+ *
+ * Sits over the stage rather than under it so it moves with the car and cannot be mistaken for
+ * a caption belonging to the figures below. Carries the position in the rotation when there is
+ * more than one fault, so a driver can tell "there are three of these" from a glance rather
+ * than by watching it cycle.
+ */
+@Composable
+private fun FaultChip(
+    hotspot: Hotspot,
+    severity: Severity?,
+    position: String?,
+    modifier: Modifier = Modifier,
+) {
+    val tint = SemanticColors.forSeverity(severity)
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.Black.copy(alpha = 0.45f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(tint),
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = hotspot.label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White,
+        )
+        if (position != null) {
+            Spacer(Modifier.width(7.dp))
+            Text(text = position, fontSize = 11.sp, color = Color.White.copy(alpha = 0.65f))
         }
     }
 }
@@ -236,38 +345,6 @@ private fun Stat(icon: ImageVector, value: String, unit: String, modifier: Modif
     }
 }
 
-/**
- * One corner. Under-inflation is the failure worth seeing from across the cabin, so it is the
- * only state that gets a colour; everything else stays quiet.
- */
-@Composable
-private fun Tyre(label: String, psi: Float?, modifier: Modifier = Modifier) {
-    val colors = MotorGuard.colors
-    val low = psi != null && psi < LOW_PSI
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (low) MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
-                else colors.onBaseDim.copy(alpha = 0.08f),
-            )
-            .padding(vertical = 8.dp, horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(text = label, fontSize = 10.sp, color = colors.onBaseDim, letterSpacing = 0.5.sp)
-        Spacer(Modifier.height(3.dp))
-        Text(
-            text = psi?.let { "%.0f".format(it) } ?: "—",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-/** Below this a tyre is flagged; the placards on most cars sit a little above it. */
-private const val LOW_PSI = 30f
-
 @Composable
 private fun DoorLine(anyOpen: Boolean?, anyUnlocked: Boolean?) {
     val colors = MotorGuard.colors
@@ -291,3 +368,6 @@ private fun DoorLine(anyOpen: Boolean?, anyUnlocked: Boolean?) {
         Text(text = text, fontSize = 13.sp, color = tint)
     }
 }
+
+/** How long each fault is framed before moving to the next. */
+private const val FAULT_DWELL_MS = 4_000L

@@ -3,6 +3,7 @@ package com.motorguard.ivi.ui.nav.map
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -98,7 +99,14 @@ fun MapSurface(
     // Vector tiles are useless without a network. Checking up front matters because a tile
     // fetch that never completes is silent — MapLibre would happily render an empty world
     // rather than report an error, so there would be nothing to fall back *from*.
-    val online = remember { context.hasValidatedInternet() }
+    //
+    // Watched, not sampled once. This was `remember { hasValidatedInternet() }`, which is
+    // evaluated on first composition — and Home composes at boot, seconds before Wi-Fi
+    // finishes validating. The card latched onto the stylized fallback and stayed there for
+    // the life of the screen, so the map only appeared after tapping through to the Nav tab
+    // and back, which composed again once the network was up. Nothing was broken; the answer
+    // was just taken too early and never revisited.
+    val online = rememberOnlineState()
 
     val backend = when {
         mapLibreFailed || !online -> NavConfig.MapBackend.STYLIZED
@@ -128,6 +136,38 @@ fun MapSurface(
  * reaches the internet, not merely an associated Wi-Fi AP. On a bench Pi those two differ often
  * enough to matter.
  */
+/**
+ * Whether there is validated internet, updated as that changes.
+ *
+ * Seeded with the current answer so an already-connected board draws tiles on the first frame,
+ * then kept current by the platform's callback rather than by polling.
+ */
+@Composable
+private fun rememberOnlineState(): Boolean {
+    val context = LocalContext.current
+    var online by remember { mutableStateOf(context.hasValidatedInternet()) }
+
+    DisposableEffect(context) {
+        val manager = context.getSystemService<ConnectivityManager>()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                capabilities: NetworkCapabilities,
+            ) {
+                online = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            }
+
+            override fun onLost(network: android.net.Network) {
+                online = context.hasValidatedInternet()
+            }
+        }
+        runCatching { manager?.registerDefaultNetworkCallback(callback) }
+        onDispose { runCatching { manager?.unregisterNetworkCallback(callback) } }
+    }
+    return online
+}
+
 private fun Context.hasValidatedInternet(): Boolean {
     val manager = getSystemService<ConnectivityManager>() ?: return false
     val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
