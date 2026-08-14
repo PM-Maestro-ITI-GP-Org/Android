@@ -303,6 +303,15 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             speak(reply)
             return
         }
+        // Phrases the owner taught, ahead of the compiled-in core: the usual reason to
+        // teach one is that the built-in answer was not the wanted answer.
+        com.motorguard.ivi.data.VoiceCommands.ensureLoaded(context)
+        com.motorguard.ivi.data.VoiceCommands.answer(utterance)?.let { reply ->
+            Log.i(TAG, "custom command matched")
+            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+            speak(reply)
+            return
+        }
         val reply = VoiceEngine.handle(utterance)
             ?: "Sorry, I didn't catch that. You can ask me to explain a warning " +
             "light, whether it's serious, or where the nearest garage is."

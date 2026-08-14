@@ -85,6 +85,7 @@ class MainActivity : AppCompatActivity() {
         // Before Conn/ThemeState are touched: both restore their saved state from it.
         LocalStore.init(this)
         ThemeState.restore()
+        com.motorguard.ivi.data.VoiceCommands.ensureLoaded(this)
         Conn.init(this)
         // Before anything can ask for a voice session: the selection is lost on every
         // reinstall, and without it the platform refuses to open one.

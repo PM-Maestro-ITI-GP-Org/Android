@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
@@ -38,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.motorguard.ivi.data.Conn
 import com.motorguard.ivi.ui.settings.panes.BluetoothPane
+import com.motorguard.ivi.data.VoiceCommands
+import com.motorguard.ivi.ui.settings.panes.VoiceCommandsPane
 import com.motorguard.ivi.ui.settings.panes.SystemPane
 import com.motorguard.ivi.ui.settings.panes.ThemePane
 import com.motorguard.ivi.ui.settings.panes.WifiPane
@@ -48,6 +51,7 @@ private enum class SettingsTab(val label: String, val icon: ImageVector) {
     WIFI("Wi-Fi", Icons.Filled.Wifi),
     BLUETOOTH("Bluetooth", Icons.Filled.Bluetooth),
     THEME("Theme & Display", Icons.Filled.Palette),
+    VOICE("Voice commands", Icons.Filled.RecordVoiceOver),
     SYSTEM("System", Icons.Filled.Tune),
 }
 
@@ -103,6 +107,7 @@ fun SettingsScreen() {
                 SettingsTab.WIFI -> WifiPane()
                 SettingsTab.BLUETOOTH -> BluetoothPane()
                 SettingsTab.THEME -> ThemePane()
+                SettingsTab.VOICE -> VoiceCommandsPane()
                 SettingsTab.SYSTEM -> SystemPane()
             }
         }
@@ -112,6 +117,11 @@ fun SettingsScreen() {
 private fun subtitleFor(tab: SettingsTab, systemDark: Boolean): String = when (tab) {
     SettingsTab.WIFI -> if (Conn.wifi.enabled) (Conn.wifi.connectedSsid ?: "On") else "Off"
     SettingsTab.BLUETOOTH -> if (Conn.bt.enabled) (Conn.bt.connectedName ?: "On") else "Off"
+    SettingsTab.VOICE -> when (val n = VoiceCommands.commands.value.size) {
+        0 -> "None taught"
+        1 -> "1 phrase"
+        else -> "$n phrases"
+    }
     SettingsTab.THEME -> {
         val mode = when (ThemeState.mode) {
             ThemeMode.DAY -> "Day"
