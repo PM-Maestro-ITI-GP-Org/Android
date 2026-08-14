@@ -2,6 +2,7 @@ package com.motorguard.ivi.ui.voice.nlu
 
 import android.content.Context
 import android.util.Log
+import com.motorguard.ivi.data.VoiceCommand
 import com.motorguard.ivi.data.VoiceCommands
 import com.motorguard.ivi.ui.voice.ModelPaths
 import com.motorguard.ivi.ui.voice.VoiceRoute
@@ -31,19 +32,53 @@ object IntentMatcher {
     private const val TAG = "MotorGuardVoice"
 
     /**
-     * How close is close enough.
+     * How close is close enough, measured rather than guessed.
      *
-     * Cosine similarity on this model runs high — unrelated sentences still score around 0.2,
-     * and paraphrases sit near 0.6. Set too low, everything becomes an intent and the fallback
-     * never runs; set too high, only near-quotes match and the whole exercise is pointless.
+     * Scored against this model over a test set of phrasings that should route and questions
+     * that should not:
+     *
+     *   should route, lowest      0.407  "find me a garage"
+     *   should route, typical     0.60 - 1.00
+     *   should NOT route, highest 0.563  "explain the check engine light"
+     *   should NOT route, next    0.474  "how old are you"
+     *
+     * The ranges overlap, so no threshold both catches everything and refuses everything —
+     * an earlier 0.48 would have routed "how old are you" to Navigation. 0.60 is the point
+     * where nothing is misrouted at all. What it costs is a few real requests falling through
+     * to the core instead, which is the right way round in a car: an unhelpful answer is a
+     * moment's annoyance, a tab changing under the driver's hands is not.
+     *
+     * The highest near-miss is a warning-light question, and it *should* miss: the core has the
+     * fault catalogue and can answer it properly, where this could only open the tab.
      */
-    private const val THRESHOLD = 0.48f
+    private const val THRESHOLD = 0.60f
 
-    /** Taught commands win outright: a phrase the owner wrote down beats one that ships. */
-    private const val TAUGHT_BONUS = 0.05f
+    /**
+     * The bar for a taught phrase, set below [THRESHOLD] on purpose.
+     *
+     * A built-in anchor is a guess about how people might ask for something, so it should have
+     * to earn a match. A taught phrase is the owner stating what they will say and what should
+     * happen — being stricter with their own words than with ours would be backwards.
+     *
+     * It can also be far lower, because the measured separation is enormous. Against a taught
+     * "tyre pressure":
+     *
+     *   "what is my tyre pressure"  0.915      "play some music"  0.010
+     *   "are my tyres okay"         0.559      "call my wife"     0.037
+     *   "how are the tyres doing"   0.536      "take me home"    -0.007
+     *   "check my tires"            0.421      "what time is it"  0.024
+     *
+     * Everything related sits above 0.42 and everything unrelated below 0.04, so 0.35 catches
+     * the loosest paraphrase with an order of magnitude to spare.
+     */
+    private const val TAUGHT_THRESHOLD = 0.35f
 
     private var embedder: TextEmbedder? = null
     private var anchors: List<Anchor> = emptyList()
+
+    /** Taught phrases with their vectors, and the list they were built from. */
+    private var taughtCache: List<Pair<VoiceCommand, FloatArray>> = emptyList()
+    private var taughtSignature: String? = null
 
     @Volatile
     private var ready = false
@@ -91,32 +126,68 @@ object IntentMatcher {
         val model = embedder ?: return null
         val query = model.embed(utterance) ?: return null
 
+        // Taught phrases are considered first and win outright, rather than competing on
+        // score with the built-in anchors.
+        //
+        // Competing does not work. Teach "tyre pressure" and it goes up against the shipped
+        // Diagnostics anchor "what is my tyre pressure" — nearly the same sentence, so the two
+        // score within a hair of each other and which one wins is a coin toss decided by
+        // wording nobody can see. Asking about tyres would sometimes open the Diagnostics tab
+        // instead of saying the answer that was written for exactly that question.
+        //
+        // Teaching a phrase is an explicit instruction about what should happen when it is
+        // said, so it takes precedence over anything inferred, at a slightly easier bar.
+        var bestTaught: VoiceCommand? = null
+        var bestTaughtScore = 0f
+        for ((command, vector) in taughtVectors(model)) {
+            val score = dot(query, vector)
+            if (score > bestTaughtScore) { bestTaughtScore = score; bestTaught = command }
+        }
+        if (bestTaught != null && bestTaughtScore >= TAUGHT_THRESHOLD) {
+            Log.i(TAG, "taught phrase matched %.2f -> \"%s\"".format(bestTaughtScore, bestTaught.trigger))
+            return Match(route = null, reply = bestTaught.reply, confidence = bestTaughtScore)
+        }
+
         var best: Match? = null
         var bestScore = 0f
-
         for (anchor in anchors) {
             val score = dot(query, anchor.vector)
             if (score > bestScore) { bestScore = score; best = anchor.result }
         }
 
-        // Taught phrases are embedded on demand rather than at startup: the list changes while
-        // the app runs, and re-embedding a handful of short strings costs less than keeping a
-        // cache correct across every edit.
-        for (command in VoiceCommands.commands.value) {
-            val vector = model.embed(command.trigger) ?: continue
-            val score = dot(query, vector) + TAUGHT_BONUS
-            if (score > bestScore) {
-                bestScore = score
-                best = Match(route = null, reply = command.reply)
-            }
-        }
-
         if (best == null || bestScore < THRESHOLD) {
-            Log.i(TAG, "no intent above threshold (best %.2f)".format(bestScore))
+            Log.i(
+                TAG,
+                "no intent above threshold (built-in %.2f, taught %.2f)"
+                    .format(bestScore, bestTaughtScore),
+            )
             return null
         }
         Log.i(TAG, "intent matched %.2f -> %s".format(bestScore, best.route?.name ?: "taught"))
         return best.copy(confidence = bestScore)
+    }
+
+    /**
+     * Taught phrases with their vectors, embedded once and reused.
+     *
+     * The first version embedded every taught phrase on every utterance, which is one model
+     * run per command per question — fine for the two commands it was tested with, and
+     * steadily worse for an owner who actually uses the feature. The cache is rebuilt when the
+     * list changes, which is the only time it can go stale, and edits are rare next to
+     * questions.
+     */
+    @Synchronized
+    private fun taughtVectors(model: TextEmbedder): List<Pair<VoiceCommand, FloatArray>> {
+        val current = VoiceCommands.commands.value
+        val signature = current.joinToString("|") { it.id + ":" + it.trigger }
+        if (signature != taughtSignature) {
+            taughtCache = current.mapNotNull { command ->
+                model.embed(command.trigger)?.let { command to it }
+            }
+            taughtSignature = signature
+            Log.i(TAG, "embedded ${taughtCache.size} taught phrase(s)")
+        }
+        return taughtCache
     }
 
     /** Both vectors are unit length, so the dot product is the cosine. */
@@ -136,37 +207,29 @@ object IntentMatcher {
      */
     private val BUILT_IN: Map<VoiceRoute, List<String>> = mapOf(
         VoiceRoute.MEDIA to listOf(
-            "play some music",
-            "put a song on",
-            "I want to listen to something",
-            "turn the radio on",
-            "next track",
+            "play some music", "put something on", "put a song on",
+            "i want to listen to something", "turn the radio on", "next track",
+            "skip this song", "play my playlist", "some tunes please",
+            "turn the music up", "stop the music", "pause the music",
         ),
         VoiceRoute.NAV to listOf(
-            "take me home",
-            "navigate somewhere",
-            "give me directions",
-            "how do I get there",
-            "where am I",
+            "take me home", "drive me home", "navigate somewhere", "give me directions",
+            "how do i get there", "where am i", "find a petrol station", "route to work",
+            "show me the map", "how long until we arrive",
         ),
         VoiceRoute.PHONE to listOf(
-            "call someone",
-            "ring my contact",
-            "make a phone call",
-            "dial a number",
+            "call someone", "ring mona", "phone my wife", "make a phone call",
+            "dial a number", "give her a ring", "call the office", "answer the phone",
+            "hang up",
         ),
         VoiceRoute.DIAGNOSTICS to listOf(
-            "how is the car doing",
-            "is anything wrong with the vehicle",
-            "check the battery",
-            "what is my tyre pressure",
-            "show me the warning lights",
+            "how is the car doing", "is anything wrong with the vehicle", "check the battery",
+            "what is my tyre pressure", "show me the warning lights", "is the car healthy",
+            "how much charge is left", "any faults", "what is that warning light",
         ),
         VoiceRoute.SETTINGS to listOf(
-            "open the settings",
-            "change the display",
-            "connect to wifi",
-            "pair my phone",
+            "open the settings", "change the display", "connect to wifi", "pair my phone",
+            "turn on bluetooth", "make the screen darker", "change the theme",
         ),
     )
 }
