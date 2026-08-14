@@ -121,7 +121,19 @@ object MotorGuard {
  *    album cover cannot push the UI below WCAG AA.
  */
 @Composable
-fun MotorGuardTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
+fun MotorGuardTheme(
+    forceDark: Boolean? = null,
+    /**
+     * Whether to paint the tinted background behind [content].
+     *
+     * True for anything filling a surface of its own. False for content that floats over
+     * another screen — the voice overlay lives in a transparent window so the tab
+     * underneath stays visible, and an opaque background here blacks that out no matter
+     * what the window is set to. The call overlay learned the same lesson the hard way.
+     */
+    paintBackground: Boolean = true,
+    content: @Composable () -> Unit,
+) {
     // Day/Night from Settings ([ThemeState]); [forceDark] overrides it (voice overlay scrim).
     val dark = forceDark ?: when (ThemeState.mode) {
         ThemeMode.DAY -> false
@@ -190,7 +202,11 @@ fun MotorGuardTheme(forceDark: Boolean? = null, content: @Composable () -> Unit)
             // The host layout paints a static @color/base, which cannot follow the music. Painting
             // here instead means every surface wrapped in this theme — including the placeholder
             // fragments nobody has built yet — gets the tinted background for free.
-            Box(Modifier.background(scheme.background)) { content() }
+            if (paintBackground) {
+                Box(Modifier.background(scheme.background)) { content() }
+            } else {
+                content()
+            }
         }
     }
 }

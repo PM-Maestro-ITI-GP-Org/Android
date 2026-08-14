@@ -67,6 +67,9 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
          * ahead of this floor.
          */
         const val MIN_VISIBLE_MS = 1_800L
+
+        /** Enough to read as frosted glass without dissolving what is behind it. */
+        const val BLUR_RADIUS_PX = 56
     }
 
     private var model by mutableStateOf(VoiceUiModel())
@@ -87,7 +90,9 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             // needs them, so the session supplies a minimal lifecycle host.
             host.attachTo(this)
             setContent {
-                MotorGuardTheme(forceDark = true) {
+                // No background: the window is transparent so the tab underneath shows
+                // through, and the theme's own opaque fill would defeat that entirely.
+                MotorGuardTheme(forceDark = true, paintBackground = false) {
                     VoiceOverlay(
                         model = model,
                         onChip = ::route,
@@ -136,6 +141,35 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             systemBarsBehavior =
                 androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+        styleWindow(win)
+    }
+
+    /**
+     * Let the app show through behind the assistant.
+     *
+     * The session window is opaque by default, so summoning Vega blacked the dash out
+     * entirely and the panel floated on nothing. Clearing the background makes the screen
+     * the driver was already looking at stay visible behind the scrim, which is both nicer
+     * and less disorienting — the map or the album art is still there, just receded.
+     *
+     * Real blur is asked for only when the platform says it can do it.
+     * WindowManager.isCrossWindowBlurEnabled is false on this image
+     * (ro.surface_flinger.supports_background_blur is unset), and setting the flag anyway
+     * costs a composition pass for nothing. Where it is supported the blur simply appears;
+     * where it is not, the scrim in VoiceOverlayUi carries the separation on its own.
+     */
+    private fun styleWindow(win: android.view.Window) {
+        runCatching {
+            win.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val wm = context.getSystemService(android.view.WindowManager::class.java)
+                if (wm?.isCrossWindowBlurEnabled == true) {
+                    win.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    win.attributes = win.attributes.apply { blurBehindRadius = BLUR_RADIUS_PX }
+                    Log.i(TAG, "cross-window blur enabled")
+                }
+            }
+        }.onFailure { Log.w(TAG, "could not style the overlay window", it) }
     }
 
     override fun onHide() {

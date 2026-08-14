@@ -8,6 +8,7 @@ import androidx.compose.animation.core.StartOffsetType
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,6 +30,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,6 +58,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,9 +122,14 @@ fun VoiceOverlay(
             Box(
                 Modifier
                     .fillMaxSize()
+                    // Light enough to read the screen underneath, dark enough that the
+                    // panel separates from it. The session window is transparent now, so
+                    // this is the only thing between the driver and whatever tab they were
+                    // on — heavier values here simply reproduce the black takeover this
+                    // replaced. Darkest at the edges, clearest behind the panel.
                     .background(
                         Brush.radialGradient(
-                            colors = listOf(Color.Black.copy(alpha = 0.28f), Color.Black.copy(alpha = 0.42f)),
+                            colors = listOf(Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.62f)),
                             radius = 1600f,
                         ),
                     )
@@ -140,12 +149,27 @@ fun VoiceOverlay(
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth(0.68f)
-                    .fillMaxHeight(0.72f)
+                    // Hugs its content instead of claiming a fixed 72% of the screen.
+                    // The old fixed height was sized for the busiest state, so every
+                    // quieter one — a spoken reply, which is most of the session — left
+                    // the orb marooned in a large empty box. animateContentSize keeps the
+                    // card from snapping as states add and remove rows.
+                    // The header spans the card, so this max is what the card actually
+                    // takes: 980 made a letterbox strip nearly the full width of the dash
+                    // with an orb adrift in it. 660 keeps the card close to square in its
+                    // quiet states and still gives a spoken reply a comfortable measure.
+                    .widthIn(min = 520.dp, max = 660.dp)
+                    .wrapContentHeight()
+                    .animateContentSize(tween(220))
                     .clip(RoundedCornerShape(36.dp))
+                    // Denser than it was. The window used to sit on an opaque black
+                    // takeover, where 0.58/0.42 was plenty; now the map or the album art
+                    // is right behind the panel, and reply text at this size has to stay
+                    // readable over whatever happens to be there. Still translucent enough
+                    // to read as glass rather than a slab.
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(Panel.copy(alpha = 0.58f), Panel.copy(alpha = 0.42f)),
+                            colors = listOf(Panel.copy(alpha = 0.90f), Panel.copy(alpha = 0.80f)),
                         ),
                     )
                     .border(
@@ -162,39 +186,57 @@ fun VoiceOverlay(
                         indication = null,
                         onClick = {},
                     )
-                    .padding(horizontal = 36.dp, vertical = 32.dp),
+                    .padding(horizontal = 44.dp, vertical = 30.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
             ) {
+                Header(model.state)
+
+                Spacer(Modifier.height(22.dp))
                 VoiceOrb(model.state, model.level)
 
-                // Only real content gets text — the orb's animation alone carries
-                // "listening" / "thinking", so no placeholder copy underneath it.
-                val text = displayText(model)
-                if (text.isNotEmpty()) {
-                    Spacer(Modifier.height(26.dp))
+                if (model.state == VoiceState.LISTENING) {
+                    Spacer(Modifier.height(20.dp))
+                    Waveform(model.level)
+                }
+
+                // What it heard, then what it answered — both, not one replacing the
+                // other. Seeing your own words is how you know a wrong answer came from
+                // a misheard question rather than a misunderstood one.
+                if (model.transcript.isNotBlank()) {
+                    Spacer(Modifier.height(24.dp))
                     Text(
-                        text = text,
-                        color = OnPanel,
-                        fontSize = 28.sp,
-                        lineHeight = 36.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 4,
+                        text = "“${model.transcript}”",
+                        color = OnPanelDim,
+                        fontSize = 19.sp,
+                        lineHeight = 26.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
                     )
                 }
 
-                if (model.state == VoiceState.LISTENING) {
-                    Spacer(Modifier.height(26.dp))
-                    Waveform(model.level)
+                if (model.reply.isNotBlank()) {
+                    Spacer(Modifier.height(if (model.transcript.isNotBlank()) 14.dp else 24.dp))
+                    Text(
+                        text = model.reply,
+                        color = OnPanel,
+                        fontSize = 28.sp,
+                        lineHeight = 38.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
                 }
 
-                // Chips only while idle-ish: they'd fight the transcript mid-utterance.
+                // Offered until there is something to say — they are suggestions for a
+                // driver who summoned the assistant and then hesitated, so they belong
+                // while it is waiting, not once it is answering.
                 if (model.state == VoiceState.LISTENING && model.transcript.isBlank()) {
-                    Spacer(Modifier.height(28.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Spacer(Modifier.height(26.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         VoiceRoute.entries.forEach { route ->
-                            IconChip(route.icon, route.label) { onChip(route) }
+                            ActionChip(route.icon, route.label) { onChip(route) }
                         }
                     }
                 }
@@ -203,11 +245,46 @@ fun VoiceOverlay(
     }
 }
 
-/** Only real content is ever shown as text — no state labels, no placeholder copy. */
-private fun displayText(m: VoiceUiModel) = when {
-    m.reply.isNotBlank() -> m.reply
-    m.transcript.isNotBlank() -> m.transcript
-    else -> ""
+/**
+ * Name on the left, what it is doing on the right.
+ *
+ * The orb's animation says *something* is happening but not which thing — a pulse while
+ * thinking and a pulse while speaking look alike at a glance, and a driver looking up for
+ * half a second should not have to decide whether to keep talking. One word settles it.
+ */
+@Composable
+private fun Header(state: VoiceState) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(if (state == VoiceState.LISTENING) Accent2 else Accent),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "VEGA",
+            color = OnPanel,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 2.sp,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = when (state) {
+                VoiceState.LISTENING -> "Listening"
+                VoiceState.THINKING -> "Thinking"
+                VoiceState.SPEAKING -> "Speaking"
+                VoiceState.IDLE -> ""
+            },
+            color = OnPanelDim,
+            fontSize = 14.sp,
+            letterSpacing = 0.5.sp,
+        )
+    }
 }
 
 /** Pulsing orb with a soft static glow behind it; scale/alpha animation only. */
@@ -347,23 +424,37 @@ private fun Waveform(level: Float) {
     }
 }
 
-/** Icon-only quick action — the label lives in contentDescription, not on screen. */
+/**
+ * Quick action, icon *and* label.
+ *
+ * These were icon-only discs with the words hidden in contentDescription, which asks a
+ * driver to decode five glyphs to find out what they may say. The point of offering
+ * suggestions is that they can be read, so the label is on screen.
+ */
 @Composable
-private fun IconChip(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Box(
+private fun ActionChip(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
         modifier = Modifier
-            .size(56.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color.White.copy(alpha = 0.07f))
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(22.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = label,
+            contentDescription = null,
             tint = Accent,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(19.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            color = OnPanel,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
         )
     }
 }
