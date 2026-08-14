@@ -56,6 +56,13 @@
          permission that exempts us. signature|privileged, so it also needs the privapp
          allow-list entry — the two files must agree or the app is blocked at boot. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS_PRIVILEGED" />
+
+    <!-- To make ourselves the selected voice interaction service. See AssistantRole:
+         this head unit has no assistant picker, and the selection is dropped on every
+         reinstall, leaving the mic button dead. signature|privileged, so it needs the
+         matching privapp allow-list entry too. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- Navigation: map tiles, routing (Valhalla) and search (Photon) are plain HTTPS calls.

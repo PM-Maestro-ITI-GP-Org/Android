@@ -86,6 +86,9 @@ class MainActivity : AppCompatActivity() {
         LocalStore.init(this)
         ThemeState.restore()
         Conn.init(this)
+        // Before anything can ask for a voice session: the selection is lost on every
+        // reinstall, and without it the platform refuses to open one.
+        com.motorguard.ivi.ui.voice.AssistantRole.claim(this)
         maybeRequestConnectivityPermissions()
         setContentView(R.layout.activity_main)
         enableImmersiveMode()
