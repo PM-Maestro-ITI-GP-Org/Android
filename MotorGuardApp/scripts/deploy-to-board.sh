@@ -109,10 +109,28 @@ done
 
 sh_ 'rm -f /data/local/tmp/MotorGuard.apk' || true
 
-step "restarting Motor Guard"
-# Force-stopping the launcher makes the system restart it. On this board that also
-# restarts system_server, so the connection drops for ~20s — that is expected.
-sh_ 'am force-stop com.motorguard.ivi' >/dev/null 2>&1 || true
+step "rebooting the board"
+# A full reboot, not `am force-stop` and not `stop && start`.
+#
+# Replacing the APK leaves PackageManager holding the package as scanned at boot, and two
+# things depend on that record being current:
+#
+#   1. The voice interaction service is bound against it. The setting still names our
+#      component and the SettingsObserver still fires, but VoiceInteractionManagerServiceImpl
+#      fails to construct, so every session after a deploy died with
+#      "SecurityException: enforceIsCurrentVoiceInteractionService" and the mic button
+#      reported "Voice assistant isn't the selected assistant".
+#
+#   2. Privileged permissions are resolved against the privapp allow-list at scan time only.
+#      A framework restart does NOT re-resolve them — measured: WRITE_SECURE_SETTINGS stayed
+#      ungranted across `stop && start` and appeared only after a real boot. So any manifest
+#      or allow-list change needs one regardless.
+#
+# `stop && start` fixes (1) and keeps the network up, but cannot fix (2), which is why this
+# does the full thing rather than the clever thing.
+sh_ 'reboot' >/dev/null 2>&1 || true
 
 printf '%s\n' "${grn}✓${off} deployed and verified (md5 $LOCAL_MD5)"
-printf '   the board may take ~30s to come back; then: adb connect %s\n' "$SERIAL"
+printf '   rebooting — about a minute. If the board does not come back, eth0 needs\n'
+printf '   reconfiguring on the serial console:\n'
+printf '     su; ifconfig eth0 %s netmask 255.255.255.0\n' "${SERIAL%%:*}"

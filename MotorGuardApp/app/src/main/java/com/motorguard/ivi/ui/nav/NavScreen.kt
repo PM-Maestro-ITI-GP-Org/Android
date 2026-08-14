@@ -112,6 +112,15 @@ fun NavScreen(viewModel: NavViewModel = viewModel()) {
     ) {
         val camera = cameraFor(phase, carPoint, heading)
 
+        // Has the driver taken the map over by dragging it?
+        //
+        // `camera` is recomputed from the car's position, so it changes on every GPS tick.
+        // Applying it unconditionally meant a pan was undone within a second and the map could
+        // not be explored at all. Panning now suspends the camera until it is recentred.
+        // Reset when the phase changes: choosing a destination or starting guidance is a fresh
+        // intent, and the map should frame that rather than stay where it was left.
+        var panned by remember(phase::class) { mutableStateOf(false) }
+
         // The car is drawn on the map unless the camera is locked to it. The Compose puck is
         // pinned to a fixed screen position, so it is only ever truthful in Follow mode — in any
         // overview the car sits wherever its coordinates say, which is not the middle.
@@ -125,10 +134,27 @@ fun NavScreen(viewModel: NavViewModel = viewModel()) {
                 vehicleBearing = heading,
             ),
             modifier = Modifier.fillMaxSize(),
+            onUserPan = { panned = true },
+            cameraDriven = !panned,
         )
 
-        if (following) {
+        // Only truthful while the camera is actually locked to the car — after a pan the car is
+        // wherever its coordinates put it, not under a puck pinned to the middle of the screen.
+        if (following && !panned) {
             FollowVehicleMarker()
+        }
+
+        // Somewhere to go back to. A map that can be dragged with no way to recentre is worse
+        // than one that cannot be dragged at all, so this appears exactly when it is needed.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = panned,
+            enter = androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(20.dp),
+        ) {
+            RecenterButton(following = false, onClick = { panned = false })
         }
 
         // One AnimatedVisibility per phase, driven by a *boolean*.

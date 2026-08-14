@@ -25,6 +25,7 @@ import com.motorguard.ivi.data.nav.NavFormat
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.nav.NavPhase
 import com.motorguard.ivi.ui.nav.NavSession
+import com.motorguard.ivi.data.nav.NavConfig
 import com.motorguard.ivi.ui.nav.map.MapCamera
 import com.motorguard.ivi.ui.nav.map.MapOverlay
 import com.motorguard.ivi.ui.nav.map.MapSurface
@@ -68,7 +69,12 @@ fun NavCard(onOpenNav: () -> Unit, modifier: Modifier = Modifier) {
         is NavPhase.Preview -> phase.selected.shape
         else -> emptyList()
     }
-    val framed = shape.ifEmpty { listOfNotNull(car) }
+    // Fall back to the same origin the Nav tab uses when there is no fix, so Home shows a map
+    // from the first frame instead of a "waiting for position" notice. A first fix can take
+    // tens of seconds outdoors and may never arrive indoors, which made the card look broken
+    // for most of a demo; a map of roughly the right place is honest enough for a card whose
+    // whole job is to be tapped.
+    val framed = shape.ifEmpty { listOf(car ?: NavConfig.defaultOrigin) }
 
     GlassCard(
         modifier = modifier,
@@ -76,28 +82,22 @@ fun NavCard(onOpenNav: () -> Unit, modifier: Modifier = Modifier) {
         padding = PaddingValues(0.dp),
         soft = true,
     ) {
-        if (framed.isEmpty()) {
-            // No fix and no route yet. Rendering a map of nowhere reads as broken, so say what
-            // is actually happening instead.
-            Hint(text = "Navigation", note = "Waiting for position · tap to open")
-        } else {
-            MapSurface(
+        MapSurface(
                 camera = MapCamera.Overview(points = framed, paddingPx = MINI_MAP_PADDING_PX),
-                overlay = MapOverlay(
-                    route = shape,
-                    destination = when (phase) {
-                        is NavPhase.Guiding -> phase.route.destination.point
-                        is NavPhase.Preview -> phase.destination.point
-                        else -> null
-                    },
-                    // Always geo-anchored: the camera here is never Follow, so the car has to be
-                    // drawn at its true coordinates rather than pinned to a screen position.
-                    vehicle = car,
-                    vehicleBearingDegrees = state.position?.bearingDegrees ?: 0f,
-                ),
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+            overlay = MapOverlay(
+                route = shape,
+                destination = when (phase) {
+                    is NavPhase.Guiding -> phase.route.destination.point
+                    is NavPhase.Preview -> phase.destination.point
+                    else -> null
+                },
+                // Always geo-anchored: the camera here is never Follow, so the car has to be
+                // drawn at its true coordinates rather than pinned to a screen position.
+                vehicle = car,
+                vehicleBearingDegrees = state.position?.bearingDegrees ?: 0f,
+            ),
+            modifier = Modifier.fillMaxSize(),
+        )
 
         // The tap target sits *above* the map, not on the card behind it: MapLibre's MapView
         // consumes touches for its own pan/zoom, so a clickable underneath would never fire.
@@ -109,8 +109,7 @@ fun NavCard(onOpenNav: () -> Unit, modifier: Modifier = Modifier) {
                 .clickable(onClick = onOpenNav),
         )
 
-        // The hint already says both of these things; two captions would just argue.
-        if (framed.isNotEmpty()) TripStrip(
+        TripStrip(
             title = guiding?.route?.destination?.name ?: "Navigation",
             detail = guiding?.progress?.let { progress ->
                 "${NavFormat.distance(progress.remainingDistanceMeters)} · " +
@@ -145,17 +144,5 @@ private fun TripStrip(title: String, detail: String, modifier: Modifier = Modifi
             overflow = TextOverflow.Ellipsis,
         )
         Text(text = detail, fontSize = 13.sp, color = colors.onBaseDim, maxLines = 1)
-    }
-}
-
-/** Shown before there is anything real to draw. */
-@Composable
-private fun Hint(text: String, note: String) {
-    val colors = MotorGuard.colors
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.onBaseDim)
-            Text(text = note, fontSize = 12.sp, color = colors.onBaseDim)
-        }
     }
 }

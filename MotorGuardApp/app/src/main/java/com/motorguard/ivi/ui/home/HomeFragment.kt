@@ -28,6 +28,9 @@ class HomeFragment : Fragment() {
                 HomeScreen(
                     onOpenMedia = { (activity as? MainActivity)?.openTab(MainActivity.Tab.MEDIA) },
                     onOpenNav = { (activity as? MainActivity)?.openTab(MainActivity.Tab.NAV) },
+                    onOpenDiagnostics = {
+                        (activity as? MainActivity)?.openTab(MainActivity.Tab.DIAGNOSTICS)
+                    },
                 )
             }
         }

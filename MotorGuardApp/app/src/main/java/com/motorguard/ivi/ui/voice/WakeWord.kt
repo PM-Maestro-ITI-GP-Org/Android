@@ -76,6 +76,9 @@ class OnnxWakeWordDetector(
     companion object {
         private const val TAG = "MotorGuardVoice"
 
+        /** Per-chunk mic level logging. Off: see the call site for why. */
+        private const val VERBOSE_LEVELS = false
+
         /** Swap this when the phrase changes (see docs/07-voice-implementation.md). */
         const val WAKE_MODEL_FILE = "hey_vega.onnx"
         private const val MEL_MODEL = "wakeword/melspectrogram.onnx"
@@ -382,7 +385,9 @@ class OnnxWakeWordDetector(
                 continue
             }
             if (n == 0) {
-                if (++starveLogCount % 100 == 0) Log.d(TAG, "no samples yet (x$starveLogCount)")
+                if (VERBOSE_LEVELS && ++starveLogCount % 100 == 0) {
+                    Log.d(TAG, "no samples yet (x$starveLogCount)")
+                }
                 Thread.sleep(5)
                 continue
             }
@@ -435,7 +440,12 @@ class OnnxWakeWordDetector(
             mean /= CHUNK
             val rms = kotlin.math.sqrt(sum / CHUNK)
             val ac = kotlin.math.sqrt(kotlin.math.max(0.0, sum / CHUNK - mean * mean))
-            if (++rmsLogCount % 12 == 0) {
+            // Level logging is behind a flag, not on by default. The detector runs for the
+            // life of the process, so a line per second is a line per second forever: it
+            // rotated the whole log buffer in under a minute and repeatedly destroyed the
+            // evidence for unrelated bugs being investigated at the time. Flip VERBOSE_LEVELS
+            // when tuning the threshold, and leave it off otherwise.
+            if (VERBOSE_LEVELS && ++rmsLogCount % 12 == 0) {
                 Log.d(
                     TAG,
                     "rms=%.0f mean=%.0f ac=%.0f peak=%.0f score=%.3f"

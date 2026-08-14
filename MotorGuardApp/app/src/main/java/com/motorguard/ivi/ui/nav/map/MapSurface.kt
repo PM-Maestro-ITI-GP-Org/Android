@@ -80,6 +80,17 @@ fun MapSurface(
     camera: MapCamera,
     overlay: MapOverlay,
     modifier: Modifier = Modifier,
+    /**
+     * Called when the *driver* moves the map, as opposed to the camera being driven by
+     * guidance. Lets a caller stop steering the camera so a pan is not undone by the next
+     * position update.
+     */
+    onUserPan: () -> Unit = {},
+    /**
+     * Whether [camera] should still be applied. Set false once the driver has taken over, or
+     * every GPS tick snaps the map back out from under their finger.
+     */
+    cameraDriven: Boolean = true,
 ) {
     val context = LocalContext.current
     var mapLibreFailed by remember { mutableStateOf(false) }
@@ -100,6 +111,8 @@ fun MapSurface(
             overlay = overlay,
             modifier = modifier,
             onUnavailable = { mapLibreFailed = true },
+            onUserPan = onUserPan,
+            cameraDriven = cameraDriven,
         )
 
         NavConfig.MapBackend.STYLIZED -> CanvasMapSurface(

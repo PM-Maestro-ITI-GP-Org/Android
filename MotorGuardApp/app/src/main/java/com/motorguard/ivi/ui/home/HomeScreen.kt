@@ -26,10 +26,15 @@ import com.motorguard.ivi.ui.theme.MotorGuard
  *
  * The map and now-playing cards are live — each reads the same session its own tab drives, so
  * what Home shows is the real trip and the real player rather than a copy. The vehicle card is
- * still owner A's to build (docs/03-home.md); its placeholder is named for what goes in it.
+ * vehicle card reads the same telemetry the Diagnostics tab does, so Home cannot disagree
+ * with it.
  */
 @Composable
-fun HomeScreen(onOpenMedia: () -> Unit, onOpenNav: () -> Unit) {
+fun HomeScreen(
+    onOpenMedia: () -> Unit,
+    onOpenNav: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -49,9 +54,8 @@ fun HomeScreen(onOpenMedia: () -> Unit, onOpenNav: () -> Unit) {
                 .fillMaxHeight(),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            PlaceholderSlot(
-                title = "Vehicle",
-                note = "Owner A · battery + range rings",
+            VehicleCard(
+                onOpenDiagnostics = onOpenDiagnostics,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
@@ -64,30 +68,6 @@ fun HomeScreen(onOpenMedia: () -> Unit, onOpenNav: () -> Unit) {
             // Notifications have nowhere else to go: this app is the launcher and hides the
             // system bars, so CarSystemUI's heads-up and Notification Center are both covered.
             NotificationBanner()
-        }
-    }
-}
-
-/** A named empty card, so the layout reads as intentional rather than unfinished. */
-@Composable
-private fun PlaceholderSlot(title: String, note: String, modifier: Modifier = Modifier) {
-    val colors = MotorGuard.colors
-    GlassCard(
-        modifier = modifier,
-        shape = RoundedCornerShape(26.dp),
-        padding = PaddingValues(24.dp),
-        soft = true,
-    ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onBaseDim,
-                )
-                Text(text = note, fontSize = 12.sp, color = colors.onBaseDim)
-            }
         }
     }
 }

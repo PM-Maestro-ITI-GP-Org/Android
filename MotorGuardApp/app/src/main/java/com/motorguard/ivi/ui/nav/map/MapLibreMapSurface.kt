@@ -64,6 +64,8 @@ internal fun MapLibreMapSurface(
     overlay: MapOverlay,
     modifier: Modifier = Modifier,
     onUnavailable: () -> Unit,
+    onUserPan: () -> Unit = {},
+    cameraDriven: Boolean = true,
 ) {
     val context = LocalContext.current
     val colors = MotorGuard.colors
@@ -124,6 +126,15 @@ internal fun MapLibreMapSurface(
                 // twist while driving is exactly the kind of thing CarUxRestrictions exists for.
                 isRotateGesturesEnabled = false
                 isTiltGesturesEnabled = false
+            }
+            // Distinguish a finger from the code: REASON_API_GESTURE is a pan/zoom by the
+            // driver, while our own easeCamera/animateCamera calls report a different reason.
+            // Without that distinction, driving the camera would look like a user pan and
+            // immediately switch following off.
+            ready.addOnCameraMoveStartedListener { reason ->
+                if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
+                    onUserPan()
+                }
             }
             ready.setStyle(
                 Style.Builder().fromJson(MapStyle.json(dark, mapBase, colors.accent)),
@@ -203,7 +214,11 @@ internal fun MapLibreMapSurface(
     }
 
     // --- camera ---------------------------------------------------------------------------
-    LaunchedEffect(map, camera) {
+    LaunchedEffect(map, camera, cameraDriven) {
+        // Once the driver has taken the map over, stop steering it. Every position update
+        // recomputes `camera`, so without this the map jumps back to the car a fraction of a
+        // second after each pan and the map is effectively immovable.
+        if (!cameraDriven) return@LaunchedEffect
         val active = map ?: return@LaunchedEffect
         when (camera) {
             is MapCamera.Follow -> {
