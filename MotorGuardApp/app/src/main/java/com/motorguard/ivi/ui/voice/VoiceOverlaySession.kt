@@ -70,6 +70,10 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
         /** Enough to read as frosted glass without dissolving what is behind it. */
         const val BLUR_RADIUS_PX = 56
+
+        /** Waveform range, in dBFS: a quiet cabin, and speech at a normal volume. */
+        const val QUIET_DB = -45f
+        const val LOUD_DB = -12f
     }
 
     private var model by mutableStateOf(VoiceUiModel())
@@ -214,8 +218,16 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                 }
 
                 override fun onRmsChanged(rmsdB: Float) {
-                    // rmsdB is roughly -2..10; map to 0..1 for the waveform.
-                    model = model.copy(level = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
+                    // dBFS from OfflineRecognitionService: 0 is full scale, about -45 a
+                    // quiet cabin and -12 loud speech, so that span is what the waveform
+                    // should spend its range on. The old -2..10 window was written for
+                    // AOSP's recognizer and, against the raw amplitude this was actually
+                    // sending, clamped to 1.0 on any sound whatsoever.
+                    //
+                    // Smoothed towards the new value rather than snapped: at one reading
+                    // every 80 ms, raw levels make the bars flicker rather than move.
+                    val target = ((rmsdB - QUIET_DB) / (LOUD_DB - QUIET_DB)).coerceIn(0f, 1f)
+                    model = model.copy(level = model.level + (target - model.level) * 0.4f)
                 }
 
                 override fun onPartialResults(partialResults: Bundle?) {

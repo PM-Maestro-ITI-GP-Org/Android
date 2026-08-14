@@ -48,6 +48,22 @@ sh_ 'mount -o rw,remount /' >/dev/null 2>&1 || true
 
 LOCAL_MD5="$(md5sum "$APK" | cut -d' ' -f1)"
 
+# Stop the app BEFORE the APK underneath it is replaced.
+#
+# ART maps dex and JIT code out of the installed APK. Overwriting the file while the
+# process is live leaves those mappings pointing at a file that no longer exists, and the
+# next method executed out of them takes a bus error:
+#
+#     signal 7 (SIGBUS), code 2 (BUS_ADRERR)
+#       #00 ExecuteNterpImpl (libart.so)
+#       #01 /memfd:jit-cache (deleted) ... InfiniteTransition.onFrame
+#
+# Stopping first costs nothing — the app is restarted at the end anyway — and turns a
+# crash-on-deploy into a clean swap.
+step "stopping Motor Guard before replacing it"
+sh_ 'am force-stop com.motorguard.ivi' >/dev/null 2>&1 || true
+sleep 2
+
 step "staging the APK"
 adb -s "$SERIAL" push "$APK" /data/local/tmp/MotorGuard.apk >/dev/null
 STAGED_MD5="$(sh_ 'md5sum /data/local/tmp/MotorGuard.apk' | cut -d' ' -f1 | tr -d '\r')"

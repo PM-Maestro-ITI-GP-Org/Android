@@ -103,6 +103,7 @@ private val Accent2 = Tokens.Night.accent2
  * no animated blur or shadow (RPi 5 perf budget, see README §1); the depth here comes
  * from static gradients and a static elevation shadow instead.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun VoiceOverlay(
     model: VoiceUiModel,
@@ -234,7 +235,14 @@ fun VoiceOverlay(
                 // while it is waiting, not once it is answering.
                 if (model.state == VoiceState.LISTENING && model.transcript.isBlank()) {
                     Spacer(Modifier.height(26.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Wraps. A single Row fitted four of the five chips inside the card
+                    // and pushed "Call" past the edge, where it was clipped and could not
+                    // be tapped — an offered action the driver could not reach.
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         VoiceRoute.entries.forEach { route ->
                             ActionChip(route.icon, route.label) { onChip(route) }
                         }

@@ -65,6 +65,9 @@ class OfflineRecognitionService : RecognitionService() {
          */
         private const val SPEECH_RMS = 400.0
 
+        /** Floor reported for a silent chunk, rather than log10(0) = -infinity. */
+        private const val SILENCE_DB = -60f
+
         private const val MAX_SAMPLES = (MAX_SESSION_MS * 16).toInt()  // 16 kHz
 
         /**
@@ -156,7 +159,23 @@ class OfflineRecognitionService : RecognitionService() {
                 var sum = 0.0
                 for (i in 0 until n) sum += buf[i].toDouble() * buf[i]
                 val rms = kotlin.math.sqrt(sum / n)
-                safe { listener.rmsChanged(rms.toFloat()) }
+
+                // Reported in dB, because that is what onRmsChanged is specified to carry
+                // and what every consumer scales as. This sent the raw PCM amplitude
+                // instead — 0..32767 — so the overlay's ((rms + 2) / 12) mapping produced
+                // 64 for an ordinary 769 and clamped to 1.0 on any sound at all. The
+                // waveform was not dead, it was pinned wide open, which looks the same:
+                // it never moved when you spoke.
+                //
+                // dBFS: 0 is full scale, about -45 a quiet cabin, -15 loud speech. The
+                // speech gate below keeps using the linear value, since its threshold is
+                // calibrated in those units.
+                val rmsDb = if (rms > 1.0) {
+                    (20.0 * kotlin.math.log10(rms / Short.MAX_VALUE.toDouble())).toFloat()
+                } else {
+                    SILENCE_DB
+                }
+                safe { listener.rmsChanged(rmsDb) }
 
                 if (rms > SPEECH_RMS) {
                     if (!heardSpeech) {
