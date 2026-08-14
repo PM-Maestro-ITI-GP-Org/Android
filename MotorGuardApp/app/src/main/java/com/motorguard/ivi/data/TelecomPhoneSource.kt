@@ -314,18 +314,33 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
             CallLog.Calls.DATE,
         )
         val out = mutableListOf<CallLogEntry>()
+        // The row cap goes in the URI, not the sort order. CallLogProvider validates the
+        // sort order and rejects the LIMIT token outright --
+        //   IllegalArgumentException: Invalid token LIMIT
+        //     at CallLogProvider.queryInternal
+        // -- so "DATE DESC LIMIT 40" threw on every refresh. runCatching below swallowed
+        // it, and Recents showed "No calls yet." permanently, even with a synced log.
+        val uri = CallLog.Calls.CONTENT_URI.buildUpon()
+            .appendQueryParameter(CallLog.Calls.LIMIT_PARAM_KEY, "40")
+            .build()
         app.contentResolver.query(
-            CallLog.Calls.CONTENT_URI,
+            uri,
             projection,
             null,
             null,
-            "${CallLog.Calls.DATE} DESC LIMIT 40",
+            "${CallLog.Calls.DATE} DESC",
         )?.use { c ->
             while (c.moveToNext()) {
+                val number = c.getString(2).orEmpty()
                 out += CallLogEntry(
                     id = c.getLong(0),
-                    name = c.getString(1)?.takeIf { it.isNotBlank() },
-                    number = c.getString(2).orEmpty(),
+                    // PBAP syncs the log with CACHED_NAME empty -- every row arrives as
+                    // name=NULL even for people who are in the phonebook -- so Recents
+                    // listed bare numbers. Resolve against the same index the in-call
+                    // screen uses. queryContacts() runs before this and fills it.
+                    name = c.getString(1)?.takeIf { it.isNotBlank() }
+                        ?: numberIndex[numberKey(number)],
+                    number = number,
                     direction = when (c.getInt(3)) {
                         CallLog.Calls.INCOMING_TYPE -> CallDirection.INCOMING
                         CallLog.Calls.MISSED_TYPE -> CallDirection.MISSED
