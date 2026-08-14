@@ -3,10 +3,48 @@
 // (e.g. vendor/motorguard/MotorGuard/) and adjust the relative paths below.
 //
 // Two ways to build it — pick ONE:
-//   (A) android_app  — compile from source in the tree (this file's default).
+//   (A) android_app  — compile from source in the tree.
 //   (B) android_app_import — bundle a Gradle-built, platform-re-signed APK (bottom).
-//       Use (B) if your tree's AndroidX/Compose prebuilts don't match; it's the most
-//       reliable path for a Compose app.
+//
+// USE (B). (A) SHIPS A BROKEN APK — measured on a real board, not theorised:
+//
+//   $ ls /system/priv-app/MotorGuard/lib/arm64/
+//   libmotorguardsomeip.so -> /system/lib64/libmotorguardsomeip.so
+//   libmotorguardvoice.so  -> /system/lib64/libmotorguardvoice.so
+//   $ ls /system/lib64/ | grep -E 'filament|maplibre|onnxruntime|gltfio'
+//   (nothing)
+//
+// `jni_libs` below lists exactly one library, and Soong does NOT extract JNI from AAR
+// dependencies unless each one is imported with extract_jni: true (see the onnxruntime
+// import at the bottom — it is the only dependency that got that treatment). So an
+// image built with (A) contains no filament, gltfio, maplibre or onnxruntime .so at
+// all, and three features fail:
+//
+//   - Diagnostics takes the whole launcher down on entry:
+//       FATAL EXCEPTION: main
+//       java.lang.UnsatisfiedLinkError: dlopen failed:
+//         library "libfilament-jni.so" not found
+//           at ...ui.diagnostics.render.Car3dRenderer.Render(Car3dRenderer.kt:645)
+//   - the nav map has no MapLibre to render with
+//   - the wake word never starts, because ONNX Runtime is absent — Vega's "hey vega"
+//     models load fine, there is simply no runtime to run them on
+//
+// Fixing (A) means vendoring and importing every AAR in the sceneview/filament,
+// maplibre and onnxruntime trees by hand and keeping them in sync with
+// build.gradle.kts. Gradle already does that correctly, so (B) bundles its output:
+//
+//   ./scripts/build-signed-apk.sh     # produces a verified, platform-signed APK
+//
+// That script also fails loudly if a native library or the 3D model is missing, so a
+// silently incomplete APK cannot reach an image again.
+//
+// The 3D vehicle model is gitignored (15 MB) and must be installed before either path
+// builds a working Diagnostics tab:
+//
+//   ./scripts/select-car-model.sh 3
+//
+// Without it the tab renders "Vehicle model unavailable — car_model.glb" instead of
+// the car. build-signed-apk.sh does this for you.
 
 // ---------------------------------------------------------------------------
 // (A) Build from source.
@@ -130,13 +168,27 @@ android_library_import {
 }
 
 // ---------------------------------------------------------------------------
-// (B) Prebuilt APK alternative (build the APK with Gradle first: ./gradlew assembleRelease
-//     then drop app-release.apk here). Comment out module (A) if you use this.
+// (B) RECOMMENDED — bundle the Gradle-built APK.
+//
+// Produce it first, from MotorGuardApp/:
+//
+//     ./scripts/build-signed-apk.sh
+//     cp app/build/outputs/apk/aaos/release/MotorGuard.apk aosp/MotorGuard.apk
+//
+// Then comment out module (A) above and uncomment this one. The APK arrives already
+// platform-signed, so `presigned` is correct here — re-signing it with `platform`
+// would be signing an already-signed APK.
+//
+// The Gradle build embeds every AAR's native libraries and the 3D model, which is the
+// whole reason to prefer this path; see the warning at the top of this file for what
+// (A) leaves out and how it fails on the board.
 // ---------------------------------------------------------------------------
 // android_app_import {
 //     name: "MotorGuard",
-//     apk: "app-release.apk",
-//     certificate: "platform",
+//     apk: "MotorGuard.apk",
+//     // Already signed by build-signed-apk.sh with the AOSP platform key
+//     // (SHA-256 c8a2e9bc...ab8, the cert this image trusts).
+//     presigned: true,
 //     privileged: true,
 //     overrides: ["CarLauncher"],
 //     dex_preopt: { enabled: false },
