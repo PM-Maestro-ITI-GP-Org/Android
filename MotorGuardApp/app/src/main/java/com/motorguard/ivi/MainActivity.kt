@@ -108,10 +108,16 @@ class MainActivity : AppCompatActivity() {
         // so a call placed or answered from either surface is the one and only call.
         val dialerVm = ViewModelProvider(this)[DialerViewModel::class.java]
         findViewById<ComposeView>(R.id.call_overlay).setContent {
-            MotorGuardTheme {
-                val call by dialerVm.repo.call.collectAsState()
-                val current = call
-                if (current != null) {
+            val call by dialerVm.repo.call.collectAsState()
+            val current = call
+            // The theme goes *inside* the null check, not around it. This ComposeView covers
+            // the whole fragment container and is measured EXACTLY to it, and MotorGuardTheme
+            // paints an opaque Box(background) over whatever it wraps — so wrapping the empty
+            // case too filled the content area with a flat background and hid every screen in
+            // the app behind it. With no call there is now nothing to compose, so the overlay
+            // draws nothing and the fragment below shows through.
+            if (current != null) {
+                MotorGuardTheme {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
