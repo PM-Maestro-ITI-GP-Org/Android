@@ -56,6 +56,9 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         const val DISMISS_DELAY_MS = 1_000L
         const val UTTERANCE_ID = "motorguard-reply"
 
+        /** Long enough for "Opening media." to be heard before the tab changes under it. */
+        const val ROUTE_AFTER_SPEAK_MS = 900L
+
         /**
          * Floor on how long the overlay stays up, measured from onShow(). Exists because
          * onCreateContentView()'s window is stood up by the platform asynchronously, and
@@ -118,6 +121,11 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         shownAtElapsedMs = SystemClock.elapsedRealtime()
         WakeTone.play(context)
         VoiceEngine.ensureReady()
+        // First call loads an 87 MB model and embeds the anchors, so do it off the main
+        // thread while the driver is still speaking rather than in the pause afterwards.
+        Thread({
+            com.motorguard.ivi.ui.voice.nlu.IntentMatcher.ensureReady(context)
+        }, "intent-warmup").start()
         overlayHost?.resume()
         requestFocus()
         ensureTts()
@@ -312,6 +320,32 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             speak(reply)
             return
         }
+        // Meaning before keywords, and before the core.
+        //
+        // The obvious order — core first, matcher as a fallback — cannot work: the C++ core
+        // never returns null. It answers everything, apologising in its own words when it does
+        // not know ("...or find the nearest garage"), so nothing downstream of it ever ran.
+        //
+        // The threshold is what makes this safe to put first: the matcher returns null unless
+        // it is genuinely confident, so anything it declines still reaches the core with its
+        // fault catalogue intact.
+        com.motorguard.ivi.ui.voice.nlu.IntentMatcher.match(utterance)?.let { intent ->
+            intent.reply?.let { taught ->
+                model = model.copy(state = VoiceState.SPEAKING, reply = taught)
+                speak(taught)
+                return
+            }
+            intent.route?.let { target ->
+                val reply = "Opening ${target.label.lowercase()}."
+                model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+                speak(reply)
+                // Let the confirmation be heard before the screen changes under it.
+                handler.postDelayed({ route(target) }, ROUTE_AFTER_SPEAK_MS)
+                return
+            }
+        }
+
+        // The core last, and it always answers — including its own apology when it cannot.
         val reply = VoiceEngine.handle(utterance)
             ?: "Sorry, I didn't catch that. You can ask me to explain a warning " +
             "light, whether it's serious, or where the nearest garage is."
