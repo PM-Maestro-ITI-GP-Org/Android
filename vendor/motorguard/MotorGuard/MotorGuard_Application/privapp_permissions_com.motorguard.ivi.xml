@@ -10,5 +10,14 @@
         <permission name="android.permission.OVERRIDE_WIFI_CONFIG"/>
         <permission name="android.permission.LOCAL_MAC_ADDRESS"/>
         <permission name="android.permission.BLUETOOTH_PRIVILEGED"/>
+        <!-- Exempts the app from Android 15's audio hardening, which otherwise refuses
+             setStreamVolume/adjustStreamVolume with "Preventing volume method N". -->
+        <permission name="android.permission.MODIFY_AUDIO_SETTINGS_PRIVILEGED"/>
+        <!-- Lets the app make itself the selected voice interaction service. This board
+             has no Settings screen for choosing an assistant, and the selection is lost
+             whenever the app is reinstalled, after which the rail mic button only reports
+             "Voice assistant isn't the selected assistant". Motor Guard *is* the assistant
+             on this head unit, so it claims the role itself at startup. -->
+        <permission name="android.permission.WRITE_SECURE_SETTINGS"/>
     </privapp-permissions>
 </permissions>

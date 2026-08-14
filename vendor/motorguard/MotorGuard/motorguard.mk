@@ -20,3 +20,19 @@ PRODUCT_PACKAGES += MotorGuard
 # module (packages/apps/Car/SystemUI/samples/SystemBarPersistencyImmersive/Android.bp),
 # NOT the overlay package id used at runtime by `cmd overlay enable`.
 #     PRODUCT_PACKAGES += CarSystemUISystemBarPersistcyImmersive
+
+# --- Turn off the Bluetooth MAP client (REQUIRED on the Pi) ---
+# Without this the Bluetooth stack crash-loops as soon as a phone connects, taking the adapter
+# down with it and disconnecting the phone, over and over:
+#
+#   java.lang.UnsupportedOperationException: addSubInfo is unsupported
+#       without android.hardware.telephony.subscription
+#     at com.android.bluetooth.mapclient.MapClientContent.<init>
+#
+# MAP is the message-access profile. MapClientContent registers a telephony subscription to
+# hold the phone's SMS, and this board has no telephony hardware, so the call throws the moment
+# the profile reaches Connected. Nothing here needs MAP: media playback is A2DP_SINK + AVRCP and
+# calls are HFP, none of which are affected. Drop this override on hardware that does have a
+# subscription-capable modem.
+PRODUCT_SYSTEM_PROPERTIES += \
+    bluetooth.profile.map.client.enabled=false

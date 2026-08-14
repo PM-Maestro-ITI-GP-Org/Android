@@ -12,12 +12,47 @@ build](#what-diagnostics-adds-to-the-build).
 
 > **The app source is a submodule.** `vendor/motorguard/MotorGuard/MotorGuard_Application/app/`
 > is a git submodule of `PM-Maestro-ITI-GP-Org/Android`, checked out to a branch of your choice
-> (default `media-nav-settings-voice-diagnostics`). That branch holds the **final application**.
+> (default `main`). That branch holds the **final application**.
 > `deploy.sh` fetches and checks out its tip, and the blue print reads the sources from
 > `app/MotorGuardApp/app/src/main/...` and `app/MotorGuardApp/core/vehicle-data-*/src/main/...`,
 > ignoring the Gradle files and everything else.
 > When your friends ship a new final build on a new branch, set `APP_BRANCH` in `deploy.conf`
 > and re-run `./deploy.sh` — nothing else to change.
+
+
+## Runtime models — not in this tree, not installed by `deploy.sh`
+
+The voice assistant and the intent matcher load their models from **`/system/etc/motorguard/`**
+at runtime. Nothing in this branch puts them there: they are large binaries, they are not in
+either repo, and `deploy.sh` does not copy them. A freshly flashed image therefore boots an app
+whose speech and understanding are silently disabled — it does not crash, it just declines.
+
+| File | Size | Used by | Without it |
+|---|---|---|---|
+| `whisper.bin` | 32 MB | speech to text | nothing is transcribed |
+| `piper.onnx` + `piper.json` | 63 MB | speech out | "tts requested but Piper is not loaded" |
+| `espeak/` | ~12 MB | Piper's phonemiser | Piper will not load |
+| `minilm.onnx` | 87 MB | intent matching | falls back to keywords only |
+| `minilm_vocab.txt` | 228 KB | the tokenizer for the above | as above |
+
+Push them after flashing:
+
+```sh
+adb root && adb remount
+adb push whisper.bin piper.onnx piper.json minilm.onnx minilm_vocab.txt /system/etc/motorguard/
+adb push espeak /system/etc/motorguard/
+adb shell chmod 644 /system/etc/motorguard/*
+```
+
+`minilm.onnx` and `minilm_vocab.txt` are `model.onnx` and `vocab.txt` from
+[Qdrant/all-MiniLM-L6-v2-onnx](https://huggingface.co/Qdrant/all-MiniLM-L6-v2-onnx) (Apache 2.0),
+renamed. `tools/nlu-calibrate.py` in the app repo re-derives the matcher's thresholds if the
+anchor phrases are ever changed.
+
+Folding these into `PRODUCT_COPY_FILES` would be the tidier answer and is the obvious next step;
+it is deliberately **not** done here because it needs the binaries committed somewhere first, and
+that is a decision about where 180 MB of models should live rather than a build change.
+
 
 ## Layout
 
