@@ -114,14 +114,28 @@ android_app {
         // the imports below. Pinned to 2.3.0 because it is the last release built
         // against kotlin-stdlib 2.0.21; 4.x needs Kotlin 2.3+.
         "motorguard-sceneview",
+        // Filament AARs are listed transitively under motorguard-sceneview, but Soong only
+        // collects AAR JNI packages (JniPackageProvider) for DIRECT static_libs of the app
+        // -- WalkDeps does not recurse through Java AAR imports (see app.go collectAppDeps).
+        // Without these listed here, libfilament-jni.so / libgltfio-jni.so /
+        // libfilament-utils-jni.so never reach the APK, so SceneView dies at startup
+        // with UnsatisfiedLinkError -> white screen / no diagnostics scene.
+        "motorguard-filament",
+        "motorguard-filament-gltfio",
+        "motorguard-filament-utils",
     ],
 
     // Jetpack Compose compiler plugin: applied AUTOMATICALLY by Soong when
     // androidx.compose.runtime_runtime is in static_libs (build/soong/java/base.go
     // useCompose + kotlinPluginTag). Do NOT list it in `plugins:` — that property only
     // accepts java_plugin modules, and the compose compiler is a java_import_host here.
+    // R8's shrinking pass throws "Attribute EnclosingMethod requires InnerClasses
+    // attribute" on one of the SceneView/Filament/prebuilt AARs. Fix it the right
+    // way (keep the attributes) rather than disabling R8: the moment R8 is off the
+    // app routes through plain D8, which has been observed to drop the AAR JNI libs
+    // from the APK (libfilament-jni.so/libonnxruntime.so etc.) -> UnsatisfiedLinkError.
     optimize: {
-        enabled: false,
+        proguard_flags_files: ["proguard-r8.flags"],
     },
 
     // Ships in /system/priv-app so `privileged: true` + the allow-list below apply.
