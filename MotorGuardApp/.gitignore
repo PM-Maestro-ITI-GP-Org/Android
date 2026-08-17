@@ -20,7 +20,14 @@ local.properties
 
 .kotlin/
 
-# The 3D vehicle model is installed by scripts/select-car-model.sh from the model
-# library outside the repo. It is ~15 MB of binary — keep it out of git history.
-/app/src/main/assets/car_model.glb
-/app/src/main/assets/car_model.source.txt
+# The 3D vehicle model used to be ignored here and installed by
+# scripts/select-car-model.sh, on the reasoning that 15 MB of binary does not belong in
+# git history. It is committed now, because that reasoning cost more than the megabytes:
+# the diagnostics screen needs the diag_v2 model specifically — the one with a motor and
+# a battery pack built into it — and every other model in the library renders a car with
+# no motor inside. An integrated build shipped with a plain Porsche shell, so the motor
+# and battery hotspots had nothing to point at and the cutaway had nothing to open onto.
+#
+# A required asset that a clone does not get, and that fails by looking almost right, is
+# not worth saving space on. The script still works and is still the way to try a
+# different model; it is no longer a step someone has to know about.
