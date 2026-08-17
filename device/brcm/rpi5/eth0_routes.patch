@@ -1,0 +1,83 @@
+diff --git a/device.mk b/device.mk
+index 8de7b0f..a1283a4 100644
+--- a/device.mk
++++ b/device.mk
+@@ -159,7 +159,8 @@ PRODUCT_COPY_FILES += \
+     $(DEVICE_PATH)/ramdisk/fstab.rpi5:$(TARGET_COPY_OUT_VENDOR)/etc/fstab.rpi5 \
+     $(DEVICE_PATH)/ramdisk/init.rpi5.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.rpi5.rc \
+     $(DEVICE_PATH)/ramdisk/init.rpi5.usb.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.rpi5.usb.rc \
+-    $(DEVICE_PATH)/ramdisk/ueventd.rpi5.rc:$(TARGET_COPY_OUT_VENDOR)/etc/ueventd.rc
++    $(DEVICE_PATH)/ramdisk/ueventd.rpi5.rc:$(TARGET_COPY_OUT_VENDOR)/etc/ueventd.rc \
++    $(DEVICE_PATH)/ramdisk/eth0_routes.sh:$(TARGET_COPY_OUT_SYSTEM)/bin/eth0_routes.sh
+ 
+ # Seccomp
+ PRODUCT_COPY_FILES += \
+diff --git a/ramdisk/init.rpi5.rc b/ramdisk/init.rpi5.rc
+index b1d0bb8..e5192f8 100644
+--- a/ramdisk/init.rpi5.rc
++++ b/ramdisk/init.rpi5.rc
+@@ -8,3 +8,14 @@ on fs
+ 
+ on late-fs
+     mount_all /vendor/etc/fstab.rpi5 --late
++
++# Re-add eth0's connected route to the policy-routing tables Android uses.
++# eth0 has no NET_CAPABILITY_INTERNET (WiFi-priority overlay), so
++# ConnectivityService never installs these; without them adb/scrcpy/ping
++# over ethernet hit the final unreachable rule (see eth0_routes.sh).
++on property:sys.boot_completed=1
++    # Run as init (same SELinux domain) so no domain transition is required —
++    # init's exec of /system/bin/sh would otherwise hard-fail even in permissive
++    # mode (Android 15 removed the init_shell domain). The script has the
++    # privileges it needs because it stays in the init domain.
++    exec_background u:r:init:s0 root root -- /system/bin/sh /system/bin/eth0_routes.sh
+diff --git a/ramdisk/eth0_routes.sh b/ramdisk/eth0_routes.sh
+new file mode 100644
+index 0000000..1f4f3bb
+--- /dev/null
++++ b/ramdisk/eth0_routes.sh
+@@ -0,0 +1,43 @@
++#!/system/bin/sh
++# Restore reachability to eth0 for development (adb, scrcpy, ping).
++#
++# The ConnectivityRpiOverlay removes NET_CAPABILITY_INTERNET from eth0 so that
++# WiFi stays the default internet network even with the ethernet cable plugged
++# in. Consequences that need this script to undo:
++#   1. ConnectivityService never runs DHCP for eth0 (no INTERNET => not a
++#      requested network), so the kernel leaves eth0 with no IPv4 at all.
++#   2. Even when eth0 has an address, IPv4 is never inserted into the
++#      per-network tables that Android's policy routing actually consults, so
++#      shell/app traffic falls through to ip rule 32000 (unreachable).
++#
++# This dev link is a direct connection to a host on 10.42.0.0/24
++# (NetworkManager "shared" connection, server at 10.42.0.1), so eth0 is pinned
++# to a static 10.42.0.2/24 — matching the classic RPi5 AAOS dev setup.
++
++# Wait for eth0 to exist and be administratively up.
++i=0
++while [ "$i" -lt 30 ]; do
++  ip link show dev eth0 >/dev/null 2>&1 && break
++  sleep 1
++  i=$((i + 1))
++done
++
++# Bring eth0 up and assign the dev subnet address if it is missing.
++ip link set dev eth0 up
++ip addr replace 10.42.0.2/24 dev eth0 2>/dev/null
++
++# Give the address a moment to settle, then copy eth0's connected route from
++# the main table into the per-network tables.
++sleep 1
++routes="$(ip route show table main dev eth0 2>/dev/null)"
++for t in local_network legacy_network legacy_system; do
++  printf '%s\n' "$routes" | while read -r r; do
++    [ -n "$r" ] && ip route add table "$t" $r 2>/dev/null
++  done
++done
++
++# Fallback: consult the main table (which always holds eth0's connected route)
++# before Android's final unreachable rule.
++ip rule add from all lookup main pref 29999 2>/dev/null
++
++exit 0
+\ No newline at end of file
