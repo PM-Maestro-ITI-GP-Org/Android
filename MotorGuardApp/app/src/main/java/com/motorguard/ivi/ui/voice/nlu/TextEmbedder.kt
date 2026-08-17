@@ -72,7 +72,7 @@ class TextEmbedder private constructor(
         val dim = tokens.firstOrNull()?.size ?: return FloatArray(0)
         val out = FloatArray(dim)
         for (token in tokens) for (i in 0 until dim) out[i] += token[i]
-        for (i in 0 until dim) out[i] /= tokens.size
+        for (i in 0 until dim) out[i] /= tokens.size.toFloat()
         return out
     }
 
