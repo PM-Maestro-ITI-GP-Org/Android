@@ -113,7 +113,7 @@ bool containsAny(const std::string& s, std::initializer_list<const char*> words)
 
 }  // namespace
 
-IntentResult KeywordIntentMatcher::match(const std::string& utterance) const {
+IntentResult KeywordIntentMatcher::match(const std::string& utterance, Language) const {
     IntentResult r;
     const std::string s = lower(utterance);
     if (s.empty()) return r;

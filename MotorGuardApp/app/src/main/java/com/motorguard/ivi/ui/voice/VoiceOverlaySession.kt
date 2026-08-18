@@ -34,7 +34,6 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.motorguard.ivi.MainActivity
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
-import java.util.Locale
 import com.motorguard.ivi.ui.dialer.PhoneVoice
 
 /**
@@ -71,6 +70,14 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     private var model by mutableStateOf(VoiceUiModel())
 
+    /**
+     * STT input language only -- read fresh on every show, so a language
+     * change in Settings takes effect next turn. Output (replies, TTS) is
+     * always English; see VoiceOverlayStrings and the fixed English passed to
+     * VoiceEngine.handle() below.
+     */
+    private var language = VoiceLanguage.DEFAULT
+
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var focusRequest: AudioFocusRequest? = null
@@ -103,6 +110,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         shownAtElapsedMs = SystemClock.elapsedRealtime()
+        language = VoicePrefs.getLanguage(context)
         WakeTone.play(context)
         VoiceEngine.ensureReady()
         overlayHost?.resume()
@@ -142,7 +150,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             // Offline STT (Whisper/Vosk) is the planned replacement — see
             // docs/07-voice-implementation.md.
-            fail("Speech recognition isn't available on this build.")
+            fail(VoiceOverlayStrings.recognitionUnavailable)
             return
         }
         recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
@@ -169,7 +177,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                 override fun onResults(results: Bundle?) {
                     val text = firstResult(results)
                     if (text.isNullOrBlank()) {
-                        fail("Sorry, I didn't catch that.")
+                        fail(VoiceOverlayStrings.didNotCatch)
                     } else {
                         Log.i(TAG, "heard: $text")
                         model = model.copy(state = VoiceState.THINKING, transcript = text)
@@ -183,10 +191,10 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                         when (error) {
                             SpeechRecognizer.ERROR_NO_MATCH,
                             SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
-                                "I didn't hear anything."
+                                VoiceOverlayStrings.didNotHear
                             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
-                                "I need microphone permission."
-                            else -> "Speech recognition failed."
+                                VoiceOverlayStrings.needsMicPermission
+                            else -> VoiceOverlayStrings.recognitionFailed
                         }
                     )
                 }
@@ -199,12 +207,12 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, language.locale.toLanguageTag())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, SILENCE_MS)
         }
         runCatching { recognizer?.startListening(intent) }
-            .onFailure { fail("Could not start listening.") }
+            .onFailure { fail(VoiceOverlayStrings.couldNotStartListening) }
     }
 
     private fun stopListening() {
@@ -229,9 +237,10 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             speak(reply)
             return
         }
-        val reply = VoiceEngine.handle(utterance)
-            ?: "Sorry, I didn't catch that. You can ask me to explain a warning " +
-            "light, whether it's serious, or where the nearest garage is."
+        // Always English: the reasoning core replies in whatever language was
+        // last set, and Egyptian Arabic input should not flip replies to
+        // Arabic (see VoiceLanguage's doc comment).
+        val reply = VoiceEngine.handle(utterance, VoiceLanguage.ENGLISH) ?: VoiceOverlayStrings.fallbackReply
         Log.i(TAG, "reply: $reply")
         model = model.copy(state = VoiceState.SPEAKING, reply = reply)
         speak(reply)
@@ -244,10 +253,17 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
     }
 
     private fun ensureTts() {
-        if (tts != null) return
+        // Always English -- see the comment on `language` above. Set once;
+        // this never needs re-applying on a language change since it never
+        // changes.
+        val existing = tts
+        if (existing != null) {
+            existing.language = VoiceLanguage.ENGLISH.locale
+            return
+        }
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.US
+                tts?.language = VoiceLanguage.ENGLISH.locale
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onDone(utteranceId: String?) = scheduleDismiss()
                     override fun onError(utteranceId: String?) = scheduleDismiss()

@@ -123,6 +123,21 @@ Java_com_motorguard_ivi_ui_voice_VoiceEngine_nativeFaultCount(JNIEnv*, jobject) 
 }
 
 /**
+ * Sets the language every reply from here on is composed in -- both the
+ * direct answer to handleUtterance and any proactive onFault announcement.
+ * @param jlanguage VoiceLanguage.code: "ar" for Egyptian Arabic, anything
+ *                  else (including null) falls back to English.
+ */
+JNIEXPORT void JNICALL
+Java_com_motorguard_ivi_ui_voice_VoiceEngine_nativeSetLanguage(
+        JNIEnv* env, jobject, jstring jlanguage) {
+    const std::string code = jstr(env, jlanguage);
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!g_core || !g_core->ready) return;
+    g_core->assistant->setLanguage(code == "ar" ? Language::ArabicEgypt : Language::English);
+}
+
+/**
  * Hand a recognised utterance to the core. Returns the reply text to display and
  * speak. Empty string means the core produced nothing.
  */

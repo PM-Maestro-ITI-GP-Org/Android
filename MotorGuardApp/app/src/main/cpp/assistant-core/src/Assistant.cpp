@@ -19,6 +19,16 @@ UiSeverity toUi(Severity s) {
 
 Assistant::Assistant(AssistantDeps deps) : deps_(deps) {}
 
+void Assistant::setLanguage(Language language) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    language_ = language;
+}
+
+Language Assistant::language() const {
+    std::lock_guard<std::mutex> lock(mtx_);
+    return language_;
+}
+
 void Assistant::start() {
     deps_.vehicle.subscribe([this](const FaultEvent& e) { onFault(e); });
     deps_.vehicle.start();
@@ -32,7 +42,7 @@ void Assistant::stop() {
 }
 
 void Assistant::onFault(const FaultEvent& e) {
-    Assessment a = deps_.diagnostics.assess(e);
+    Assessment a = deps_.diagnostics.assess(e, language());
     {
         std::lock_guard<std::mutex> lock(mtx_);
         // Replace an existing entry with the same code, else append.
@@ -64,7 +74,7 @@ std::optional<FaultEvent> Assistant::focusFault() const {
     const FaultEvent* best = nullptr;
     Severity best_sev = Severity::Info;
     for (const auto& f : faults_) {
-        Severity s = deps_.diagnostics.assess(f).severity;
+        Severity s = deps_.diagnostics.assess(f, language_).severity;
         if (!best || s > best_sev ||
             (s == best_sev && f.timestamp_ms > best->timestamp_ms)) {
             best = &f; best_sev = s;
@@ -74,7 +84,9 @@ std::optional<FaultEvent> Assistant::focusFault() const {
 }
 
 std::string Assistant::handleUtterance(const std::string& text) {
-    IntentResult r = deps_.intents.match(text);
+    const Language lang = language();
+    const bool ar = (lang == Language::ArabicEgypt);
+    IntentResult r = deps_.intents.match(text, lang);
     LOG_I(TAG, "utterance='%s' -> intent=%s conf=%.2f", text.c_str(),
           toString(r.intent), r.confidence);
 
@@ -86,18 +98,24 @@ std::string Assistant::handleUtterance(const std::string& text) {
         case Intent::RepeatLast: {
             std::lock_guard<std::mutex> lock(mtx_);
             std::string resp = last_response_.empty()
-                ? "I haven't said anything yet."
+                ? (ar ? "لسه مقلتش حاجة." : "I haven't said anything yet.")
                 : last_response_;
             deps_.tts.speak(resp);
             return resp;
         }
         case Intent::Help:   return doHelp();
-        case Intent::Cancel: { std::string r2 = "Okay."; say(r2, UiSeverity::Info); return r2; }
+        case Intent::Cancel: {
+            std::string r2 = ar ? "تمام." : "Okay.";
+            say(r2, UiSeverity::Info);
+            return r2;
+        }
         case Intent::Unknown:
         default: {
-            std::string resp =
-                "Sorry, I didn't catch that. You can ask me to explain a warning "
-                "light, tell you if it's serious, or find the nearest garage.";
+            std::string resp = ar
+                ? "معلش، مسمعتش كويس. تقدر تسألني أشرحلك لمبة تحذير، أقولك لو "
+                  "خطيرة، أو أدورلك على أقرب ورشة."
+                : "Sorry, I didn't catch that. You can ask me to explain a warning "
+                  "light, tell you if it's serious, or find the nearest garage.";
             say(resp, UiSeverity::Info);
             return resp;
         }
@@ -106,6 +124,7 @@ std::string Assistant::handleUtterance(const std::string& text) {
 
 std::string Assistant::doExplain(const std::optional<std::string>& code_slot) {
     std::lock_guard<std::mutex> lock(mtx_);
+    const bool ar = (language_ == Language::ArabicEgypt);
     FaultEvent target;
 
     if (code_slot) {
@@ -117,7 +136,9 @@ std::string Assistant::doExplain(const std::optional<std::string>& code_slot) {
     } else {
         auto f = focusFault();
         if (!f) {
-            std::string resp = "Good news, I'm not seeing any active warnings right now.";
+            std::string resp = ar
+                ? "خبر كويس، مفيش أي تحذيرات نشطة دلوقتي."
+                : "Good news, I'm not seeing any active warnings right now.";
             say(resp, UiSeverity::Info);
             return resp;
         }
@@ -125,7 +146,7 @@ std::string Assistant::doExplain(const std::optional<std::string>& code_slot) {
     }
 
     focus_code_ = target.code;
-    Assessment a = deps_.diagnostics.assess(target);
+    Assessment a = deps_.diagnostics.assess(target, language_);
     std::string resp = composeExplanation(a, target);
     say(resp, toUi(a.severity));
     return resp;
@@ -133,6 +154,7 @@ std::string Assistant::doExplain(const std::optional<std::string>& code_slot) {
 
 std::string Assistant::doAssessSeverity() {
     std::lock_guard<std::mutex> lock(mtx_);
+    const bool ar = (language_ == Language::ArabicEgypt);
     std::optional<FaultEvent> target;
     if (focus_code_) {
         auto it = std::find_if(faults_.begin(), faults_.end(),
@@ -141,12 +163,14 @@ std::string Assistant::doAssessSeverity() {
     }
     if (!target) target = focusFault();
     if (!target) {
-        std::string resp = "There's nothing active to worry about at the moment.";
+        std::string resp = ar
+            ? "مفيش حاجة نشطة تقلقك دلوقتي."
+            : "There's nothing active to worry about at the moment.";
         say(resp, UiSeverity::Info);
         return resp;
     }
     focus_code_ = target->code;
-    Assessment a = deps_.diagnostics.assess(*target);
+    Assessment a = deps_.diagnostics.assess(*target, language_);
     std::string resp = composeSeverity(a);
     say(resp, toUi(a.severity));
     return resp;
@@ -154,36 +178,49 @@ std::string Assistant::doAssessSeverity() {
 
 std::string Assistant::doFindService() {
     std::lock_guard<std::mutex> lock(mtx_);
+    const bool ar = (language_ == Language::ArabicEgypt);
     if (!deps_.location) {
-        std::string resp =
-            "I can't look up nearby garages in this setup yet, but based on the "
-            "warning you should have it seen to soon.";
+        std::string resp = ar
+            ? "مقدرش أدور على ورش قريبة في النسخة دي لسه، بس بناءً على التحذير "
+              "لازم تودّيها تتشاف قريب."
+            : "I can't look up nearby garages in this setup yet, but based on the "
+              "warning you should have it seen to soon.";
         say(resp, UiSeverity::Info);
         return resp;
     }
     std::string svc = appendService();
     std::string resp = svc.empty()
-        ? "I couldn't find a service station nearby right now."
-        : "Here's what's close by." + svc;
+        ? (ar ? "معرفتش ألاقي محطة خدمة قريبة دلوقتي."
+              : "I couldn't find a service station nearby right now.")
+        : (ar ? "دي أقرب حاجة ليك." : "Here's what's close by.") + svc;
     say(resp, UiSeverity::Info);
     return resp;
 }
 
 std::string Assistant::doListFaults() {
     std::lock_guard<std::mutex> lock(mtx_);
+    const bool ar = (language_ == Language::ArabicEgypt);
     if (faults_.empty()) {
-        std::string resp = "I'm not seeing any faults at the moment. Everything looks fine.";
+        std::string resp = ar
+            ? "مفيش أي أعطال دلوقتي. كل حاجة تمام."
+            : "I'm not seeing any faults at the moment. Everything looks fine.";
         say(resp, UiSeverity::Info);
         return resp;
     }
     std::ostringstream os;
-    os << "I'm currently aware of " << faults_.size()
-       << (faults_.size() == 1 ? " item: " : " items: ");
+    if (ar) {
+        os << "حاليًا فيه " << faults_.size()
+           << (faults_.size() == 1 ? " حاجة واحدة: " : " حاجات: ");
+    } else {
+        os << "I'm currently aware of " << faults_.size()
+           << (faults_.size() == 1 ? " item: " : " items: ");
+    }
     // Sort by severity desc for the readout.
     std::vector<std::pair<Severity, std::string>> lines;
     for (const auto& f : faults_) {
-        Assessment a = deps_.diagnostics.assess(f);
-        std::string tag = (f.source == FaultSource::Predicted) ? " (predicted)" : "";
+        Assessment a = deps_.diagnostics.assess(f, language_);
+        std::string tag = (f.source == FaultSource::Predicted)
+            ? (ar ? " (متوقع)" : " (predicted)") : "";
         lines.emplace_back(a.severity, a.info.name + tag);
     }
     std::sort(lines.begin(), lines.end(),
@@ -192,17 +229,22 @@ std::string Assistant::doListFaults() {
         os << lines[i].second;
         if (i + 1 < lines.size()) os << "; ";
     }
-    os << ". Ask me about any of them for more detail.";
+    os << (ar ? ". اسألني عن أي واحدة فيهم عشان أشرحلك أكتر."
+              : ". Ask me about any of them for more detail.");
     std::string resp = os.str();
     say(resp, UiSeverity::Info);
     return resp;
 }
 
 std::string Assistant::doHelp() const {
-    std::string resp =
-        "I'm your maintenance assistant. Ask things like: what's this warning "
-        "light, is it serious, can I keep driving, or where's the nearest garage. "
-        "I'll also speak up on my own if something urgent comes up.";
+    const bool ar = (language() == Language::ArabicEgypt);
+    std::string resp = ar
+        ? "أنا مساعد الصيانة بتاعك. تقدر تسألني حاجات زي: إيه اللمبة دي، هل "
+          "الموضوع خطير، أقدر أكمل سواقة ولا لأ، أو فين أقرب ورشة. وهقولك "
+          "بنفسي لو في حاجة مستعجلة حصلت."
+        : "I'm your maintenance assistant. Ask things like: what's this warning "
+          "light, is it serious, can I keep driving, or where's the nearest garage. "
+          "I'll also speak up on my own if something urgent comes up.";
     // const method: speak but don't touch state.
     deps_.tts.speak(resp);
     return resp;
@@ -213,15 +255,16 @@ std::string Assistant::doHelp() const {
 // ---------------------------------------------------------------------------
 
 std::string Assistant::severityLead(Severity s) const {
+    const bool ar = (language_ == Language::ArabicEgypt);
     switch (s) {
         case Severity::StopNow:
-            return "This is urgent. ";
+            return ar ? "الموضوع مستعجل. " : "This is urgent. ";
         case Severity::Urgent:
-            return "This is serious. ";
+            return ar ? "الموضوع خطير. " : "This is serious. ";
         case Severity::Soon:
-            return "It's worth acting on soon. ";
+            return ar ? "يستحق إنك تتصرف فيه قريب. " : "It's worth acting on soon. ";
         case Severity::Advisory:
-            return "It's minor. ";
+            return ar ? "الموضوع بسيط. " : "It's minor. ";
         case Severity::Info:
         default:
             return "";
@@ -229,10 +272,12 @@ std::string Assistant::severityLead(Severity s) const {
 }
 
 std::string Assistant::composeExplanation(const Assessment& a, const FaultEvent& e) {
+    const bool ar = (language_ == Language::ArabicEgypt);
     std::ostringstream os;
 
     if (e.source == FaultSource::Predicted) {
-        os << "This is a heads-up rather than an active fault. ";
+        os << (ar ? "ده تنبيه استباقي مش عطل نشط دلوقتي. "
+                  : "This is a heads-up rather than an active fault. ");
     }
 
     // What it is. The explanation is the ONLY text a language model may touch,
@@ -261,10 +306,17 @@ std::string Assistant::composeExplanation(const Assessment& a, const FaultEvent&
         if (!stations.empty()) {
             const auto& st = stations.front();
             std::ostringstream s2;
-            s2 << " There's a service station, " << st.name << ", about "
-               << static_cast<int>(st.distance_km + 0.5) << " kilometres away";
-            if (!st.open_now) s2 << ", though it may be closed right now";
-            s2 << ".";
+            if (ar) {
+                s2 << " في محطة خدمة اسمها " << st.name << " على بعد حوالي "
+                   << static_cast<int>(st.distance_km + 0.5) << " كيلومتر";
+                if (!st.open_now) s2 << "، وممكن تكون مقفولة دلوقتي";
+                s2 << ".";
+            } else {
+                s2 << " There's a service station, " << st.name << ", about "
+                   << static_cast<int>(st.distance_km + 0.5) << " kilometres away";
+                if (!st.open_now) s2 << ", though it may be closed right now";
+                s2 << ".";
+            }
             svc = s2.str();
         }
         os << svc;
@@ -273,7 +325,30 @@ std::string Assistant::composeExplanation(const Assessment& a, const FaultEvent&
 }
 
 std::string Assistant::composeSeverity(const Assessment& a) const {
+    const bool ar = (language_ == Language::ArabicEgypt);
     std::ostringstream os;
+    if (ar) {
+        switch (a.severity) {
+            case Severity::StopNow:
+                os << "لأ — لازم توقف أول ما يبقى آمن. " << a.action;
+                break;
+            case Severity::Urgent:
+                os << "تقدر تسوق بحرص دلوقتي، بس متأجلش الموضوع. " << a.action;
+                break;
+            case Severity::Soon:
+                os << "أيوه، تقدر تكمل سواقة، بس وديها تتشاف قريب. " << a.action;
+                break;
+            case Severity::Advisory:
+            case Severity::Info:
+            default:
+                os << "أيوه، تمام إنك تكمل سواقة. " << a.action;
+                break;
+        }
+        if (!a.escalation_reason.empty())
+            os << " رفعت درجة الخطورة بسبب قراءات الحساسات الحالية.";
+        return os.str();
+    }
+
     switch (a.severity) {
         case Severity::StopNow:
             os << "No — you should stop as soon as it's safe. " << a.action;
@@ -300,11 +375,17 @@ std::string Assistant::appendService() {
     if (!deps_.location) return "";
     auto stations = deps_.location->nearestServiceStations(3);
     if (stations.empty()) return "";
+    const bool ar = (language_ == Language::ArabicEgypt);
     std::ostringstream os;
     for (size_t i = 0; i < stations.size(); ++i) {
         const auto& st = stations[i];
-        os << " " << st.name << ", " << static_cast<int>(st.distance_km + 0.5)
-           << " kilometres away" << (st.open_now ? "" : " (may be closed)") << ".";
+        if (ar) {
+            os << " " << st.name << "، على بعد " << static_cast<int>(st.distance_km + 0.5)
+               << " كيلومتر" << (st.open_now ? "" : " (ممكن تكون مقفولة)") << ".";
+        } else {
+            os << " " << st.name << ", " << static_cast<int>(st.distance_km + 0.5)
+               << " kilometres away" << (st.open_now ? "" : " (may be closed)") << ".";
+        }
     }
     return os.str();
 }

@@ -30,7 +30,8 @@ public:
 
     ScoringIntentMatcher();
 
-    IntentResult match(const std::string& utterance) const override;
+    IntentResult match(const std::string& utterance,
+                        Language language = Language::English) const override;
 
     // Minimum score for a confident answer. Below this we return Unknown rather
     // than guess — a wrong action is worse than admitting we didn't understand.
@@ -41,12 +42,18 @@ public:
     struct Score { Intent intent; float score; };
     std::vector<Score> scoreAll(const std::string& utterance) const;
 
+    // Arabic counterpart: no stemmer for Egyptian Arabic here, so every signal
+    // is matched as a raw substring of the (otherwise untouched) utterance
+    // rather than against tokenized/stemmed words. See ScoringIntentMatcher.cpp.
+    std::vector<Score> scoreAllArabic(const std::string& utterance) const;
+
 private:
     struct IntentSignals {
         Intent intent;
         std::vector<Signal> signals;
     };
     std::vector<IntentSignals> table_;
+    std::vector<IntentSignals> table_ar_;
     float threshold_ = 1.0f;
 };
 

@@ -28,6 +28,14 @@ enum class Severity {
 const char* toString(Severity s) noexcept;
 const char* toString(FaultSource s) noexcept;
 
+// The language the assistant listens and replies in. Selected in IVI Settings
+// on the Kotlin side and pushed down via Assistant::setLanguage(); everything
+// that composes user-facing text reads it from there.
+enum class Language {
+    English,
+    ArabicEgypt,
+};
+
 // A single fault as delivered by whatever produces it. Transport-agnostic on
 // purpose: a replay file, a localhost socket, or a CAN adapter all build this
 // same struct. Keep it a plain value type so it is trivially copyable/queueable.

@@ -48,10 +48,13 @@ class OfflineRecognitionService : RecognitionService() {
         /**
          * Stop after this much continuous silence following speech. This is dead
          * time the user feels directly, before inference has even started, so it
-         * is kept tight. Much below ~500 ms and a mid-sentence pause ends the
-         * utterance early.
+         * is kept tight -- but not so tight that an ordinary mid-sentence pause
+         * (breathing, thinking of the next word, a phrase that isn't your first
+         * language) truncates the utterance before you finish it. 600ms was
+         * cutting off real sentences early; 900ms costs a little more perceived
+         * latency in exchange for actually hearing the whole thing.
          */
-        private const val SILENCE_MS = 600L
+        private const val SILENCE_MS = 900L
 
         /** Hard cap: also bounds how long Whisper will then have to chew on. */
         private const val MAX_SESSION_MS = 12_000L
@@ -83,8 +86,9 @@ class OfflineRecognitionService : RecognitionService() {
         super.onCreate()
         // Loading costs seconds and must not happen on the first utterance.
         // WhisperStt holds the context process-wide, so this is a no-op after
-        // the first service instance.
-        Thread({ WhisperStt.ensureReady(filesDir) }, "whisper-load").start()
+        // the first service instance -- unless VoicePrefs' language has
+        // changed since, in which case it's exactly the point.
+        Thread({ WhisperStt.ensureReady(filesDir, VoicePrefs.getLanguage(this)) }, "whisper-load").start()
     }
 
     override fun onStartListening(intent: Intent?, listener: Callback) {
@@ -105,8 +109,9 @@ class OfflineRecognitionService : RecognitionService() {
         WakeWordService.pause()
 
         val mic = MicSource()
+        val language = VoicePrefs.getLanguage(this)
         try {
-            if (!WhisperStt.ensureReady(filesDir)) {
+            if (!WhisperStt.ensureReady(filesDir, language)) {
                 Log.e(TAG, "recognition requested but no model is loaded")
                 safe { listener.error(SpeechRecognizer.ERROR_SERVER) }
                 return
@@ -186,7 +191,7 @@ class OfflineRecognitionService : RecognitionService() {
             val trimmed = utterance.copyOfRange(from, maxOf(from, to))
             Log.d(TAG, "trimmed $used -> ${trimmed.size} samples")
 
-            val text = WhisperStt.transcribe(trimmed, trimmed.size)
+            val text = WhisperStt.transcribe(trimmed, trimmed.size, language)
             if (text.isBlank()) {
                 safe { listener.error(SpeechRecognizer.ERROR_NO_MATCH) }
             } else {

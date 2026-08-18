@@ -3,6 +3,8 @@
 #include <optional>
 #include <string>
 
+#include "FaultEvent.hpp"  // Language
+
 namespace assistant {
 
 // What the driver is trying to do. Kept small and closed on purpose: the
@@ -35,17 +37,21 @@ struct IntentResult {
 };
 
 // The seam. Anything that can turn an utterance into an intent implements this.
+// [language] is a hint, not a requirement to translate: a matcher that only
+// understands English (KeywordIntentMatcher) is free to ignore it.
 class IIntentMatcher {
 public:
     virtual ~IIntentMatcher() = default;
-    virtual IntentResult match(const std::string& utterance) const = 0;
+    virtual IntentResult match(const std::string& utterance,
+                                Language language = Language::English) const = 0;
 };
 
 // Grammar / keyword based matcher. Deterministic, tiny, English, zero deps.
 // Always consulted first: it is free and it cannot hallucinate.
 class KeywordIntentMatcher : public IIntentMatcher {
 public:
-    IntentResult match(const std::string& utterance) const override;
+    IntentResult match(const std::string& utterance,
+                        Language language = Language::English) const override;
 };
 
 // Exposed for reuse: the LLM fallback still extracts spoken diagnostic codes

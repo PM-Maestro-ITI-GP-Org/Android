@@ -15,3 +15,8 @@ local.properties
 #   git clone --depth 1 https://github.com/espeak-ng/espeak-ng
 /app/src/main/cpp/whisper.cpp/
 /app/src/main/cpp/espeak-ng/
+
+# Local Python env + rendered/converted model artifacts — not shipped in git,
+# pushed to device via adb per ModelPaths.kt.
+/scripts/.venv/
+/scripts/models/

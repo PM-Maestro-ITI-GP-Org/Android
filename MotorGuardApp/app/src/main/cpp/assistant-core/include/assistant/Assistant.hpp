@@ -40,6 +40,12 @@ public:
     // the response (also spoken via TTS). Thread-safe.
     std::string handleUtterance(const std::string& text);
 
+    // Which language handleUtterance/onFault compose replies in from here on.
+    // Defaults to English. Call this whenever the driver changes it in IVI
+    // Settings -- see VoiceEngine.setLanguage() on the Kotlin side.
+    void setLanguage(Language language);
+    Language language() const;
+
     // Feed a raw fault event directly (used by tests and by the subscription).
     void onFault(const FaultEvent& e);
 
@@ -71,6 +77,7 @@ private:
     std::vector<FaultEvent> faults_;         // current active + predicted
     std::optional<std::string> focus_code_;  // the fault under discussion
     std::string last_response_;              // for "say that again"
+    Language language_ = Language::English;  // guarded by mtx_
 };
 
 }  // namespace assistant

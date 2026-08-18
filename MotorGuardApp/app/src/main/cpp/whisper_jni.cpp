@@ -50,9 +50,18 @@ JNIEXPORT jboolean JNICALL
 Java_com_motorguard_ivi_ui_voice_WhisperStt_nativeInit(
         JNIEnv *env, jobject, jstring modelPath) {
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_ctx != nullptr) return JNI_TRUE;
 
     const std::string path = jstr(env, modelPath);
+
+    // The Kotlin side (WhisperStt.ensureReady) only calls this when the
+    // requested model actually differs from what's loaded, e.g. switching
+    // VoiceLanguage -- so a call reaching here always means "load this
+    // model instead," not "confirm the current one is ready."
+    if (g_ctx != nullptr) {
+        whisper_free(g_ctx);
+        g_ctx = nullptr;
+    }
+
     whisper_context_params cparams = whisper_context_default_params();
     // No GPU on this board; asking for one just logs noise.
     cparams.use_gpu = false;
@@ -68,15 +77,20 @@ Java_com_motorguard_ivi_ui_voice_WhisperStt_nativeInit(
 }
 
 /**
- * @param pcm    mono 16 kHz float samples, normalised to [-1, 1]
- * @param prompt biases decoding; the single most useful knob here. Priming with
- *               real DTC codes ("P0217, P0300, B1000") makes Whisper far more
- *               willing to emit letter-digit sequences instead of fitting them
- *               to ordinary English words.
+ * @param pcm      mono 16 kHz float samples, normalised to [-1, 1]
+ * @param prompt   biases decoding; the single most useful knob here. Priming with
+ *                 real DTC codes ("P0217, P0300, B1000") makes Whisper far more
+ *                 willing to emit letter-digit sequences instead of fitting them
+ *                 to ordinary language words.
+ * @param language ISO-639-1 code ("en", "ar", ...) forced on the decoder. An
+ *                 English-only model ignores this internally, but a
+ *                 multilingual one (used for Arabic) needs it explicitly --
+ *                 without it, whisper.cpp auto-detects from the first few
+ *                 seconds of audio, which is an extra failure mode this avoids.
  */
 JNIEXPORT jstring JNICALL
 Java_com_motorguard_ivi_ui_voice_WhisperStt_nativeTranscribe(
-        JNIEnv *env, jobject, jfloatArray pcm, jstring prompt, jint threads) {
+        JNIEnv *env, jobject, jfloatArray pcm, jstring prompt, jint threads, jstring language) {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_ctx == nullptr) {
         LOGE("whisper: transcribe before init");
@@ -90,9 +104,16 @@ Java_com_motorguard_ivi_ui_voice_WhisperStt_nativeTranscribe(
     env->GetFloatArrayRegion(pcm, 0, n, samples.data());
 
     const std::string primer = jstr(env, prompt);
+    const std::string lang = jstr(env, language);
 
-    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-    wparams.language         = "en";
+    // Beam search over greedy: explores multiple token hypotheses instead of
+    // committing to the single best token at each step, which measurably
+    // improves accuracy on short, easy-to-misread utterances -- the exact
+    // shape of a voice command. Costs roughly beam_size times the compute of
+    // greedy, which is the real trade-off against latency on the Pi 5.
+    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
+    wparams.beam_search.beam_size = 5;
+    wparams.language         = lang.empty() ? "en" : lang.c_str();
     wparams.translate        = false;
     wparams.n_threads        = threads > 0 ? threads : 4;
     wparams.no_timestamps    = true;

@@ -40,14 +40,28 @@ object VoiceEngine {
 
     /**
      * Ask the core about a recognised utterance.
+     *
+     * Sets the core's reply language first: it is stored on the C++ side
+     * (Assistant::language_) rather than passed with every call, because it
+     * also governs proactive announcements from [pushFault], which has no
+     * natural per-call language of its own.
+     *
      * @return reply to show and speak, or null if the core produced nothing.
      */
-    fun handle(utterance: String): String? {
+    fun handle(utterance: String, language: VoiceLanguage): String? {
         if (!ensureReady() || utterance.isBlank()) return null
+        setLanguage(language)
         val reply = runCatching { nativeHandle(utterance) }.getOrElse {
             Log.e(TAG, "nativeHandle failed", it); null
         }
         return reply?.takeIf { it.isNotBlank() }
+    }
+
+    /** Language subsequent replies (handle + proactive pushFault alerts) compose in. */
+    fun setLanguage(language: VoiceLanguage) {
+        if (!ensureReady()) return
+        runCatching { nativeSetLanguage(language.code) }
+            .onFailure { Log.e(TAG, "nativeSetLanguage failed", it) }
     }
 
     /**
@@ -79,6 +93,7 @@ object VoiceEngine {
     // --- native ------------------------------------------------------------
     private external fun nativeInit(): Boolean
     private external fun nativeFaultCount(): Int
+    private external fun nativeSetLanguage(code: String)
     private external fun nativeHandle(utterance: String): String
     private external fun nativePushFault(
         code: String, predicted: Boolean, sensorKey: String, sensorValue: Double,

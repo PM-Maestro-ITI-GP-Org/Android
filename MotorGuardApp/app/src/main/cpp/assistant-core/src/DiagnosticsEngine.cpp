@@ -74,10 +74,11 @@ int DiagnosticsEngine::faultCount() const {
     return n;
 }
 
-std::optional<FaultInfo> DiagnosticsEngine::lookup(const std::string& code) const {
+std::optional<FaultInfo> DiagnosticsEngine::lookup(const std::string& code, Language language) const {
     if (!db_) return std::nullopt;
     static const char* kSql =
-        "SELECT code,name,system,explanation,base_severity,drive_affecting,base_action "
+        "SELECT code,name,system,explanation,base_severity,drive_affecting,base_action,"
+        "name_ar,explanation_ar,base_action_ar "
         "FROM faults WHERE code = ?1;";
     sqlite3_stmt* st = nullptr;
     if (sqlite3_prepare_v2(db_, kSql, -1, &st, nullptr) != SQLITE_OK) {
@@ -93,35 +94,40 @@ std::optional<FaultInfo> DiagnosticsEngine::lookup(const std::string& code) cons
             const unsigned char* s = sqlite3_column_text(st, col);
             return s ? reinterpret_cast<const char*>(s) : "";
         };
+        const bool ar = (language == Language::ArabicEgypt);
         fi.code            = text(0);
-        fi.name            = text(1);
+        fi.name            = ar ? text(7) : text(1);
         fi.system          = text(2);
-        fi.explanation     = text(3);
+        fi.explanation     = ar ? text(8) : text(3);
         fi.base_severity   = severityFromInt(sqlite3_column_int(st, 4));
         fi.drive_affecting = sqlite3_column_int(st, 5) != 0;
-        fi.base_action     = text(6);
+        fi.base_action     = ar ? text(9) : text(6);
         result = std::move(fi);
     }
     sqlite3_finalize(st);
     return result;
 }
 
-Assessment DiagnosticsEngine::assess(const FaultEvent& event) const {
+Assessment DiagnosticsEngine::assess(const FaultEvent& event, Language language) const {
     Assessment a;
-    auto info = lookup(event.code);
+    auto info = lookup(event.code, language);
     if (!info) {
         // Unknown code: fall back to the sender's hint so we still say something
         // safe rather than nothing.
+        const bool ar = (language == Language::ArabicEgypt);
         a.found = false;
         a.info.code = event.code;
-        a.info.name = "Unrecognised fault code";
+        a.info.name = ar ? "كود عطل غير معروف" : "Unrecognised fault code";
         a.info.system = "Unknown";
-        a.info.explanation =
-            "I don't have details on this specific code, so I can't fully explain it.";
+        a.info.explanation = ar
+            ? "معنديش تفاصيل عن الكود ده بالتحديد، فمقدرش أشرحهولك بالكامل."
+            : "I don't have details on this specific code, so I can't fully explain it.";
         a.severity = event.severity_hint;
         a.action = (event.severity_hint >= Severity::Urgent)
-            ? "To be safe, treat this as serious and have the car checked as soon as you can."
-            : "Have the car checked at a service centre when convenient.";
+            ? (ar ? "عشان تبقى مطمن، اتعامل مع الكود ده على إنه خطير ووديها تتشاف أول ما تقدر."
+                  : "To be safe, treat this as serious and have the car checked as soon as you can.")
+            : (ar ? "وديها مركز صيانة أول ما يبقى مناسب ليك."
+                  : "Have the car checked at a service centre when convenient.");
         LOG_W(TAG, "unknown code '%s', using sender hint", event.code.c_str());
         return a;
     }
@@ -135,7 +141,7 @@ Assessment DiagnosticsEngine::assess(const FaultEvent& event) const {
     for (const auto& rule : rules_) {
         if (!rule.match_code.empty() && rule.match_code != event.code) continue;
         if (!rule.evaluate) continue;
-        auto out = rule.evaluate(event, a);
+        auto out = rule.evaluate(event, a, language);
         if (!out) continue;
         Severity raised = raiseOnly(a.severity, out->first);
         if (raised != a.severity || !out->second.empty()) {
@@ -162,12 +168,15 @@ void installDefaultRules(DiagnosticsEngine& engine) {
     // Coolant over-temp: escalate to StopNow past a hard limit.
     engine.addRule({
         "coolant over-temperature limit", "P0217",
-        [](const FaultEvent& e, const Assessment&) -> Ret {
+        [](const FaultEvent& e, const Assessment&, Language lang) -> Ret {
             if (e.frame("coolant_temp_c", 0.0) >= 118.0) {
                 return std::make_pair(
                     Severity::StopNow,
-                    "The engine is critically hot. Pull over safely and switch it "
-                    "off now to avoid permanent damage.");
+                    lang == Language::ArabicEgypt
+                        ? "المحرك سخن لدرجة خطيرة جدًا. قف على جنب بأمان واطفي "
+                          "المحرك فورًا عشان تتجنب تلف دائم."
+                        : "The engine is critically hot. Pull over safely and switch it "
+                          "off now to avoid permanent damage.");
             }
             return std::nullopt;
         }});
@@ -175,12 +184,15 @@ void installDefaultRules(DiagnosticsEngine& engine) {
     // Predicted coolant trend becomes more urgent if it is climbing fast.
     engine.addRule({
         "coolant trend acceleration", "PRED_COOLANT_TREND",
-        [](const FaultEvent& e, const Assessment&) -> Ret {
+        [](const FaultEvent& e, const Assessment&, Language lang) -> Ret {
             if (e.frame("trend_c_per_100km", 0.0) >= 3.0) {
                 return std::make_pair(
                     Severity::Soon,
-                    "The engine temperature is climbing faster than usual. Have the "
-                    "cooling system checked in the next day or two.");
+                    lang == Language::ArabicEgypt
+                        ? "حرارة المحرك بترتفع أسرع من المعتاد. ودّي نظام التبريد "
+                          "يتفحص خلال يوم أو يومين."
+                        : "The engine temperature is climbing faster than usual. Have the "
+                          "cooling system checked in the next day or two.");
             }
             return std::nullopt;
         }});
@@ -188,12 +200,15 @@ void installDefaultRules(DiagnosticsEngine& engine) {
     // Low system voltage: if it is very low, the car may stall soon.
     engine.addRule({
         "critical system voltage", "P0562",
-        [](const FaultEvent& e, const Assessment&) -> Ret {
+        [](const FaultEvent& e, const Assessment&, Language lang) -> Ret {
             if (e.hasFrame("voltage") && e.frame("voltage") <= 11.5) {
                 return std::make_pair(
                     Severity::Urgent,
-                    "The battery is draining and the car could stall. Head to the "
-                    "nearest service point now and avoid switching the engine off.");
+                    lang == Language::ArabicEgypt
+                        ? "البطارية بتفضى والعربية ممكن تقف فجأة. روح لأقرب نقطة "
+                          "خدمة دلوقتي وتجنب إنك تطفي المحرك."
+                        : "The battery is draining and the car could stall. Head to the "
+                          "nearest service point now and avoid switching the engine off.");
             }
             return std::nullopt;
         }});
@@ -201,12 +216,15 @@ void installDefaultRules(DiagnosticsEngine& engine) {
     // Misfire with a flashing lamp (catalyst-damaging) is always urgent+.
     engine.addRule({
         "active misfire severity", "P0300",
-        [](const FaultEvent& e, const Assessment&) -> Ret {
+        [](const FaultEvent& e, const Assessment&, Language lang) -> Ret {
             if (e.frame("misfire_flashing", 0.0) >= 1.0) {
                 return std::make_pair(
                     Severity::Urgent,
-                    "The misfire is severe enough to damage the exhaust system. "
-                    "Reduce speed and get it looked at today.");
+                    lang == Language::ArabicEgypt
+                        ? "التفويت شديد لدرجة إنه ممكن يتلف نظام العادم. قلل "
+                          "السرعة ووديها تتفحص النهاردة."
+                        : "The misfire is severe enough to damage the exhaust system. "
+                          "Reduce speed and get it looked at today.");
             }
             return std::nullopt;
         }});

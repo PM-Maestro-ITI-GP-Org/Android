@@ -41,10 +41,11 @@ struct SafetyRule {
     std::string name;
     // Applies to this code? Empty match_code means "any code".
     std::string match_code;
-    // Given the event and the current assessment, optionally return a stronger
-    // one. Return std::nullopt to leave it unchanged.
+    // Given the event, the current assessment and the reply language, optionally
+    // return a stronger severity plus the (already-localized) action text to
+    // use instead. Return std::nullopt to leave it unchanged.
     std::function<std::optional<std::pair<Severity, std::string>>(
-        const FaultEvent&, const Assessment&)> evaluate;
+        const FaultEvent&, const Assessment&, Language)> evaluate;
 };
 
 class DiagnosticsEngine {
@@ -66,11 +67,11 @@ public:
     // raise severity relative to the running assessment.
     void addRule(SafetyRule rule);
 
-    // Look up static info for a code.
-    std::optional<FaultInfo> lookup(const std::string& code) const;
+    // Look up static info for a code, localized to [language].
+    std::optional<FaultInfo> lookup(const std::string& code, Language language) const;
 
     // Full assessment: DB lookup + rules applied to this specific event.
-    Assessment assess(const FaultEvent& event) const;
+    Assessment assess(const FaultEvent& event, Language language) const;
 
     int faultCount() const;
 

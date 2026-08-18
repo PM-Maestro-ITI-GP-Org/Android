@@ -20,29 +20,31 @@ import java.nio.LongBuffer
  * a dependency for the wake word; building native ORT as well would double the
  * binary for no benefit.
  *
- * Two files per voice, pushed rather than bundled (they are ~30 MB and swapping
- * voices should not need a rebuild):
+ * One voice, always English -- output is English-only regardless of STT input
+ * language (see VoiceLanguage's doc comment), so there is nothing to select
+ * here. Pushed rather than bundled (~30 MB, and swapping the voice shouldn't
+ * need a rebuild):
  *
  *   adb push en_US-lessac-medium.onnx      /data/local/tmp/
  *   adb push en_US-lessac-medium.onnx.json /data/local/tmp/
  *   adb shell su 0 cp /data/local/tmp/en_US-lessac-medium.onnx \
- *       /data/user/10/com.motorguard.ivi/files/piper.onnx
+ *       /data/user/10/com.motorguard.ivi/files/piper_en.onnx
  *   adb shell su 0 cp /data/local/tmp/en_US-lessac-medium.onnx.json \
- *       /data/user/10/com.motorguard.ivi/files/piper.json
+ *       /data/user/10/com.motorguard.ivi/files/piper_en.json
  *   adb shell su 0 chown u10_a103:u10_a103 \
- *       /data/user/10/com.motorguard.ivi/files/piper.*
+ *       /data/user/10/com.motorguard.ivi/files/piper_*
  *   adb shell su 0 restorecon -R /data/user/10/com.motorguard.ivi/files/
  *
- * espeak-ng's data directory also has to be on disk; see espeakDataDir below.
+ * espeak-ng's data directory also has to be on disk; see ESPEAK_DIR below.
  * Voices: https://huggingface.co/rhasspy/piper-voices
  */
 object PiperTts {
 
     private const val TAG = "MotorGuardVoice"
 
-    const val MODEL_FILE = "piper.onnx"
-    const val CONFIG_FILE = "piper.json"
     const val ESPEAK_DIR = "espeak"        // contains espeak-ng-data/
+    private const val MODEL_FILE = "piper_en.onnx"
+    private const val CONFIG_FILE = "piper_en.json"
 
     /** Piper's defaults; the config can override them per voice. */
     private const val DEFAULT_NOISE = 0.667f
@@ -66,49 +68,57 @@ object PiperTts {
     var sampleRate = 22_050
         private set
 
-    @Volatile private var ready = false
+    @Volatile private var espeakReady = false
+    @Volatile private var modelReady = false
 
     init {
         runCatching { System.loadLibrary("motorguardvoice") }
             .onFailure { Log.e(TAG, "could not load native library", it) }
     }
 
+    /** True once the voice is loaded and ready to synthesize. */
+    val ready: Boolean get() = modelReady
+
     @Synchronized
     fun ensureReady(filesDir: File): Boolean {
-        if (ready) return true
+        if (modelReady) return true
+
+        if (!espeakReady) {
+            val espeak = ModelPaths.dir(filesDir, ESPEAK_DIR)
+            if (espeak == null || !File(espeak, "espeak-ng-data").isDirectory) {
+                Log.e(TAG, "espeak-ng-data missing in ${filesDir.absolutePath}")
+                return false
+            }
+            espeakReady = runCatching { nativeInitEspeak(espeak.absolutePath) }
+                .onFailure { Log.e(TAG, "espeak init threw", it) }
+                .getOrDefault(false)
+            if (!espeakReady) return false
+        }
 
         val model = ModelPaths.file(filesDir, MODEL_FILE)
         val config = ModelPaths.file(filesDir, CONFIG_FILE)
-        val espeak = ModelPaths.dir(filesDir, ESPEAK_DIR)
-        if (model == null || config == null || espeak == null) {
+        if (model == null || config == null) {
             Log.e(TAG, "piper model or config missing in ${filesDir.absolutePath}")
             return false
         }
-        if (!File(espeak, "espeak-ng-data").isDirectory) {
-            Log.e(TAG, "espeak-ng-data missing under ${espeak.absolutePath}")
-            return false
-        }
-
-        if (!runCatching { nativeInitEspeak(espeak.absolutePath) }
-                .onFailure { Log.e(TAG, "espeak init threw", it) }
-                .getOrDefault(false)
-        ) return false
 
         if (!loadConfig(config)) return false
 
-        ready = runCatching {
-            env = ai.onnxruntime.OrtEnvironment.getEnvironment()
+        modelReady = runCatching {
+            env = env ?: ai.onnxruntime.OrtEnvironment.getEnvironment()
             val opts = ai.onnxruntime.OrtSession.SessionOptions().apply {
                 // Leave a core for the wake word, which never stops running.
                 setIntraOpNumThreads(3)
             }
-            session = env!!.createSession(model.absolutePath, opts)
-            Log.i(TAG, "piper loaded (${phonemeIds.size} phonemes, ${sampleRate}Hz)")
+            val newSession = env!!.createSession(model.absolutePath, opts)
+            session?.close()
+            session = newSession
+            Log.i(TAG, "piper loaded: (${phonemeIds.size} phonemes, ${sampleRate}Hz)")
             true
         }.onFailure { Log.e(TAG, "piper model failed to load", it) }
             .getOrDefault(false)
 
-        return ready
+        return modelReady
     }
 
     private fun loadConfig(config: File): Boolean = runCatching {
@@ -260,6 +270,7 @@ object PiperTts {
         runCatching { session?.close() }; session = null
         env = null
         runCatching { nativeReleaseEspeak() }
-        ready = false
+        espeakReady = false
+        modelReady = false
     }
 }

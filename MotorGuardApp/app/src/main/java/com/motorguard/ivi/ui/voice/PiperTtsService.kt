@@ -10,15 +10,24 @@ import android.speech.tts.TextToSpeechService
 import android.util.Log
 
 /**
- * A TextToSpeechService backed by PiperTts.
+ * A TextToSpeechService that speaks English through PiperTts (neural,
+ * on-device synthesis).
  *
- * Implementing the platform interface rather than calling PiperTts directly is
- * deliberate: VoiceOverlaySession already uses android.speech.tts.TextToSpeech,
- * so once this engine is registered that existing code starts working with no
- * changes at all, and anything else on the device gets speech too.
+ * Implementing the platform interface rather than calling PiperTts directly
+ * is deliberate: VoiceOverlaySession already uses
+ * android.speech.tts.TextToSpeech, so once this engine is registered that
+ * existing code starts working with no changes at all, and anything else on
+ * the device gets speech too.
  *
  * Stock AAOS ships no TTS engine, which is why the session logged
  * "TTS unavailable; overlay will show text only" until this landed.
+ *
+ * Always English, regardless of [VoicePrefs]'s language (which only affects
+ * STT input -- see VoiceLanguage's doc comment) or the lang/country the
+ * caller passes in. This engine used to also speak Egyptian Arabic through
+ * pre-rendered clips (see git history / ArabicClipTts.kt, now unused but
+ * left on disk) when Arabic was selected; that path was removed so replies
+ * are English-only no matter what language the driver spoke in.
  *
  * Register it after install:
  *   settings --user 10 put secure tts_default_synth com.motorguard.ivi
@@ -27,10 +36,6 @@ class PiperTtsService : TextToSpeechService() {
 
     companion object {
         private const val TAG = "MotorGuardVoice"
-
-        /** The voice is en_US; nothing else is claimed. */
-        private const val LANG = "eng"
-        private const val COUNTRY = "USA"
 
         /**
          * Split on sentence-ending punctuation followed by whitespace. The
@@ -44,22 +49,25 @@ class PiperTtsService : TextToSpeechService() {
 
     override fun onCreate() {
         super.onCreate()
-        // Loading the VITS model and espeak's data takes a moment; do it now so
-        // the first utterance is not delayed.
+        // Loading the VITS model and espeak's data takes a moment; do it now
+        // so the first utterance is not delayed.
         Thread({ PiperTts.ensureReady(filesDir) }, "piper-load").start()
     }
 
-    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int =
-        when {
-            lang != LANG -> TextToSpeech.LANG_NOT_SUPPORTED
-            country == COUNTRY -> TextToSpeech.LANG_COUNTRY_AVAILABLE
-            else -> TextToSpeech.LANG_AVAILABLE
-        }
+    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int {
+        val locale = VoiceLanguage.ENGLISH.locale
+        if (lang != locale.isO3Language) return TextToSpeech.LANG_NOT_SUPPORTED
+        return if (country == locale.isO3Country) TextToSpeech.LANG_COUNTRY_AVAILABLE
+        else TextToSpeech.LANG_AVAILABLE
+    }
 
     override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int =
         onIsLanguageAvailable(lang, country, variant)
 
-    override fun onGetLanguage(): Array<String> = arrayOf(LANG, COUNTRY, "")
+    override fun onGetLanguage(): Array<String> {
+        val locale = VoiceLanguage.ENGLISH.locale
+        return arrayOf(locale.isO3Language, locale.isO3Country, "")
+    }
 
     override fun onStop() {
         stopped = true
@@ -69,9 +77,11 @@ class PiperTtsService : TextToSpeechService() {
         if (request == null || callback == null) return
         stopped = false
 
+        val sampleRate = PiperTts.sampleRate
+
         val text = request.charSequenceText?.toString().orEmpty()
         if (text.isBlank()) {
-            callback.start(PiperTts.sampleRate, AudioFormat.ENCODING_PCM_16BIT, 1)
+            callback.start(sampleRate, AudioFormat.ENCODING_PCM_16BIT, 1)
             callback.done()
             return
         }
@@ -81,6 +91,7 @@ class PiperTtsService : TextToSpeechService() {
             callback.error()
             return
         }
+        val synthesize: (String) -> ShortArray = { sentence -> PiperTts.synthesize(sentence) }
 
         // Piper generates a whole utterance before any audio exists, so a
         // multi-sentence reply means a long silence with nothing playing --
@@ -96,9 +107,7 @@ class PiperTtsService : TextToSpeechService() {
             return
         }
 
-        if (callback.start(PiperTts.sampleRate, AudioFormat.ENCODING_PCM_16BIT, 1) !=
-            TextToSpeech.SUCCESS
-        ) {
+        if (callback.start(sampleRate, AudioFormat.ENCODING_PCM_16BIT, 1) != TextToSpeech.SUCCESS) {
             callback.error()
             return
         }
@@ -112,7 +121,7 @@ class PiperTtsService : TextToSpeechService() {
         for (sentence in sentences) {
             if (stopped) return
 
-            val pcm = PiperTts.synthesize(sentence)
+            val pcm = synthesize(sentence)
             if (pcm.isEmpty()) continue
             spoke = true
 
