@@ -1,29 +1,53 @@
 # Motor Guard — AAOS in-tree build
 
-This branch is the **Soong drop-in**: Motor Guard laid out to be deployed into an
+This repository is the **Soong drop-in**: Motor Guard laid out to be deployed into an
 AOSP / Raspberry Pi (KonstaKANG) tree and built with `m MotorGuard` as a platform-signed,
 privileged AAOS launcher. There is no Gradle build here — `Android.bp` is the only build file.
 
-This branch is the **diagnostics** drop-in: media, navigation, settings, voice **and** the
-diagnostics screen — the 3D vehicle stage, hotspots, health ring, alert list and the
-engineering-insights capture — in one image. It is `media-nav-settings-voice_forAAOS` plus
-everything the diagnostics work needs from the tree; see [What diagnostics adds to the
-build](#what-diagnostics-adds-to-the-build).
+It carries media, navigation, settings, voice **and** the diagnostics screen — the 3D vehicle
+stage, hotspots, health ring, alert list and the engineering-insights capture — in one image;
+see [What diagnostics adds to the build](#what-diagnostics-adds-to-the-build).
+
+> **This used to be the `main_AOSP` branch of `PM-Maestro-ITI-GP-Org/Android`.** It now lives
+> in its own repository, [`PM-Maestro-ITI-GP-Org/MotorGuard-AOSP`](https://github.com/PM-Maestro-ITI-GP-Org/MotorGuard-AOSP),
+> because the build files and the application are separate things with separate histories:
+> the app repo is a Gradle project, this one is a Soong tree that consumes it. The full
+> history came across, so `git log` still reaches the commits that predate the split.
 
 > **The app source is a submodule.** `vendor/motorguard/MotorGuard/MotorGuard_Application/app/`
-> is a git submodule of `PM-Maestro-ITI-GP-Org/Android`, checked out to a branch of your choice
+> is a git submodule of `PM-Maestro-ITI-GP-Org/Android`, tracking a branch of your choice
 > (default `main`). That branch holds the **final application**.
 > `deploy.sh` fetches and checks out its tip, and the blue print reads the sources from
 > `app/MotorGuardApp/app/src/main/...` and `app/MotorGuardApp/core/vehicle-data-*/src/main/...`,
 > ignoring the Gradle files and everything else.
-> When your friends ship a new final build on a new branch, set `APP_BRANCH` in `deploy.conf`
-> and re-run `./deploy.sh` — nothing else to change.
+
+### Keeping the app current
+
+`.gitmodules` sets `branch = main`, so the submodule tracks a branch rather than a pinned
+commit. Two ways to pick up new application work:
+
+```bash
+./deploy.sh                          # what you normally run: fetches APP_BRANCH and checks
+                                     # out its tip before copying the tree. No commit needed.
+git submodule update --remote        # updates the checkout in place, without deploying
+```
+
+To build a *different* branch of the app — a colleague's final branch, say — set `APP_BRANCH`
+in `deploy.conf` and re-run `./deploy.sh`. Nothing else changes. To record that version in this
+repo's history, commit the submodule pointer afterwards:
+
+```bash
+git add vendor/motorguard/MotorGuard/MotorGuard_Application/app && git commit -m "aosp: bump app submodule"
+```
+
+Committing the pointer is optional — `deploy.sh` always checks out the branch tip regardless —
+but it is what makes a given commit of this repo reproduce a specific image later.
 
 
 ## Runtime models — not in this tree, not installed by `deploy.sh`
 
 The voice assistant and the intent matcher load their models from **`/system/etc/motorguard/`**
-at runtime. Nothing in this branch puts them there: they are large binaries, they are not in
+at runtime. Nothing in this repo puts them there: they are large binaries, they are not in
 either repo, and `deploy.sh` does not copy them. A freshly flashed image therefore boots an app
 whose speech and understanding are silently disabled — it does not crash, it just declines.
 
@@ -69,14 +93,26 @@ vendor/motorguard/MotorGuard/  the drop-in package (blue print + glue)
     Android.bp                 the blue print — all Soong modules (paths relative to this file)
     motorservice/              the SOME/IP link to the diagnostics unit: native client,
                                Kotlin bridge, host tests, and the patch that wires it in
-    prebuilts/fetch.sh         downloads + SHA256-verifies the 22 prebuilt AARs/jars (never
+    prebuilts/fetch.sh         downloads + SHA256-verifies the 22 prebuilt AARs/jars, then
+                               unzips their arm64 .so into prebuilts/jni/arm64-v8a/ (never
                                committed; skips files already present — deploy.sh preserves them)
+    proguard-r8.flags          R8 keep rules: the SOME/IP JNI callbacks, plus the consumer
+                               rules Soong does NOT take from the AARs themselves
     privapp_permissions_com.motorguard.ivi.xml   privileged allow-list → /system/etc/permissions
+    default_permissions_com.motorguard.ivi.xml   runtime grants → /system/etc/default-permissions
     res-platform/              overlay flipping use_real_connectivity → true (real radios)
- device/brcm/rpi5/
-   aosp_rpi5_car.mk.patch     device integration patch (applied by deploy.sh)
-   BoardConfig.mk.patch       display note: use the connected monitor's native EDID (no override)
-   vendor.prop.patch          adb over ethernet (HWC mode follows the monitor's native EDID, e.g. 1920x1080)
+ device/brcm/rpi5/            all applied by deploy.sh
+   aosp_rpi5_car.mk.patch     device integration (inherit-product + immersive CarSystemUI)
+   BoardConfig.mk.patch       display: use the connected monitor's native EDID (no override)
+   vendor.prop.patch          adb over ethernet + HWC mode baked to the panel's native res
+   eth0_routes.patch          re-adds eth0's route to Android's policy tables at boot, and
+                              gives eth0 both the dev-link and QNX-segment addresses. Without
+                              it adb-over-ethernet AND the SOME/IP link hit ip rule 32000.
+   usb_audio_policy_configuration.xml.patch   allow mono capture-only USB microphones
+   car_bluetooth_prop.patch   applied to packages/services/Car, not here: drops the Car
+                              product's bluetooth.profile.map.client.enabled=true, which
+                              collides with motorguard.mk's =false and makes gen_build_prop
+                              fail the FULL image build (never `m MotorGuard`)
 ```
 
 `Android.bp` defines the `MotorGuard` app, `libmotorguardvoice` (the native voice/reasoning
@@ -145,7 +181,7 @@ platform-re-signed APK instead of compiling from source.
 ## Manual install (what deploy.sh automates)
 
 ```bash
-git clone --recurse-submodules -b media-nav-settings-voice-diagnostics_forAAOS git@github.com:PM-Maestro-ITI-GP-Org/Android.git dropin
+git clone --recurse-submodules git@github.com:PM-Maestro-ITI-GP-Org/MotorGuard-AOSP.git dropin
 # the diagnostics 3D model — .gitignored on the app branch, so install it by hand here
 APP=dropin/vendor/motorguard/MotorGuard/MotorGuard_Application/app
 cp $APP/vehicle3dModel/porsche_mission_e/porsche_mission_e_diag_v2.glb \
@@ -182,7 +218,7 @@ vendor.hwc.drm.force_mode=1920x1080
 
 ## What diagnostics adds to the build
 
-Everything below is the difference between this branch and `media-nav-settings-voice_forAAOS`.
+Everything below is what the diagnostics work added on top of the earlier media/nav/settings/voice drop-in (the `media-nav-settings-voice_forAAOS` branch, before the split).
 The app branch it deploys carries the diagnostics screen; these are the four things the
 in-tree build needs that Gradle was doing for it.
 
@@ -332,7 +368,7 @@ checked, and what was not:
   by name. They exist in the app author's working tree but are not committed. `deploy.sh`
   warns; the stage renders without its floor until they are pushed.
 
-### Everything else — verified (unchanged from `media-nav-settings-voice_forAAOS`)
+### Everything else — verified (unchanged from the pre-diagnostics drop-in)
 
 - **`m MotorGuard` builds clean** on the KonstaKANG android-15.0.0_r32 tree (28 min on a
   16 GB machine with the knobs above). All soong/kotlin/native issues are fixed in this tree:
