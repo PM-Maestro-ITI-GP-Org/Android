@@ -60,6 +60,18 @@ android_app {
     jni_libs: [
         "libmotorguardvoice",
         "libmotorguardsomeip",
+        // The AARs' own native libraries. Listing motorguard-filament et al. in
+        // static_libs is NOT enough: `extract_jni: true` never fires for an
+        // android_library_import in this tree (ctx.MultiTargets() is empty), so no
+        // *_jni.zip is produced and the APK ends up with zero lib/ entries. These are
+        // cc_prebuilt_library_shared modules over the .so files prebuilts/fetch.sh
+        // unzips out of those same AARs — see the bottom of this file.
+        "libfilament-jni",
+        "libgltfio-jni",
+        "libfilament-utils-jni",
+        "libmaplibre",
+        "libonnxruntime",
+        "libonnxruntime4j_jni",
     ],
 
     // System APIs (WifiManager/BluetoothAdapter control) + platform signing so the app
@@ -139,8 +151,12 @@ android_app {
     },
 
     // Ships in /system/priv-app so `privileged: true` + the allow-list below apply.
-    // required grants the privileged-permission allow-list file at build time.
-    required: ["privapp_permissions_com.motorguard.ivi"],
+    // required pulls in both permission files at build time: the privileged
+    // allow-list, and the default runtime grants (mic/location/contacts/BT).
+    required: [
+        "privapp_permissions_com.motorguard.ivi",
+        "default_permissions_com.motorguard.ivi",
+    ],
 }
 
 // The privileged-permission allow-list, installed to /system/etc/permissions.
@@ -148,6 +164,18 @@ prebuilt_etc {
     name: "privapp_permissions_com.motorguard.ivi",
     sub_dir: "permissions",
     src: "privapp_permissions_com.motorguard.ivi.xml",
+    filename_from_src: true,
+}
+
+// Default RUNTIME permission grants, installed to /system/etc/default-permissions.
+// Distinct from the allow-list above: that one covers privileged permissions, this
+// one pre-grants the dangerous/runtime permissions (mic, location, contacts, BT) that
+// would otherwise sit denied because nothing on a HOME-launching head unit ever taps
+// through a permission dialog.
+prebuilt_etc {
+    name: "default_permissions_com.motorguard.ivi",
+    sub_dir: "default-permissions",
+    src: "default_permissions_com.motorguard.ivi.xml",
     filename_from_src: true,
 }
 
@@ -512,3 +540,94 @@ java_import {
 //     dex_preopt: { enabled: false },
 //     required: ["privapp_permissions_com.motorguard.ivi"],
 // }
+
+// ---------------------------------------------------------------------------
+// Native libraries carried inside the vendored AARs.
+//
+// These exist because `extract_jni: true` on the android_library_import modules
+// above does NOT work in this tree: Soong only emits the <arch>_jni.zip that
+// feeds the APK for each entry in ctx.MultiTargets(), and that list is empty for
+// an android_library_import here. Nothing fails at build time — the APK simply
+// ships with zero lib/ entries, and the app dies on first use of the 3D stage:
+//
+//     java.lang.UnsatisfiedLinkError: dlopen failed:
+//       library "libfilament-jni.so" not found
+//
+// ONNX Runtime and MapLibre fail the same way, quieter: the wake word never
+// arms and the nav map silently falls back to the Canvas renderer.
+//
+// prebuilts/fetch.sh unzips these out of the AARs it already downloads and
+// SHA256-verifies, so nothing extra is committed and the checksums still cover
+// them. Listing them in the app's jni_libs installs them to /system/lib64 with a
+// symlink in /system/priv-app/MotorGuard/lib/arm64 — the same shape that
+// libmotorguardvoice and libmotorguardsomeip already have on a working image.
+//
+// check_elf_files is off because these are third-party binaries linked against
+// the NDK, not the platform: their DT_NEEDED entries do not resolve against
+// AOSP's stubs and Soong would otherwise reject them.
+// ---------------------------------------------------------------------------
+cc_prebuilt_library_shared {
+    name: "libfilament-jni",
+    arch: { arm64: { srcs: ["prebuilts/jni/arm64-v8a/libfilament-jni.so"] } },
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: { none: true },
+    stl: "none",
+    system_shared_libs: [],
+    shared_libs: [],
+}
+
+cc_prebuilt_library_shared {
+    name: "libgltfio-jni",
+    arch: { arm64: { srcs: ["prebuilts/jni/arm64-v8a/libgltfio-jni.so"] } },
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: { none: true },
+    stl: "none",
+    system_shared_libs: [],
+    shared_libs: [],
+}
+
+cc_prebuilt_library_shared {
+    name: "libfilament-utils-jni",
+    arch: { arm64: { srcs: ["prebuilts/jni/arm64-v8a/libfilament-utils-jni.so"] } },
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: { none: true },
+    stl: "none",
+    system_shared_libs: [],
+    shared_libs: [],
+}
+
+cc_prebuilt_library_shared {
+    name: "libmaplibre",
+    arch: { arm64: { srcs: ["prebuilts/jni/arm64-v8a/libmaplibre.so"] } },
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: { none: true },
+    stl: "none",
+    system_shared_libs: [],
+    shared_libs: [],
+}
+
+cc_prebuilt_library_shared {
+    name: "libonnxruntime",
+    arch: { arm64: { srcs: ["prebuilts/jni/arm64-v8a/libonnxruntime.so"] } },
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: { none: true },
+    stl: "none",
+    system_shared_libs: [],
+    shared_libs: [],
+}
+
+cc_prebuilt_library_shared {
+    name: "libonnxruntime4j_jni",
+    arch: { arm64: { srcs: ["prebuilts/jni/arm64-v8a/libonnxruntime4j_jni.so"] } },
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: { none: true },
+    stl: "none",
+    system_shared_libs: [],
+    shared_libs: [],
+}

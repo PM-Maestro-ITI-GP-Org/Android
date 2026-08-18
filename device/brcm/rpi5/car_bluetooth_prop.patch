@@ -1,0 +1,19 @@
+diff --git a/car_product/properties/bluetooth.prop b/car_product/properties/bluetooth.prop
+index 885dbfc9ae..ac02cc46b4 100644
+--- a/car_product/properties/bluetooth.prop
++++ b/car_product/properties/bluetooth.prop
+@@ -39,7 +39,13 @@ bluetooth.profile.a2dp.source.enabled=true
+ bluetooth.profile.avrcp.target.enabled=true
+ bluetooth.profile.gatt.enabled=true
+ bluetooth.profile.hfp.hf.enabled=true
+-bluetooth.profile.map.client.enabled=true
++# MAP client is set by vendor/motorguard/MotorGuard/motorguard.mk instead (=false).
++# This board has no telephony hardware, so MapClientContent throws
++# "addSubInfo is unsupported without android.hardware.telephony.subscription"
++# the moment the profile reaches Connected and the BT stack crash-loops.
++# gen_build_prop rejects the same sysprop being assigned twice, so it is
++# disabled here rather than overridden.
++# bluetooth.profile.map.client.enabled=true
+ bluetooth.profile.pan.nap.enabled=true
+ bluetooth.profile.pan.panu.enabled=true
+ bluetooth.profile.pbap.client.enabled=true

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default runtime-permission grants for Motor Guard.
+
+  Being a privileged system app is NOT enough for these. `privileged: true` plus
+  privapp_permissions_com.motorguard.ivi.xml covers only the *privileged*
+  (signature|privileged) permissions — NETWORK_SETTINGS, BLUETOOTH_PRIVILEGED and
+  friends. Everything below is a *runtime* (dangerous) permission, which the
+  platform leaves ungranted until something calls requestPermissions() and a user
+  taps Allow.
+
+  There is no user to tap Allow on a head unit that boots straight into this app as
+  HOME, so they are granted here instead. PackageManager reads this directory on
+  first boot and grants each listed permission to the named package.
+
+  fixed="false" so they remain revocable from Settings — a fixed grant cannot be
+  turned off at all, which is the wrong trade for a dev unit and would hide a
+  permission problem rather than show it.
+
+  Installed to /system/etc/default-permissions/ by the prebuilt_etc module in
+  Android.bp. Keep this list in step with AndroidManifest.xml: a permission granted
+  here but not requested there does nothing, and one requested but not granted here
+  silently returns denied at runtime.
+-->
+<exceptions>
+    <exception package="com.motorguard.ivi">
+
+        <!-- Voice assistant: wake word + speech capture (USB mic). -->
+        <permission name="android.permission.RECORD_AUDIO" fixed="false"/>
+        <permission name="android.permission.FOREGROUND_SERVICE_MICROPHONE" fixed="false"/>
+
+        <!-- Navigation: map centring and turn-by-turn.
+             COARSE is granted by this policy; FINE is NOT, and listing it here is not
+             enough. DefaultPermissionGrantPolicy grants the location permission GROUP,
+             and since Android 12 a group grant resolves to approximate location only —
+             measured on this board: COARSE granted=true, FINE granted=false, while a
+             manual `pm grant ... ACCESS_FINE_LOCATION` succeeds. fixed="true" is used
+             here to ask the policy to treat it as a system-fixed grant rather than a
+             user-revocable default; if it still does not take, the grant has to happen
+             at boot (see eth0_routes.sh for the pattern) or the app has to request it. -->
+        <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="true"/>
+        <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="false"/>
+        <permission name="android.permission.FOREGROUND_SERVICE_LOCATION" fixed="false"/>
+
+        <!-- Bluetooth: phone pairing, A2DP media, HFP calls. -->
+        <permission name="android.permission.BLUETOOTH_CONNECT" fixed="false"/>
+        <permission name="android.permission.BLUETOOTH_SCAN" fixed="false"/>
+
+        <!-- Wi-Fi scanning needs this from Android 13 on. -->
+        <permission name="android.permission.NEARBY_WIFI_DEVICES" fixed="false"/>
+
+        <!-- Dialer: contact list, call placement, call state. -->
+        <permission name="android.permission.READ_CONTACTS" fixed="false"/>
+        <permission name="android.permission.CALL_PHONE" fixed="false"/>
+        <permission name="android.permission.READ_PHONE_STATE" fixed="false"/>
+
+        <!-- Media browsing of on-device audio. READ_EXTERNAL_STORAGE is inert from
+             Android 13 on — the platform split it into the READ_MEDIA_* permissions and
+             ignores the old one, which is why granting only it left READ_MEDIA_AUDIO
+             denied on this board. The manifest requests all three; grant all three. -->
+        <permission name="android.permission.READ_EXTERNAL_STORAGE" fixed="false"/>
+        <permission name="android.permission.READ_MEDIA_AUDIO" fixed="false"/>
+        <permission name="android.permission.READ_MEDIA_VIDEO" fixed="false"/>
+
+    </exception>
+</exceptions>

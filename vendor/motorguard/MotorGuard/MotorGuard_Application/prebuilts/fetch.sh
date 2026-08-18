@@ -45,3 +45,39 @@ b03d35dd50698d0c61e28eec24734b7b257a0f13017817375598c0d3af49da39  filament-andro
 EOF
 
 echo "All $TOTAL prebuilts present and SHA256-verified."
+
+# ---------------------------------------------------------------------------
+# Extract the AARs' arm64 native libraries.
+#
+# Why this is done here and not by Soong: the imports below set
+# `extract_jni: true`, but that rule only fires for each entry in
+# ctx.MultiTargets(), which is EMPTY for an android_library_import in this tree
+# — so no *_jni.zip is ever produced and the APK ships with zero .so entries.
+# The failure is silent at build time and shows up on device as:
+#
+#   java.lang.UnsatisfiedLinkError: dlopen failed: library "libfilament-jni.so" not found
+#
+# So the .so files are pulled out here and declared as cc_prebuilt_library_shared
+# modules in Android.bp, which puts them in the app's jni_libs the same way
+# libmotorguardvoice/libmotorguardsomeip already work.
+#
+# Not committed: these come straight out of the AARs above, which are themselves
+# fetched and SHA256-verified, so the checksum already covers them.
+# ---------------------------------------------------------------------------
+JNI_DIR="$DIR/jni/arm64-v8a"
+mkdir -p "$JNI_DIR"
+JNI_COUNT=0
+for AAR in onnxruntime-android-1.19.2.aar android-sdk-11.8.0.aar \
+           filament-android-1.56.0.aar gltfio-android-1.56.0.aar \
+           filament-utils-android-1.56.0.aar; do
+  [ -f "$DIR/$AAR" ] || continue
+  while read -r ENTRY; do
+    [ -n "$ENTRY" ] || continue
+    SO="$(basename "$ENTRY")"
+    unzip -o -j -q "$DIR/$AAR" "$ENTRY" -d "$JNI_DIR"
+    JNI_COUNT=$((JNI_COUNT + 1))
+  done <<EOJ
+$(unzip -Z1 "$DIR/$AAR" 'jni/arm64-v8a/*.so' 2>/dev/null)
+EOJ
+done
+echo "Extracted $JNI_COUNT arm64 native libraries to prebuilts/jni/arm64-v8a/."

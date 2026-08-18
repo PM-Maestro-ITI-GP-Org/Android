@@ -163,9 +163,23 @@ rm -f "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/app/.git"
 rm -rf "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/app/vehicle3dModel"
 
 if [ -n "$PREBUILT_BAK" ] && [ -d "$PREBUILT_BAK" ]; then
-  rm -rf "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts"
-  mv "$PREBUILT_BAK" "$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts"
-  echo "  preserved existing prebuilts (fetch.sh will skip verified files)"
+  # Restore ONLY the downloaded artifacts, never fetch.sh or README.md. Restoring the
+  # whole directory put the PREVIOUS deploy's fetch.sh back, so a drop-in that added
+  # dependencies kept running the old manifest: it printed "All 17 prebuilts present
+  # and SHA256-verified", exited 0, and the build then died in soong with
+  #   module "motorguard-kotlin-math": source path ".../kotlin-math-jvm-1.5.3.jar" does not exist
+  # fetch.sh is idempotent and re-verifies SHA256, so keeping the artifacts alone is enough.
+  NEW_PREBUILTS="$AOSP_ROOT/vendor/motorguard/MotorGuard/MotorGuard_Application/prebuilts"
+  find "$PREBUILT_BAK" -maxdepth 1 -type f \( -name '*.aar' -o -name '*.jar' \) \
+    -exec mv -n {} "$NEW_PREBUILTS/" \; 2>/dev/null || true
+  # The extracted JNI .so files too — fetch.sh re-extracts them, but moving them saves
+  # re-unzipping five AARs on every deploy.
+  if [ -d "$PREBUILT_BAK/jni" ]; then
+    mkdir -p "$NEW_PREBUILTS/jni"
+    cp -rn "$PREBUILT_BAK/jni/." "$NEW_PREBUILTS/jni/" 2>/dev/null || true
+  fi
+  rm -rf "$PREBUILT_BAK"
+  echo "  preserved downloaded artifacts (fetch.sh from the drop-in will re-verify)"
 fi
 
 # The app branch still ships an obsolete self-contained MotorGuardApp/aosp/Android.bp
@@ -202,6 +216,50 @@ apply_device_patch() {
 apply_device_patch "aosp_rpi5_car.mk.patch" "aosp_rpi5_car.mk" "CarSystemUISystemBarPersistcyImmersive"
 apply_device_patch "BoardConfig.mk.patch" "BoardConfig.mk" "connected monitor's native EDID"
 apply_device_patch "vendor.prop.patch" "vendor.prop" "service.adb.tcp.port=5555"
+# eth0's connected route is not in Android's policy tables (the ConnectivityRpiOverlay
+# strips NET_CAPABILITY_INTERNET from eth0), so without this adb/scrcpy over ethernet AND
+# the SOME/IP link to the QNX diagnostics unit both fall through to ip rule 32000.
+apply_device_patch "eth0_routes.patch" "ramdisk/eth0_routes.sh" "persist.motorguard.eth0_addr"
+# Mono capture-only USB microphones are rejected by the stock policy.
+apply_device_patch "usb_audio_policy_configuration.xml.patch" \
+  "audio/usb_audio_policy_configuration.xml" "AUDIO_CHANNEL_IN_MONO"
+
+# Guard against this list going stale again: every *.patch in the drop-in's
+# device/brcm/rpi5/ must be accounted for above. Two patches (eth0_routes,
+# usb_audio_policy_configuration) sat in the repo unapplied for exactly this reason —
+# they were added without being wired in here, and nothing said so.
+for p in "$ROOT"/device/brcm/rpi5/*.patch; do
+  pname="$(basename "$p")"
+  case "$pname" in
+    aosp_rpi5_car.mk.patch|BoardConfig.mk.patch|vendor.prop.patch| \
+    eth0_routes.patch|usb_audio_policy_configuration.xml.patch|car_bluetooth_prop.patch) ;;
+    *) echo "WARNING: $pname exists but deploy.sh never applies it" >&2 ;;
+  esac
+done
+
+# packages/services/Car, not device/brcm/rpi5: the Car product's bluetooth.prop sets
+# bluetooth.profile.map.client.enabled=true while motorguard.mk sets it =false, and
+# gen_build_prop treats a property assigned by both a prop-file and
+# PRODUCT_SYSTEM_PROPERTIES as an ERROR, not an override:
+#   error: found duplicate sysprop assignments: bluetooth.profile.map.client.enabled
+# This only breaks the FULL image build (`m systemimage`), never `m MotorGuard`, which
+# is why it went unnoticed. The override itself is required — this board has no
+# telephony, so MapClientContent crash-loops the BT stack when a phone connects.
+CAR_DIR="$AOSP_ROOT/packages/services/Car"
+CAR_PATCH="$ROOT/device/brcm/rpi5/car_bluetooth_prop.patch"
+CAR_TGT="$CAR_DIR/car_product/properties/bluetooth.prop"
+if [ ! -f "$CAR_TGT" ]; then
+  echo "  car_bluetooth_prop.patch: no packages/services/Car in this tree — skipped"
+elif grep -qF "set by vendor/motorguard" "$CAR_TGT"; then
+  echo "  car_bluetooth_prop.patch: already applied"
+elif git -C "$CAR_DIR" apply --check "$CAR_PATCH" >/dev/null 2>&1; then
+  git -C "$CAR_DIR" apply "$CAR_PATCH"; echo "  car_bluetooth_prop.patch: applied (git apply)"
+elif patch -p1 -d "$CAR_DIR" --dry-run < "$CAR_PATCH" >/dev/null 2>&1; then
+  patch -p1 -d "$CAR_DIR" < "$CAR_PATCH"; echo "  car_bluetooth_prop.patch: applied (patch -p1)"
+else
+  echo "ERROR: could not apply car_bluetooth_prop.patch to $CAR_TGT" >&2
+  exit 1
+fi
 
 echo "== 6/6 fetch prebuilt AARs/jars"
 if [ "$SKIP_FETCH" = "1" ]; then

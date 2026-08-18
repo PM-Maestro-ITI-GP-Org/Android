@@ -1,3 +1,96 @@
 -keepattributes InnerClasses,EnclosingMethod
 -dontwarn com.google.android.filament.**
 -dontwarn com.google.android.sceneview.**
+
+# --- SOME/IP JNI callbacks (REQUIRED — the app aborts on launch without this) ---
+#
+# libmotorguardsomeip resolves the listener callbacks by NAME at runtime:
+#
+#     GetMethodID(cls, "onEvent", "(IIIJFF)V")
+#     GetMethodID(cls, "onLink",  "(I)V")
+#
+# Nothing in the Java/Kotlin sources calls them, so R8's reachability analysis
+# sees them as dead and renames them. AOSP's default flags keep `native
+# <methods>` — which is why nativeOpen itself resolves — but that rule does not
+# cover methods called FROM native. The result is a hard abort during
+# MainActivity.onCreate:
+#
+#     java.lang.NoSuchMethodError: no non-static method
+#       "...someip/SomeIpMotorLink;.onEvent(IIIJFF)V"
+#
+# Keep the interface and every implementation of it. Signatures here must stay
+# in step with jni.cpp — this is the same hand-maintained contract as the wire
+# layout, and nothing checks it at compile time.
+-keep interface com.motorguard.ivi.data.vehicle.someip.MotorLinkNative$Listener { *; }
+-keep class * implements com.motorguard.ivi.data.vehicle.someip.MotorLinkNative$Listener {
+    void onEvent(int, int, int, long, float, float);
+    void onLink(int);
+}
+
+# nativeOpen passes the listener as an interface type; keep the holder class and
+# its native declarations so the JNI symbol names remain resolvable.
+-keep class com.motorguard.ivi.data.vehicle.someip.MotorLinkNative {
+    native <methods>;
+    *;
+}
+
+# --- Consumer rules from the vendored AARs (REQUIRED — Soong does not apply them) ---
+#
+# Gradle reads each AAR's proguard.txt and feeds it to R8 automatically. Soong's
+# android_library_import does NOT, so every rule those libraries rely on is simply
+# absent here and R8 renames JNI-reachable members inside them. The failure mode is
+# always the same shape and always at runtime:
+#
+#   java.lang.NoSuchMethodError: no non-static method
+#     "Lai/onnxruntime/NodeInfo;.<init>(Ljava/lang/String;Lai/onnxruntime/ValueInfo;)V"
+#       at ai.onnxruntime.OrtSession.getInputInfo(OrtSession.java:-2)   <- native frame
+#
+# ONNX Runtime: its AAR ships NO proguard.txt at all, so nothing keeps it under any
+# build system. libonnxruntime4j_jni.so constructs NodeInfo/ValueInfo/TensorInfo and
+# reads their fields through JNI by name — keep the package whole. This is what
+# crash-loops WakeWordService and takes the wake word down with it.
+-keep class ai.onnxruntime.** { *; }
+-keepclassmembers class ai.onnxruntime.** {
+    <init>(...);
+    <fields>;
+}
+
+# Filament — from filament-android-1.56.0.aar/proguard.txt. The @UsedBy* annotations
+# mark exactly what the native renderer touches reflectively.
+-keep class com.google.android.filament.proguard.UsedBy*
+-keep @com.google.android.filament.proguard.UsedBy* class * {
+    <init>();
+}
+-keepclassmembers class * {
+    @com.google.android.filament.proguard.UsedBy* *;
+}
+-keep class com.google.android.filament.utils.KTX1Loader
+-keep class com.google.android.filament.utils.HDRLoader
+-keepclassmembers class com.google.android.filament.utils.KTX1Loader {
+    native <methods>;
+}
+
+# SceneView 2.3.0 asks for the whole Filament package (sceneview-2.3.0.aar/proguard.txt).
+-keep class com.google.android.filament.** { *; }
+
+# MapLibre — from android-sdk-11.8.0.aar/proguard.txt. Its native layer round-trips
+# geometry through gson and matches enums by name.
+-keepattributes Signature, *Annotation*, EnclosingMethod
+-keep class com.google.gson.JsonArray { *; }
+-keep class com.google.gson.JsonElement { *; }
+-keep class com.google.gson.JsonObject { *; }
+-keep class com.google.gson.JsonPrimitive { *; }
+-dontnote com.google.gson.**
+-keep enum org.maplibre.android.tile.TileOperation
+-keepclassmembers class * extends java.lang.Enum {
+    <fields>;
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# MapLibre's native code calls back into these by name.
+-keep class org.maplibre.android.** { *; }
+-keepclassmembers class org.maplibre.android.** {
+    native <methods>;
+    <init>(...);
+}
