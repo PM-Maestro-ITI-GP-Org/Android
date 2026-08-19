@@ -43,8 +43,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.motorguard.ivi.data.vehicle.api.Hotspot
@@ -53,7 +55,9 @@ import com.motorguard.ivi.ui.diagnostics.DiagnosticsUiState
 import com.motorguard.ivi.ui.diagnostics.render.CarRenderer
 import com.motorguard.ivi.ui.theme.SemanticColors
 import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlinx.coroutines.isActive
 
 /**
@@ -149,6 +153,17 @@ class HotspotProjector {
     private val occ = FloatArray(n)
     private val tappable = BooleanArray(n)
 
+    /**
+     * The hit circle's diameter for each dot, in px — [HotspotTokens.touchTarget] by default,
+     * shrunk when a NEAR-side neighbour sits close enough that a full-size target would overlap
+     * it. This is the near/near case: two dots that are both on the visible side of the car at
+     * once (Motor and Brakes read close together from some angles) and so neither is a lesser
+     * dot the way an occluded one is — [overlapsNearSideDot] only withdraws a target when it is
+     * occlusion-faded, which does nothing here. Shrinking both to just-touching, rather than
+     * withdrawing either, keeps both reachable — see [update].
+     */
+    private val tapDiameter = FloatArray(n)
+
     /** The ONE snapshot cell backing all 8 dots. Bumped only when something actually moved. */
     private var version by mutableIntStateOf(0)
     private fun observe(): Int = version
@@ -205,6 +220,26 @@ class HotspotProjector {
             }
         }
 
+        // Shrink each tappable, non-occluded dot's hit circle to at most half the distance to
+        // its closest such neighbour, so two full-size targets can never overlap. The common
+        // case — dots well apart — leaves this at the default and costs one nested loop over at
+        // most 8 elements, once a frame, only when something already changed above.
+        val defaultDiameter = targetPx
+        for (h in Hotspot.entries) {
+            val i = h.ordinal
+            var diameter = defaultDiameter
+            if (tappable[i] && occ[i] < HotspotTokens.OCCLUSION_TAP_CUTOFF) {
+                for (j in 0 until n) {
+                    if (j == i || !tappable[j] || occ[j] >= HotspotTokens.OCCLUSION_TAP_CUTOFF) continue
+                    val dx = x[j] - x[i]
+                    val dy = y[j] - y[i]
+                    diameter = min(diameter, sqrt(dx * dx + dy * dy))
+                }
+            }
+            if (abs(diameter - tapDiameter[i]) > 0.5f) changed = true
+            tapDiameter[i] = diameter
+        }
+
         if (changed) version++
     }
 
@@ -249,6 +284,12 @@ class HotspotProjector {
         return if (isTappableNow(hotspot)) IntOffset.Zero else OFF_SCREEN
     }
 
+    /** Layout-phase read. The hit circle's diameter in px — see [tapDiameter]. */
+    fun tapDiameterOf(hotspot: Hotspot): Float {
+        observe()
+        return tapDiameter[hotspot.ordinal]
+    }
+
     /** NO snapshot read — for the click handler, which must not register a recompose-triggering
      *  read just to decide whether a stale tap should be ignored. Computed once per frame in
      *  [update]; see there for the occluded-but-alerting exception. */
@@ -257,6 +298,20 @@ class HotspotProjector {
     private companion object {
         val OFF_SCREEN = IntOffset(-10_000, -10_000)
     }
+}
+
+/**
+ * A square of side [diameterPx], read once per layout pass rather than fixed at composition —
+ * the layout-phase equivalent of `Modifier.offset { }`. [HotspotProjector] needs this because a
+ * plain `Modifier.size(Dp)` bakes its value in at composition, and the diameter here changes
+ * every frame two dots drift apart or together, which is most frames whenever the camera moves.
+ * The parent's `contentAlignment = Alignment.Center` (see [HotspotOverlay]) re-centers a smaller
+ * child automatically, so this needs no offset math of its own.
+ */
+private fun Modifier.hitCircleSize(diameterPx: () -> Float): Modifier = layout { measurable, _ ->
+    val side = diameterPx().roundToInt().coerceAtLeast(1)
+    val placeable = measurable.measure(Constraints.fixed(side, side))
+    layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
 }
 
 /**
@@ -404,9 +459,16 @@ fun HotspotOverlay(
                 // unreachable. Note a focus-dimmed dot stays tappable: spec §7 requires tapping a
                 // second hotspot while one is focused, and that dot is still where the user
                 // expects it. The two fades look alike and deliberately differ here.
+                //
+                // hitCircleSize, not matchParentSize: two NEAR-side dots (both visible at once,
+                // neither occluded — Motor and Brakes from some angles) can project close enough
+                // together that two full-size targets overlap, and unlike the occluded case
+                // neither is the lesser dot here, so withdrawing one is the wrong fix. Shrinking
+                // both to just-touching keeps both reachable — see tapDiameter in
+                // HotspotProjector.
                 Box(
                     modifier = Modifier
-                        .matchParentSize()
+                        .hitCircleSize { projector.tapDiameterOf(hotspot) }
                         .offset { projector.tapOffsetOf(hotspot) }
                         .clip(CircleShape)
                         .hoverable(interactions)
