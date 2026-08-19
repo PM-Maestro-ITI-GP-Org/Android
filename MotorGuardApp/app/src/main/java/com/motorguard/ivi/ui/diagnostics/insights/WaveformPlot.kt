@@ -80,6 +80,43 @@ internal fun minMaxDecimate(
     return out
 }
 
+/** Columns either side averaged into each column of [smoothColumns] — display only, chosen so a
+ *  10 s capture (~1,000 columns) reads as a trace rather than a comb without visibly rounding off
+ *  a fault transient that survives at min/max-decimation width already. */
+private const val SMOOTH_RADIUS = 2
+
+/**
+ * A box blur across adjacent COLUMNS of a [minMaxDecimate] trace — display smoothing, run after
+ * decimation and nowhere near the samples themselves.
+ *
+ * [minMaxDecimate] exists to keep every spike alive through 200,000-to-1,000 reduction, which is
+ * correct and is not what this touches. What it does not do anything about is a channel that is
+ * genuinely this noisy sample to sample — raw, unscaled ADC vibration data with no motor turning
+ * under it — where every column's min and max are already near the channel's full scale, so the
+ * trace draws as a wall of full-height columns rather than a shape. Averaging min with neighbouring
+ * min, and max with neighbouring max, never lets the two converge into a single flat line — a real
+ * envelope's width survives — it only softens the column-to-column jitter within that width into
+ * something that reads as one waveform.
+ */
+private fun smoothColumns(trace: FloatArray, columns: Int, radius: Int): FloatArray {
+    if (radius <= 0 || columns <= 1) return trace
+    val out = FloatArray(trace.size)
+    for (c in 0 until columns) {
+        var sumLo = 0f
+        var sumHi = 0f
+        var count = 0
+        for (k in -radius..radius) {
+            val idx = (c + k).coerceIn(0, columns - 1)
+            sumLo += trace[idx * 2]
+            sumHi += trace[idx * 2 + 1]
+            count++
+        }
+        out[c * 2] = sumLo / count
+        out[c * 2 + 1] = sumHi / count
+    }
+    return out
+}
+
 /**
  * Colours for [count] channels, derived from the theme's own [base] by rotating its hue.
  *
@@ -211,7 +248,9 @@ private fun PlotCanvas(
 ) {
     Canvas(modifier) {
         val columns = size.width.toInt().coerceAtLeast(1)
-        val decimated = channels.map { minMaxDecimate(it, fromIndex, toIndex, columns) }
+        val decimated = channels.map {
+            smoothColumns(minMaxDecimate(it, fromIndex, toIndex, columns), columns, SMOOTH_RADIUS)
+        }
         val span = (range.endInclusive - range.start).takeIf { it > 1e-6f } ?: 1f
 
         // Both axes get rules now that both are labelled: a gridline with no number against it is
