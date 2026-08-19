@@ -180,37 +180,40 @@ prebuilt_etc {
 }
 
 // ---------------------------------------------------------------------------
-// Native voice/reasoning core — the Soong equivalent of app/MotorGuardApp/app/src/main/cpp/
-// CMakeLists.txt (Soong does NOT run CMake). Produces libmotorguardvoice.so,
-// loaded by VoiceEngine.kt via System.loadLibrary("motorguardvoice").
-// sqlite3.c is the official amalgamation compiled straight in (the NDK/platform
-// does not expose libsqlite to apps).
+// Native voice/reasoning core — loaded by VoiceEngine.kt, WhisperStt.kt and
+// PiperTts.kt via System.loadLibrary("motorguardvoice").
+//
+// This is a PREBUILT, not a source build. The app's committed jniLibs copy is
+// produced by the Gradle/CMake build (app/MotorGuardApp/app/src/main/cpp/
+// CMakeLists.txt) and bundles Whisper (whisper.cpp + ggml) and espeak-ng
+// STATICALLY, so the .so is fully self-contained (DT_NEEDED is only
+// liblog/libdl/libm/libc — no libc++ runtime).
+//
+// Soong CANNOT reproduce that lib from source: compiling whisper_jni.cpp /
+// espeak_jni.cpp would require vendoring the whisper.cpp and espeak-ng trees,
+// which are gitignored third-party clones (see cpp/.gitignore), and the
+// previous source-built libmotorguardvoice omitted those JNI files entirely —
+// the device then failed with:
+//
+//   java.lang.UnsatisfiedLinkError: No implementation found for
+//     WhisperStt.nativeInit ... PiperTts.nativeInitEspeak
+//
+// Using the prebuilt is the same pattern as libfilament-jni/libonnxruntime
+// below, and keeps the in-tree APK feature-identical to the Gradle one.
 // ---------------------------------------------------------------------------
-cc_library_shared {
+cc_prebuilt_library_shared {
     name: "libmotorguardvoice",
-
-    srcs: [
-        "app/MotorGuardApp/app/src/main/cpp/native-lib.cpp",
-        "app/MotorGuardApp/app/src/main/cpp/sqlite3.c",
-        "app/MotorGuardApp/app/src/main/cpp/assistant-core/src/*.cpp",
-    ],
-    local_include_dirs: [
-        "app/MotorGuardApp/app/src/main/cpp",                        // seed_data.h, sqlite3.h, adapters/
-        "app/MotorGuardApp/app/src/main/cpp/assistant-core/include", // assistant/*.hpp
-    ],
-    header_libs: ["jni_headers"], // jni.h (libnativehelper/include_jni)
-
-    cflags: [
-        "-DSQLITE_OMIT_LOAD_EXTENSION",
-        "-DSQLITE_THREADSAFE=1",
-    ],
-    cppflags: ["-std=c++17", "-fexceptions"], // try/catch in native-lib.cpp (overrides -fno-exceptions)
-
-    shared_libs: ["liblog"],
-
-    // Platform-variant build (matches the platform_apis app it ships in). If you
-    // instead build the app against a numbered sdk_version, add sdk_version +
-    // stl: "c++_static" here so the lib is self-contained.
+    arch: {
+        arm64: {
+            srcs: ["app/MotorGuardApp/app/src/main/jniLibs/arm64-v8a/libmotorguardvoice.so"],
+        },
+    },
+    compile_multilib: "64",
+    check_elf_files: false,
+    strip: { none: true },
+    stl: "none",
+    system_shared_libs: [],
+    shared_libs: [],
 }
 
 // ---------------------------------------------------------------------------
