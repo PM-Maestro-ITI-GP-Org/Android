@@ -33,6 +33,21 @@ void appendU32(std::vector<uint8_t>& v, uint32_t x) {
     v.push_back(static_cast<uint8_t>(x));
 }
 
+// For a value that is already in network byte order in memory (a
+// sockaddr_in::sin_addr, not a host integer) -- copied verbatim, not
+// re-encoded. appendU32() shifts its input assuming host order, which is
+// right for ttl/service/instance but wrong for an address: feeding it
+// localAddressBe there double-converts on a little-endian host and reverses
+// the octets on the wire (192.168.2.60 becomes 60.2.168.192, an address
+// nothing answers to). collectEndpoints() on the read side already does this
+// correctly -- "the four address bytes are already in network order on the
+// wire; copying them verbatim is ... correct" -- this is that same rule
+// applied to the write side, which buildSubscribe() was missing.
+void appendBe32(std::vector<uint8_t>& v, uint32_t addressBe) {
+    const auto* bytes = reinterpret_cast<const uint8_t*>(&addressBe);
+    v.insert(v.end(), bytes, bytes + sizeof addressBe);
+}
+
 // Wraps an SD payload in its SOME/IP header. Session ids must never be 0 —
 // a peer treats 0 as "no session tracking" and some stacks reject it — so the
 // caller's counter is nudged off zero here rather than at every call site.
@@ -110,7 +125,7 @@ std::vector<uint8_t> buildSubscribe(uint16_t service, uint16_t instance, uint8_t
     appendU16(p, 0x0009);  // length of everything after the type byte
     appendU8(p, 0x04);     // IPv4 endpoint option
     appendU8(p, 0);        // reserved
-    appendU32(p, localAddressBe);
+    appendBe32(p, localAddressBe);
     appendU8(p, 0);  // reserved
     appendU8(p, kUdp);
     appendU16(p, localPort);
