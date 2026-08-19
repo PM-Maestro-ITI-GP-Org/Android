@@ -42,6 +42,10 @@ b03d35dd50698d0c61e28eec24734b7b257a0f13017817375598c0d3af49da39  filament-andro
 25370a7b6a5af3be66367b6d609deed18b37333e1963b7ee6856f50e0dab544e  gltfio-android-1.56.0.aar       https://repo1.maven.org/maven2/com/google/android/filament/gltfio-android/1.56.0/gltfio-android-1.56.0.aar
 31c5628d422af803ca6bd1cc93b77782c21ade30184883a529674b01fb611be0  filament-utils-android-1.56.0.aar https://repo1.maven.org/maven2/com/google/android/filament/filament-utils-android/1.56.0/filament-utils-android-1.56.0.aar
 1bed2190b7d7846649538b91d6b7519d7c2e78395a021b59b4f0eefc66c8865d  kotlin-math-jvm-1.5.3.jar       https://repo1.maven.org/maven2/dev/romainguy/kotlin-math-jvm/1.5.3/kotlin-math-jvm-1.5.3.jar
+9e38b4b2b4f6bae5491c0975c1c4784ba9b7edc4a54f37acbca30db2c6516a35  fuel-2.3.1.jar                https://repo1.maven.org/maven2/com/github/kittinunf/fuel/fuel/2.3.1/fuel-2.3.1.jar
+0eea67f95bf5bb03b37fbf3c82e4a0b835fe7fa940fdeb607b4adf58e51a7625  fuel-android-2.3.1.aar         https://repo1.maven.org/maven2/com/github/kittinunf/fuel/fuel-android/2.3.1/fuel-android-2.3.1.aar
+235f85a12624ea6772d68e39c02efa20b79667a21f3976294a2b47794b525ffd  fuel-coroutines-2.3.1.jar      https://repo1.maven.org/maven2/com/github/kittinunf/fuel/fuel-coroutines/2.3.1/fuel-coroutines-2.3.1.jar
+e02e7e0a9395174bb57bbd4043fb1fa6c4a69aa4da5ce4c65331651d22e89313  result-3.1.0.jar               https://repo1.maven.org/maven2/com/github/kittinunf/result/result/3.1.0/result-3.1.0.jar
 EOF
 
 echo "All $TOTAL prebuilts present and SHA256-verified."

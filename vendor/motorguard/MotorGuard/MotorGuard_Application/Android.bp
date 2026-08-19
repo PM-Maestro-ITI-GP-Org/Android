@@ -459,8 +459,18 @@ android_library_import {
 // under the hood. Deps mirrored from its POM: kotlin-math and the three Filament
 // AARs at compile scope, fragment-ktx / compose ui+foundation at runtime (all three
 // already on the app classpath above). The `fuel` runtime deps are for loading glTF
-// over HTTP; this app loads car_model.glb from assets and never reaches that code,
-// so they are deliberately not vendored.
+// over HTTP; this app loads car_model.glb from assets and never reaches that code.
+//
+// They are STILL vendored, though. SceneView's FileLoader.<clinit> assigns its
+// fuelManager field, and the class is loaded the moment any model is loaded —
+// asset or URL. Without fuel on the classpath the loader dies before it can read
+// the asset:
+//
+//   java.lang.NoClassDefFoundError: Failed resolution of:
+//     Lcom/github/kittinunf/fuel/core/FuelManager;
+//
+// So the three fuel artifacts (fuel, fuel-android, fuel-coroutines — plus their
+// `result` dep) are fetched by prebuilts/fetch.sh and imported below.
 //
 // The SceneView AAR also SHIPS ASSETS the app loads at runtime:
 // assets/environments/neutral/neutral_ibl.ktx (indirect lighting, see
@@ -479,11 +489,55 @@ android_library_import {
         "motorguard-filament-gltfio",
         "motorguard-filament-utils",
         "motorguard-kotlin-math",
+        "motorguard-fuel",
+        "motorguard-fuel-android",
+        "motorguard-fuel-coroutines",
         "kotlin-stdlib",
         "androidx.fragment_fragment-ktx",
         "androidx.compose.ui_ui",
         "androidx.compose.foundation_foundation",
     ],
+}
+
+// Fuel 2.3.1 — SceneView's FileLoader runtime dep (see comment above). fuel-core is a
+// plain JVM jar; fuel-android brings the Android bridge (an AAR, tiny); fuel-coroutines
+// adds the coroutine `await` helpers SceneView's loadFileBuffer uses. `result` is fuel's
+// Result type. Mirrored from sceneview-2.3.0.pom.
+java_import {
+    name: "motorguard-fuel",
+    jars: ["prebuilts/fuel-2.3.1.jar"],
+    sdk_version: "current",
+    static_libs: [
+        "motorguard-result",
+        "kotlin-stdlib",
+    ],
+}
+
+android_library_import {
+    name: "motorguard-fuel-android",
+    aars: ["prebuilts/fuel-android-2.3.1.aar"],
+    sdk_version: "current",
+    static_libs: [
+        "motorguard-fuel",
+        "kotlin-stdlib",
+    ],
+}
+
+java_import {
+    name: "motorguard-fuel-coroutines",
+    jars: ["prebuilts/fuel-coroutines-2.3.1.jar"],
+    sdk_version: "current",
+    static_libs: [
+        "motorguard-fuel",
+        "kotlinx-coroutines-core",
+        "kotlin-stdlib",
+    ],
+}
+
+java_import {
+    name: "motorguard-result",
+    jars: ["prebuilts/result-3.1.0.jar"],
+    sdk_version: "current",
 }
 
 // Filament 1.56.0 — the renderer itself. extract_jni pulls libfilament-jni.so out of
