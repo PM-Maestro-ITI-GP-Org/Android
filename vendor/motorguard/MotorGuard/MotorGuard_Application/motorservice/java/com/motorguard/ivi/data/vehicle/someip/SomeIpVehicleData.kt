@@ -1,5 +1,8 @@
 package com.motorguard.ivi.data.vehicle.someip
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.motorguard.ivi.data.vehicle.api.BatteryTelemetry
 import com.motorguard.ivi.data.vehicle.api.BrakeTelemetry
@@ -56,7 +59,9 @@ internal object SomeIpVehicleData {
     ): Pair<VehicleDataSource, MotorCaptureSource>? {
         if (!MotorLinkNative.available) return null
 
-        val config = MotorLinkConfig.fromSystemProperties()
+        val config = MotorLinkConfig.fromSystemProperties().copy(
+            androidNetworkHandle = resolveEthernetNetworkHandle(),
+        )
         val link = SomeIpMotorLink(scope, config)
         if (!link.opened) {
             Log.e(MotorLinkNative.TAG, "link did not open; staying on the existing source")
@@ -72,4 +77,48 @@ internal object SomeIpVehicleData {
         )
         return SomeIpVehicleDataSource(fallback, link) to SomeIpMotorCaptureSource(link, config)
     }
+
+    /**
+     * The Ethernet [android.net.Network]'s handle, synchronously — a board with both Wi-Fi and
+     * Ethernet up otherwise leaves every SD/event/capture socket on whatever ConnectivityManager
+     * calls the default network, which is Wi-Fi, and the diagnostics unit is never on Wi-Fi. See
+     * [MotorLinkConfig.androidNetworkHandle] and motor_link.cpp's android_setsocknetwork() calls.
+     *
+     * `allNetworks` rather than `registerNetworkCallback`: this runs once, synchronously, at
+     * `create()` — a plain object with no coroutine to suspend and no callback to unregister
+     * later — and the Ethernet interface here comes up during boot, long before this class is
+     * ever touched, so the network this asks for is already known to ConnectivityManager by the
+     * time the app starts.
+     *
+     * 0 (`NETWORK_UNSPECIFIED`) on anything that goes wrong: no Context yet, no
+     * ConnectivityManager, no Ethernet transport currently up. The link still opens on the
+     * default network exactly as it did before this existed — see [bindToNetwork] in
+     * motor_link.cpp — so a board with only Wi-Fi, or a Gradle/emulator build, is unaffected.
+     */
+    private fun resolveEthernetNetworkHandle(): Long {
+        val context = currentApplicationContext() ?: return 0L
+        return runCatching {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.allNetworks
+                .firstOrNull { net ->
+                    cm.getNetworkCapabilities(net)?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
+                }
+                ?.networkHandle
+        }.onFailure {
+            Log.w(MotorLinkNative.TAG, "could not resolve an Ethernet network (${it.message}); " +
+                "sockets will use the default network")
+        }.getOrNull() ?: 0L
+    }
+
+    /**
+     * `ActivityThread.currentApplication()` by reflection — the same reason
+     * [MotorLinkConfig.fromSystemProperties] reaches `SystemProperties` the same way: [VehicleData]
+     * is a plain object with no Application subclass to hang a Context off (the spec forbids
+     * touching the manifest), and every process running this code already has one by the time
+     * `create()` runs.
+     */
+    private fun currentApplicationContext(): Context? = runCatching {
+        val cls = Class.forName("android.app.ActivityThread")
+        cls.getMethod("currentApplication").invoke(null) as? Context
+    }.getOrNull()
 }

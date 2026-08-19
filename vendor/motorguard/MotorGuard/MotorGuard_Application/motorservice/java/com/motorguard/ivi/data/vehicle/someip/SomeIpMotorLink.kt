@@ -49,6 +49,7 @@ internal class SomeIpMotorLink(
         config.staticTcpPort,
         config.subscribeTtlSec,
         config.captureTimeoutMs,
+        config.androidNetworkHandle,
     )
 
     val opened: Boolean get() = handle != 0L

@@ -67,6 +67,18 @@ struct MotorLinkConfig {
 
     uint32_t subscribeTtlSec = 16;  // renewed at half
     uint32_t captureTimeoutMs = 20000;  // docs/09 §5.3 hard ceiling
+
+    // android::net::NETWORK_UNSPECIFIED (0) leaves every socket on whatever
+    // ConnectivityManager currently calls the default network, which on a
+    // device with both Wi-Fi and Ethernet up is Wi-Fi -- and the diagnostics
+    // unit is never on Wi-Fi. The Kotlin side resolves the Ethernet Network's
+    // handle (ConnectivityManager.getNetworkCapabilities over allNetworks)
+    // before opening the link and passes it through; every socket this link
+    // owns is bound to it with android_setsocknetwork() at creation, which is
+    // the one thing that makes discovery and events arrive on the interface
+    // the unit is actually reachable on instead of silently leaving on the
+    // wrong wire. See motor_link.cpp.
+    uint64_t androidNetworkHandle = 0;
 };
 
 // What the link knows about the peer. The Kotlin side only distinguishes

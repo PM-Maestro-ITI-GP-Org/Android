@@ -15,6 +15,7 @@
 #include <thread>
 
 #include <android/log.h>
+#include <android/multinetwork.h>
 
 #define TAG "MotorGuardLink"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -48,13 +49,30 @@ bool setNonBlocking(int fd) {
     return flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
+// Ties fd to a specific Network (android/multinetwork.h) instead of leaving it
+// on whatever ConnectivityManager currently calls the default. 0 is
+// NETWORK_UNSPECIFIED -- the handle was not resolved (no Ethernet Network at
+// startup, or a Gradle/emulator build with no ConnectivityManager to ask) --
+// and every socket falls back to its old, unbound behaviour rather than
+// failing to open at all.
+void bindToNetwork(int fd, uint64_t handle, const char* what) {
+    if (handle == NETWORK_UNSPECIFIED) return;
+    if (const int err = android_setsocknetwork(static_cast<net_handle_t>(handle), fd); err != 0) {
+        LOGW("%s: android_setsocknetwork failed (%s)", what, strerror(-err));
+    }
+}
+
 // The local unicast address the peer would see us at. Asking the routing table
 // this way — connect a throwaway UDP socket and read back the local end —
 // avoids enumerating interfaces and picks the right one on a device that has
-// both Ethernet and Wi-Fi up, which the Pi routinely does.
-uint32_t localAddressFor(uint32_t peerBe) {
+// both Ethernet and Wi-Fi up, which the Pi routinely does. Binding it to the
+// same Network the SD/event sockets use keeps this address consistent with
+// the interface the subscribe will actually go out on, rather than a route
+// lookup landing on Wi-Fi for this one throwaway socket alone.
+uint32_t localAddressFor(uint32_t peerBe, uint64_t networkHandle) {
     const int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) return 0;
+    bindToNetwork(fd, networkHandle, "local-address probe");
 
     sockaddr_in peer{};
     peer.sin_family = AF_INET;
@@ -167,6 +185,7 @@ bool MotorLink::Impl::openSockets() {
         LOGE("event socket: %s", strerror(errno));
         return false;
     }
+    bindToNetwork(evFd, cfg.androidNetworkHandle, "event socket");
     int one = 1;
     setsockopt(evFd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
 
@@ -194,6 +213,13 @@ bool MotorLink::Impl::openSockets() {
         LOGE("sd socket: %s", strerror(errno));
         return false;
     }
+    // Before the port bind and, more importantly, before IP_ADD_MEMBERSHIP
+    // below: imr_interface is INADDR_ANY there, so which interface the join
+    // actually lands on follows this socket's routing -- exactly the policy
+    // android_setsocknetwork() installs. Joined on the wrong interface first
+    // and marked after is not the same thing; the group membership itself
+    // would still be Wi-Fi's.
+    bindToNetwork(sdFd, cfg.androidNetworkHandle, "sd socket");
     setsockopt(sdFd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
 
     sockaddr_in sdAddr{};
@@ -243,7 +269,7 @@ void MotorLink::Impl::sendSubscribe(uint32_t ttl) {
     }
     if (!peer.valid()) return;
 
-    const uint32_t local = localAddressFor(peer.addressBe);
+    const uint32_t local = localAddressFor(peer.addressBe, cfg.androidNetworkHandle);
     if (local == 0) {
         LOGW("no route to %s; cannot subscribe", ipToString(peer.addressBe).c_str());
         return;
@@ -587,6 +613,7 @@ MotorLink::CaptureResult MotorLink::requestCapture(float requestedDurationSec) {
     } fdGuard{fd, impl_->captureFd};
     impl_->captureFd.store(fd);
 
+    bindToNetwork(fd, impl_->cfg.androidNetworkHandle, "capture socket");
     setNonBlocking(fd);
     int one = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
