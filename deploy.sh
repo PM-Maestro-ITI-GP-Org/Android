@@ -222,7 +222,7 @@ apply_device_patch "vendor.prop.patch" "vendor.prop" "service.adb.tcp.port=5555"
 apply_device_patch "eth0_routes.patch" "ramdisk/eth0_routes.sh" "persist.motorguard.eth0_addr"
 # Mono capture-only USB microphones are rejected by the stock policy.
 apply_device_patch "usb_audio_policy_configuration.xml.patch" \
-  "audio/usb_audio_policy_configuration.xml" "AUDIO_CHANNEL_IN_MONO"
+  "audio/usb_audio_policy_configuration.xml" "Mono instead of stereo"
 
 # Guard against this list going stale again: every *.patch in the drop-in's
 # device/brcm/rpi5/ must be accounted for above. Two patches (eth0_routes,
