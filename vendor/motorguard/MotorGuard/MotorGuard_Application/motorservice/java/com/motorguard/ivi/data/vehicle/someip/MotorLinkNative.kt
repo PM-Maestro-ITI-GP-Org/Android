@@ -40,6 +40,8 @@ internal object MotorLinkNative {
         staticTcpPort: Int,
         subscribeTtlSec: Int,
         captureTimeoutMs: Int,
+        /** 0 (NETWORK_UNSPECIFIED) if the Ethernet Network could not be resolved at open time. */
+        androidNetworkHandle: Long,
     ): Long
 
     external fun nativeClose(handle: Long)

@@ -97,7 +97,8 @@ JNIEXPORT jlong JNICALL Java_com_motorguard_ivi_data_vehicle_someip_MotorLinkNat
         JNIEnv* env, jobject, jobject listener, jint serviceId, jint instanceId,
         jint majorVersion, jint eventgroupId, jint eventId, jint captureMethodId, jint clientId,
         jstring sdMulticast, jint sdPort, jint localEventPort, jstring staticHost,
-        jint staticUdpPort, jint staticTcpPort, jint subscribeTtlSec, jint captureTimeoutMs) {
+        jint staticUdpPort, jint staticTcpPort, jint subscribeTtlSec, jint captureTimeoutMs,
+        jlong androidNetworkHandle) {
     auto session = std::make_unique<Session>();
 
     const jclass cls = env->GetObjectClass(listener);
@@ -125,6 +126,7 @@ JNIEXPORT jlong JNICALL Java_com_motorguard_ivi_data_vehicle_someip_MotorLinkNat
     cfg.staticTcpPort = static_cast<uint16_t>(staticTcpPort);
     cfg.subscribeTtlSec = static_cast<uint32_t>(subscribeTtlSec);
     cfg.captureTimeoutMs = static_cast<uint32_t>(captureTimeoutMs);
+    cfg.androidNetworkHandle = static_cast<uint64_t>(androidNetworkHandle);
 
     Session* raw = session.get();
     raw->link = MotorLink::start(

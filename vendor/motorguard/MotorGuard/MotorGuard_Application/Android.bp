@@ -247,7 +247,11 @@ cc_library_shared {
         "-Werror",
     ],
 
-    shared_libs: ["liblog"],
+    // libandroid carries android_setsocknetwork() (android/multinetwork.h),
+    // which is what pins the SD/event/capture sockets to the Ethernet network
+    // instead of whatever ConnectivityManager currently calls "default" — see
+    // motor_link.cpp.
+    shared_libs: ["liblog", "libandroid"],
 }
 
 // Host tests for the parts with no sockets in them: framing, the two payload

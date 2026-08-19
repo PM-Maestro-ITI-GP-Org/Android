@@ -49,6 +49,14 @@ internal data class MotorLinkConfig(
     val captureTimeoutMs: Int = 20_000,
     /** docs/10 §6: the window the unit is asked for. It may clamp, and reports what it did. */
     val requestedCaptureSec: Float = 10f,
+
+    /**
+     * The Ethernet [android.net.Network]'s handle, or 0 if none was up when this was built —
+     * see [SomeIpVehicleData]. Every socket the native link opens is bound to it, which is what
+     * keeps discovery and events on the wire the diagnostics unit is actually reachable on
+     * instead of whatever ConnectivityManager calls the default network (Wi-Fi, on this board).
+     */
+    val androidNetworkHandle: Long = 0L,
 ) {
     companion object {
         /**
