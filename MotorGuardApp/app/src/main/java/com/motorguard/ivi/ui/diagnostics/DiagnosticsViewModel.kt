@@ -13,6 +13,7 @@ import com.motorguard.ivi.data.vehicle.api.summarise
 import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SeverityResolver
+import com.motorguard.ivi.data.vehicle.api.SignalState
 import com.motorguard.ivi.data.vehicle.api.TireTelemetry
 import com.motorguard.ivi.data.vehicle.api.VehicleDataSource
 import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
@@ -67,6 +68,13 @@ class DiagnosticsViewModel(
      *  acquisition. */
     private var captureJob: Job? = null
 
+    /** The diagnostics unit's own live classification (docs/09 §2.3) — the QNX guest's
+     *  AI-result shared memory, over SOME/IP, straight through. The Engineering tab reads this
+     *  directly rather than through [focusedTelemetry] because it is visible whether or not the
+     *  Motor hotspot happens to be focused on Overview — the two are independent surfaces onto
+     *  the same [source]. */
+    val motorTelemetry: StateFlow<SignalState<MotorTelemetry>> = source.motor
+
     private val tab = MutableStateFlow(DiagnosticsTab.OVERVIEW)
     val selectedTab: StateFlow<DiagnosticsTab> = tab
 
@@ -101,7 +109,12 @@ class DiagnosticsViewModel(
      * showing what it said until a newer one replaces it. Cleared only by a request replacing it,
      * never by leaving the tab.
      */
-    private val captureSummary = MutableStateFlow<MotorCaptureSummary?>(null)
+    private val _captureSummary = MutableStateFlow<MotorCaptureSummary?>(null)
+
+    /** [_captureSummary], read-only — the Engineering tab's statistics panel reads this
+     *  directly so it never recomputes [summarise] a second time over the same 200,000-sample
+     *  capture the card below already reduced once. */
+    val captureSummary: StateFlow<MotorCaptureSummary?> = _captureSummary
 
     /**
      * @param live true for the background tick started by [onTabSelected] to keep the plot
@@ -124,7 +137,7 @@ class DiagnosticsViewModel(
             // viewModelScope runs on Main. Doing it inline stalls the frame that is animating the
             // popup open.
             if (result is CaptureState.Ready) {
-                captureSummary.value = withContext(Dispatchers.Default) { result.capture.summarise() }
+                _captureSummary.value = withContext(Dispatchers.Default) { result.capture.summarise() }
             }
         }
         if (!live) restartIdleTimer()

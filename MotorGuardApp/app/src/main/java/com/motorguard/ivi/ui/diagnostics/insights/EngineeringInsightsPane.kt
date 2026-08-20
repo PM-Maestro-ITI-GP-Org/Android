@@ -8,12 +8,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -58,7 +61,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.motorguard.ivi.data.vehicle.api.CaptureState
 import com.motorguard.ivi.data.vehicle.api.MotorCapture
+import com.motorguard.ivi.data.vehicle.api.MotorCaptureSummary
+import com.motorguard.ivi.data.vehicle.api.MotorFaultType
 import com.motorguard.ivi.data.vehicle.api.MotorSignalGroup
+import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
+import com.motorguard.ivi.data.vehicle.api.SignalState
+import com.motorguard.ivi.data.vehicle.api.latestValueOrNull
+import com.motorguard.ivi.ui.components.GlassCard
+import com.motorguard.ivi.ui.components.Pill
+import com.motorguard.ivi.ui.diagnostics.component.CaptureBlock
+import com.motorguard.ivi.ui.diagnostics.component.TelemetryFormat
+import com.motorguard.ivi.ui.theme.SemanticColors
 import kotlinx.coroutines.delay
 
 private object InsightsTuning {
@@ -96,6 +109,13 @@ private enum class Stage { INTRO_SPEED, INTRO_CURRENT, INTERACTIVE }
 @Composable
 internal fun EngineeringInsightsPane(
     state: CaptureState,
+    /** The diagnostics unit's own live classification — the QNX guest's AI-result shared
+     *  memory, over SOME/IP. Shown alongside the capture rather than folded into it: it updates
+     *  on its own 1 Hz cadence, independent of whichever capture happens to be on screen. */
+    motor: SignalState<MotorTelemetry>,
+    /** The last capture's numbers, already reduced by [DiagnosticsViewModel] off the SPI
+     *  samples — never recomputed here. */
+    captureSummary: MotorCaptureSummary?,
     onRefresh: () -> Unit,
     onBackToOverview: () -> Unit,
     modifier: Modifier = Modifier,
@@ -109,7 +129,7 @@ internal fun EngineeringInsightsPane(
         Column(Modifier.fillMaxSize()) {
             InsightsHeader(state = state, onRefresh = onRefresh, onBackToOverview = onBackToOverview)
             when (state) {
-                is CaptureState.Ready -> CaptureBody(state.capture)
+                is CaptureState.Ready -> CaptureBody(state.capture, motor, captureSummary)
                 CaptureState.Requesting -> CenteredStatus(
                     title = "Requesting capture",
                     detail = "Acquiring 20 kHz samples from the diagnostics unit",
@@ -207,7 +227,11 @@ private fun CenteredStatus(
 }
 
 @Composable
-private fun CaptureBody(capture: MotorCapture) {
+private fun CaptureBody(
+    capture: MotorCapture,
+    motor: SignalState<MotorTelemetry>,
+    captureSummary: MotorCaptureSummary?,
+) {
     // Deliberately NOT keyed on `capture` (it used to be): the tab now live-refreshes captures
     // every few seconds (see DiagnosticsViewModel's live-refresh ticker), and re-running the
     // scripted intro or snapping the scrub position back to the middle of the run on every one
@@ -360,6 +384,118 @@ private fun CaptureBody(capture: MotorCapture) {
                         .coerceIn(0f, (capture.durationSec - next).coerceAtLeast(0f))
                     zoomOverrides[group] = !zoomed
                 },
+            )
+        }
+
+        Spacer(Modifier.width(16.dp))
+
+        MotorStatsColumn(
+            motor = motor,
+            captureSummary = captureSummary,
+            modifier = Modifier.width(240.dp).fillMaxHeight(),
+        )
+    }
+}
+
+/**
+ * The AI classification and the last capture's derived numbers, alongside the plot rather than
+ * only reachable from the Overview card — this is the QNX guest's own data end to end (the
+ * SOME/IP event is its AI-result shared memory, the SOME/IP capture is its SPI shared memory),
+ * never anything synthesised in this app.
+ */
+@Composable
+private fun MotorStatsColumn(
+    motor: SignalState<MotorTelemetry>,
+    captureSummary: MotorCaptureSummary?,
+    modifier: Modifier = Modifier,
+) {
+    GlassCard(modifier = modifier, padding = PaddingValues(16.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Text(
+                text = "Diagnostics unit",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+            )
+            Spacer(Modifier.height(10.dp))
+            MotorFaultDetail(motor)
+            Spacer(Modifier.height(22.dp))
+            Text(
+                text = "Capture statistics",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+            )
+            Spacer(Modifier.height(10.dp))
+            if (captureSummary != null) {
+                CaptureBlock(captureSummary, motor.latestValueOrNull?.faultType ?: MotorFaultType.NORMAL)
+            } else {
+                Text(
+                    text = "Waiting for the first capture to finish\u2026",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MotorFaultDetail(motor: SignalState<MotorTelemetry>) {
+    when (motor) {
+        is SignalState.Live -> MotorFaultRows(motor.data, stale = false)
+        is SignalState.Stale -> MotorFaultRows(motor.lastData, stale = true)
+        SignalState.Offline -> Text(
+            text = "No data \u2014 diagnostics unit offline",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+        )
+        SignalState.Loading -> Text(
+            text = "Connecting to the diagnostics unit\u2026",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+        )
+    }
+}
+
+@Composable
+private fun MotorFaultRows(data: MotorTelemetry, stale: Boolean) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Pill(
+                text = when (data.faultType) {
+                    MotorFaultType.NORMAL -> "OK"
+                    MotorFaultType.ELECTRICAL -> "Electrical fault"
+                    MotorFaultType.MECHANICAL -> "Mechanical fault"
+                    MotorFaultType.SENSOR -> "Sensor fault"
+                },
+                bg = SemanticColors.forSeverity(data.faultSeverity),
+            )
+            if (stale) {
+                Spacer(Modifier.width(8.dp))
+                Pill(text = "Stale", bg = SemanticColors.caution)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        val life = data.remainingLife
+        Text(
+            text = if (life != null) {
+                "Remaining life: ${TelemetryFormat.hours(life.hours)}"
+            } else {
+                "No remaining-life estimate"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
+        )
+        if (life?.percent != null) {
+            Text(
+                text = TelemetryFormat.percent(life.percent),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
             )
         }
     }

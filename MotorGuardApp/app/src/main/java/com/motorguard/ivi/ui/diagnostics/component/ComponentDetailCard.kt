@@ -444,8 +444,10 @@ private fun NoCaptureHint() {
     )
 }
 
+/** Reused by [com.motorguard.ivi.ui.diagnostics.insights.EngineeringInsightsPane]'s own
+ *  statistics panel — the same numbers, off the same [MotorCaptureSummary], never recomputed. */
 @Composable
-private fun CaptureBlock(capture: MotorCaptureSummary, fault: MotorFaultType) {
+internal fun CaptureBlock(capture: MotorCaptureSummary, fault: MotorFaultType) {
     val nowMs = remember(capture.capturedAtMs) { System.currentTimeMillis() }
     Column {
         Text(

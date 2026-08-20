@@ -67,6 +67,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.motorguard.ivi.data.vehicle.api.CaptureState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
+import com.motorguard.ivi.data.vehicle.api.MotorCaptureSummary
+import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
+import com.motorguard.ivi.data.vehicle.api.SignalState
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.diagnostics.component.AlertList
 import com.motorguard.ivi.ui.diagnostics.component.ComponentDetailPanel
@@ -101,6 +104,8 @@ fun DiagnosticsScreen(
     val healthScore by viewModel.healthScore.collectAsStateWithLifecycle()
     val captureState by viewModel.captureState.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val motorTelemetry by viewModel.motorTelemetry.collectAsStateWithLifecycle()
+    val captureSummary by viewModel.captureSummary.collectAsStateWithLifecycle()
     DiagnosticsScreenContent(
         ui = ui,
         focusedTelemetry = { telemetryState.value },
@@ -117,6 +122,8 @@ fun DiagnosticsScreen(
         onTabSelected = viewModel::onTabSelected,
         captureState = captureState,
         onInsightsRefresh = viewModel::requestCapture,
+        motorTelemetry = motorTelemetry,
+        captureSummary = captureSummary,
         modifier = modifier,
     )
 }
@@ -151,6 +158,9 @@ internal fun DiagnosticsScreenContent(
     /** Null before the Engineering tab has ever been opened this session. */
     captureState: CaptureState? = null,
     onInsightsRefresh: () -> Unit = {},
+    /** Null in previews, same as [captureState] — see its KDoc. */
+    motorTelemetry: SignalState<MotorTelemetry> = SignalState.Loading,
+    captureSummary: MotorCaptureSummary? = null,
     modifier: Modifier = Modifier,
 ) {
     // Hoisted to here rather than kept in the renderer, because the debug panel that edits it is
@@ -205,11 +215,23 @@ internal fun DiagnosticsScreenContent(
                 modifier = Modifier.padding(bottom = 14.dp),
             )
 
-            when (selectedTab) {
-                DiagnosticsTab.OVERVIEW -> Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
+            // The Row is never removed from composition when switching tabs — only visually
+            // covered. This used to be a `when (selectedTab)` that unmounted CarStage entirely on
+            // switching to ENGINEERING, tearing down the Filament engine/asset; a Choreographer
+            // frame callback already in flight for the car model could still fire afterwards and
+            // dereference the now-destroyed native asset handle inside gltfio, crashing the
+            // process (SIGSEGV in libgltfio-jni.so — see the "Engineering-tab crash" comment on
+            // Car3dRenderer's final DisposableEffect(Unit)). Keeping CarStage mounted and covering
+            // it with EngineeringInsightsPane's own opaque background sidesteps that teardown race
+            // for this switch entirely; the 3D engine now only tears down when the whole
+            // Diagnostics screen leaves composition, not on every tab flip.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
                     CarStage(
@@ -281,14 +303,19 @@ internal fun DiagnosticsScreenContent(
                     }
                 }
 
-                DiagnosticsTab.ENGINEERING -> EngineeringInsightsPane(
-                    state = captureState ?: CaptureState.Idle,
-                    onRefresh = onInsightsRefresh,
-                    onBackToOverview = { onTabSelected(DiagnosticsTab.OVERVIEW) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                )
+                // Drawn after (and so on top of) the Row above: its own opaque background fully
+                // covers the car stage and side panels, and Compose hit-tests topmost-first, so
+                // this also takes over all touch input while it's showing.
+                if (selectedTab == DiagnosticsTab.ENGINEERING) {
+                    EngineeringInsightsPane(
+                        state = captureState ?: CaptureState.Idle,
+                        motor = motorTelemetry,
+                        captureSummary = captureSummary,
+                        onRefresh = onInsightsRefresh,
+                        onBackToOverview = { onTabSelected(DiagnosticsTab.OVERVIEW) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
 
