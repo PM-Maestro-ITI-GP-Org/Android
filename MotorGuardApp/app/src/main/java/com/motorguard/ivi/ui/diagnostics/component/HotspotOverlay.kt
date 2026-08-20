@@ -125,12 +125,18 @@ private object HotspotTokens {
 
     /**
      * Floor for the visual dot's crowding shrink (see the `graphicsLayer` scale beside
-     * [HotspotProjector.tapDiameterOf]'s use in [HotspotOverlay]). Two dots at their most
-     * crowded still touch at this scale rather than at 1f — the hit circle already guarantees
-     * that geometrically — so this exists only to keep an icon a legible size instead of
-     * following the hit circle all the way down to a dot.
+     * [HotspotProjector.tapDiameterOf]'s use in [HotspotOverlay]).
+     *
+     * Was 0.6f: correct against the hit-circle overlap this exists to prevent, but at the
+     * DEFAULT idle camera angle (Car3dTuning.HERO_AZIMUTH_DEG/HERO_ELEVATION_DEG) Motor and
+     * Brakes project close enough together that they sat at close to this floor from the
+     * moment the screen opened — reading as "these two dots are just smaller than the rest"
+     * rather than as a crowding response to something the driver did. Raised so a crowded pair
+     * stays close to full size; the hit circle (tapDiameterOf) still shrinks independently and
+     * keeps doing the actual overlap-prevention job, so tap accuracy is unaffected — only the
+     * visual/tap size MATCH gets looser at the (rare) most-crowded extreme.
      */
-    const val MIN_VISUAL_SCALE = 0.6f
+    const val MIN_VISUAL_SCALE = 0.85f
 
     /** Alpha of the non-focused dots while a component is focused (spec §7: "fade other dots"). */
     const val UNFOCUSED_ALPHA = 0.10f
