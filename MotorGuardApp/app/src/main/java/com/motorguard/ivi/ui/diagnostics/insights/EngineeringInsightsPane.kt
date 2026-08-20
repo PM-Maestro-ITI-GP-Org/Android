@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -86,75 +85,54 @@ private object InsightsTuning {
 private enum class Stage { INTRO_SPEED, INTRO_CURRENT, INTERACTIVE }
 
 /**
- * Full-screen engineering view of one requested capture.
+ * Engineering view of the motor's capture, as a tab inside the Diagnostics window rather than a
+ * popup over it — the tab bar is the way in and out, so there is no scrim and no dismiss-by-tap.
+ * [onBackToOverview] backs the header's "Overview" control, a shortcut for the same tab switch.
  *
- * Dismissed by the close control or by tapping outside the panel. Deliberately not a `Dialog`:
- * the diagnostics screen sits over an opaque `SurfaceView`, and a separate dialog window composites
- * against the window behind it rather than against the stage, which reads as a second screen rather
- * than a layer over this one.
+ * Live: [state] is expected to keep arriving on its own (see [DiagnosticsViewModel]'s live-refresh
+ * ticker) for as long as this is composed, which is what makes the plot track the motor rather
+ * than showing one capture frozen from when the tab was opened.
  */
 @Composable
-internal fun EngineeringInsightsDialog(
+internal fun EngineeringInsightsPane(
     state: CaptureState,
     onRefresh: () -> Unit,
-    onDismiss: () -> Unit,
+    onBackToOverview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.62f))
-            // Tap anywhere outside the panel dismisses. `indication = null` because a ripple
-            // spreading across the whole screen reads as the scrim being a control in itself.
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss,
-            ),
-        contentAlignment = Alignment.Center,
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surface),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.88f)
-                .fillMaxHeight(0.86f)
-                .clip(RoundedCornerShape(22.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                // Swallows taps that land on the panel, so the scrim's dismiss handler underneath
-                // only ever sees taps that genuinely missed it.
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                ),
-        ) {
-            Column(Modifier.fillMaxSize()) {
-                InsightsHeader(state = state, onRefresh = onRefresh, onDismiss = onDismiss)
-                when (state) {
-                    is CaptureState.Ready -> CaptureBody(state.capture)
-                    CaptureState.Requesting -> CenteredStatus(
-                        title = "Requesting capture",
-                        detail = "Acquiring 20 kHz samples from the diagnostics unit",
-                        busy = true,
-                    )
-                    is CaptureState.Failed -> CenteredStatus(
-                        title = "Capture failed",
-                        detail = state.message,
-                        busy = false,
-                        isError = true,
-                    )
-                    CaptureState.Idle -> CenteredStatus(
-                        title = "No capture yet",
-                        detail = "Request one to see the raw signals",
-                        busy = false,
-                    )
-                }
+        Column(Modifier.fillMaxSize()) {
+            InsightsHeader(state = state, onRefresh = onRefresh, onBackToOverview = onBackToOverview)
+            when (state) {
+                is CaptureState.Ready -> CaptureBody(state.capture)
+                CaptureState.Requesting -> CenteredStatus(
+                    title = "Requesting capture",
+                    detail = "Acquiring 20 kHz samples from the diagnostics unit",
+                    busy = true,
+                )
+                is CaptureState.Failed -> CenteredStatus(
+                    title = "Capture failed",
+                    detail = state.message,
+                    busy = false,
+                    isError = true,
+                )
+                CaptureState.Idle -> CenteredStatus(
+                    title = "No capture yet",
+                    detail = "Request one to see the raw signals",
+                    busy = false,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun InsightsHeader(state: CaptureState, onRefresh: () -> Unit, onDismiss: () -> Unit) {
+private fun InsightsHeader(state: CaptureState, onRefresh: () -> Unit, onBackToOverview: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -163,8 +141,8 @@ private fun InsightsHeader(state: CaptureState, onRefresh: () -> Unit, onDismiss
     ) {
         // Top-LEFT, which is unusual and deliberate: this panel is a drill-down, and on a
         // left-hand-drive head unit the near hand reaches the left edge without crossing the screen.
-        IconButton(onClick = onDismiss) {
-            Icon(Icons.Filled.Close, contentDescription = "Close engineering insights")
+        IconButton(onClick = onBackToOverview) {
+            Icon(Icons.Filled.Close, contentDescription = "Back to Overview")
         }
         Spacer(Modifier.width(6.dp))
         Text(
@@ -177,7 +155,7 @@ private fun InsightsHeader(state: CaptureState, onRefresh: () -> Unit, onDismiss
         Text(
             text = when (state) {
                 is CaptureState.Ready ->
-                    "${(state.capture.durationSec).toInt()} s at 20 kHz"
+                    "${(state.capture.durationSec).toInt()} s at 20 kHz · live"
                 else -> ""
             },
             style = MaterialTheme.typography.labelMedium,
@@ -230,13 +208,21 @@ private fun CenteredStatus(
 
 @Composable
 private fun CaptureBody(capture: MotorCapture) {
-    var stage by remember(capture) { mutableStateOf(Stage.INTRO_SPEED) }
-    var chosen by remember(capture) { mutableStateOf(MotorSignalGroup.CURRENT) }
+    // Deliberately NOT keyed on `capture` (it used to be): the tab now live-refreshes captures
+    // every few seconds (see DiagnosticsViewModel's live-refresh ticker), and re-running the
+    // scripted intro or snapping the scrub position back to the middle of the run on every one
+    // of those ticks is the opposite of "live" — it would fight whatever the driver is currently
+    // looking at. Keying on `capture` here is what used to make the panel feel like it kept
+    // resetting itself instead of updating in place. These now persist for as long as this
+    // composable stays alive, i.e. for as long as the Engineering tab is open, and reset only
+    // when the tab is left and reopened (a fresh composition).
+    var stage by remember { mutableStateOf(Stage.INTRO_SPEED) }
+    var chosen by remember { mutableStateOf(MotorSignalGroup.CURRENT) }
 
     // Shared across every signal group, which is the point: switching signal keeps you at the same
     // MOMENT in the run. Storing a time rather than a sample index is what lets groups with
     // different window lengths agree on where "here" is.
-    var windowStartSec by remember(capture) { mutableFloatStateOf(0f) }
+    var windowStartSec by remember { mutableFloatStateOf(0f) }
 
     // Zoom is remembered PER SIGNAL, seeded from each signal's own default.
     //
@@ -244,7 +230,7 @@ private fun CaptureBody(capture: MotorCapture) {
     // speeds are envelopes and open zoomed out, the currents are waveforms and open zoomed in.
     // What stays shared is the window START, so switching signal still lands on the same moment —
     // which is the property that actually matters for comparing them.
-    val zoomOverrides = remember(capture) { mutableStateMapOf<MotorSignalGroup, Boolean>() }
+    val zoomOverrides = remember { mutableStateMapOf<MotorSignalGroup, Boolean>() }
 
     val group = when (stage) {
         Stage.INTRO_SPEED -> MotorSignalGroup.SPEED_COMMAND
@@ -252,9 +238,12 @@ private fun CaptureBody(capture: MotorCapture) {
         Stage.INTERACTIVE -> chosen
     }
 
-    // Keyed on the capture, so a refresh replays the introduction against the new data rather than
-    // dropping the user into whatever view they last had.
-    LaunchedEffect(capture) {
+    // Runs once per tab-open (Unit key), not once per capture: with live-refresh this composable
+    // now sees a new `capture` every few seconds, and replaying a 5.2 s scripted intro on top of
+    // the driver's current view every tick would be the opposite of smooth. The very first
+    // capture after opening the tab still gets the intro; a manual "Refresh data" tap or a live
+    // tick afterwards just updates the data the current view is already showing.
+    LaunchedEffect(Unit) {
         delay(InsightsTuning.INTRO_HOLD_MILLIS)
         if (stage == Stage.INTRO_SPEED) {
             stage = Stage.INTRO_CURRENT

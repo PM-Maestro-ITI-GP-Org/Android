@@ -13,8 +13,10 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -72,7 +74,7 @@ import com.motorguard.ivi.ui.diagnostics.component.HealthRing
 import com.motorguard.ivi.ui.diagnostics.component.healthRingSemantics
 import com.motorguard.ivi.ui.diagnostics.component.HotspotOverlay
 import com.motorguard.ivi.ui.diagnostics.debug.FakeDataControlPanel
-import com.motorguard.ivi.ui.diagnostics.insights.EngineeringInsightsDialog
+import com.motorguard.ivi.ui.diagnostics.insights.EngineeringInsightsPane
 import com.motorguard.ivi.ui.diagnostics.render.Car3dTuning
 import com.motorguard.ivi.ui.diagnostics.render.CarRenderState
 import com.motorguard.ivi.ui.diagnostics.render.rememberCar3dRenderer
@@ -98,6 +100,7 @@ fun DiagnosticsScreen(
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val healthScore by viewModel.healthScore.collectAsStateWithLifecycle()
     val captureState by viewModel.captureState.collectAsStateWithLifecycle()
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     DiagnosticsScreenContent(
         ui = ui,
         focusedTelemetry = { telemetryState.value },
@@ -110,10 +113,10 @@ fun DiagnosticsScreen(
         onStageLongPress = viewModel::onStageLongPress,
         onDebugDismiss = viewModel::onDebugPanelDismiss,
         onUserInteraction = viewModel::onUserInteraction,
+        selectedTab = selectedTab,
+        onTabSelected = viewModel::onTabSelected,
         captureState = captureState,
-        onInsightsOpen = viewModel::onInsightsOpen,
         onInsightsRefresh = viewModel::requestCapture,
-        onInsightsDismiss = viewModel::onInsightsDismiss,
         modifier = modifier,
     )
 }
@@ -142,12 +145,12 @@ internal fun DiagnosticsScreenContent(
     onStageLongPress: () -> Unit,
     onDebugDismiss: () -> Unit,
     onUserInteraction: () -> Unit,
-    /** Null when the engineering-insights panel is closed. Defaulted, with the three callbacks
-     *  below, so the previews stay a positional call that ends at the chrome they render. */
+    /** Defaulted so the previews (which render Overview chrome only) stay a positional call. */
+    selectedTab: DiagnosticsTab = DiagnosticsTab.OVERVIEW,
+    onTabSelected: (DiagnosticsTab) -> Unit = {},
+    /** Null before the Engineering tab has ever been opened this session. */
     captureState: CaptureState? = null,
-    onInsightsOpen: () -> Unit = {},
     onInsightsRefresh: () -> Unit = {},
-    onInsightsDismiss: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Hoisted to here rather than kept in the renderer, because the debug panel that edits it is
@@ -166,10 +169,10 @@ internal fun DiagnosticsScreenContent(
     Box(
         modifier
             .fillMaxSize()
-            // Resets the auto-return timer (spec §7: "8-10 s of NO INTERACTION"). Deliberately
-            // the whole screen rather than just the car stage — reading the alert list or a live
-            // card is interaction too, and auto-returning out from under someone mid-read would
-            // be worse than not having the feature.
+            // Reports interaction to the ViewModel (currently a no-op there — see
+            // DiagnosticsViewModel.restartIdleTimer's KDoc; focus no longer auto-clears). Kept
+            // wired rather than removed so a future timeout, if wanted, only needs to change the
+            // ViewModel end, not rethread this call site.
             //
             // PointerEventPass.Initial sees every press BEFORE any child does and consumes
             // nothing, so no existing gesture changes behaviour. Filtered to Press so dragging
@@ -189,94 +192,104 @@ internal fun DiagnosticsScreenContent(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(horizontal = 28.dp, vertical = 22.dp),
         ) {
-            // No page header row. The title sits INSIDE the stage (see [CarStage]), which hands
-            // the car the ~74 dp the header and its spacer used to take — on a screen whose
-            // subject is the vehicle, a band of chrome above it is the first thing to spend.
-            //
-            // The "Preview" pill went with it: it labelled the whole screen as a mock-up, which
-            // stopped being true, and it was never a control.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                CarStage(
-                    ui = ui,
-                    livery = livery,
-                    onHotspotTap = onHotspotTap,
-                    onBackgroundTap = onBackgroundTap,
-                    onLongPress = onStageLongPress,
-                    // 4:1 — the stage takes 80% of the row. The car is the screen's subject and
-                    // the only element that gets better with area; the right-hand column is text
-                    // and a ring, both of which have a size beyond which they stop improving.
+            // Was no page header row at all — the title sat INSIDE the stage (see [CarStage]) so
+            // the car kept the space a header would have spent. The Engineering tab needs a way
+            // in from OUTSIDE the motor's own detail card (that is what "a tab in the diag
+            // window" means — it used to only be reachable while Motor was focused), so this
+            // strip is the one bit of chrome reintroduced above the stage. Kept to the ~44 dp a
+            // single button row costs rather than a full Material `TabRow`, which budgets far
+            // more height than two entries need.
+            DiagnosticsTabBar(
+                selected = selectedTab,
+                onSelected = onTabSelected,
+                modifier = Modifier.padding(bottom = 14.dp),
+            )
+
+            when (selectedTab) {
+                DiagnosticsTab.OVERVIEW -> Row(
                     modifier = Modifier
-                        .weight(4f)
-                        .fillMaxHeight(),
-                )
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    // Weights measured against the real panel: the ring is a fixed 96 dp disc
-                    // stacked over two lines, so it needs the least. The alert list needs the
-                    // most — every row is a 76 dp touch target by safety requirement, so three
-                    // alerts plus a header overflow anything smaller and the top row ends up
-                    // clipped. The ring card gets a fixed height rather than a weight for the
-                    // same reason. The detail card is only present while something is focused,
-                    // and the alert list takes whatever is left — so with nothing selected
-                    // the alerts get the full column instead of the screen carrying an empty
-                    // placeholder panel.
-                    //
-                    // 208, not 184: HealthRing stacks its ring over its two text lines now
-                    // (see its own comment) rather than sitting them side by side, which is
-                    // what actually fixes the label wrapping letter-by-letter on this panel's
-                    // real width — but stacked is taller than side-by-side was.
-                    HealthRing(
-                        score = healthScore,
-                        worst = worstSeverity,
+                    CarStage(
+                        ui = ui,
+                        livery = livery,
+                        onHotspotTap = onHotspotTap,
+                        onBackgroundTap = onBackgroundTap,
                         onLongPress = onStageLongPress,
+                        // 4:1 — the stage takes 80% of the row. The car is the screen's subject and
+                        // the only element that gets better with area; the right-hand column is text
+                        // and a ring, both of which have a size beyond which they stop improving.
                         modifier = Modifier
-                            .height(208.dp)
-                            .healthRingSemantics(healthScore, worstSeverity),
+                            .weight(4f)
+                            .fillMaxHeight(),
                     )
-                    AnimatedVisibility(
-                        visible = ui.focusedHotspot != null,
-                        enter = expandVertically(tween(240, easing = FastOutSlowInEasing)) +
-                            fadeIn(tween(200)),
-                        exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing)) +
-                            fadeOut(tween(140)),
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
-                        ComponentDetailPanel(
-                            telemetry = focusedTelemetry,
-                            onInsights = onInsightsOpen,
-                            // Sized to the TALLEST card, which is the motor: hero, an eight-row
-                            // capture block and the insights button. GlassCard does not clip, so a
-                            // card that outgrows this does not scroll or truncate — it draws
-                            // straight over the alert list underneath.
-                            modifier = Modifier.height(486.dp),
+                        // Weights measured against the real panel: the ring is a fixed 96 dp disc
+                        // stacked over two lines, so it needs the least. The alert list needs the
+                        // most — every row is a 76 dp touch target by safety requirement, so three
+                        // alerts plus a header overflow anything smaller and the top row ends up
+                        // clipped. The ring card gets a fixed height rather than a weight for the
+                        // same reason. The detail card is only present while something is focused,
+                        // and the alert list takes whatever is left — so with nothing selected
+                        // the alerts get the full column instead of the screen carrying an empty
+                        // placeholder panel.
+                        //
+                        // 208, not 184: HealthRing stacks its ring over its two text lines now
+                        // (see its own comment) rather than sitting them side by side, which is
+                        // what actually fixes the label wrapping letter-by-letter on this panel's
+                        // real width — but stacked is taller than side-by-side was.
+                        HealthRing(
+                            score = healthScore,
+                            worst = worstSeverity,
+                            onLongPress = onStageLongPress,
+                            modifier = Modifier
+                                .height(208.dp)
+                                .healthRingSemantics(healthScore, worstSeverity),
+                        )
+                        AnimatedVisibility(
+                            visible = ui.focusedHotspot != null,
+                            enter = expandVertically(tween(240, easing = FastOutSlowInEasing)) +
+                                fadeIn(tween(200)),
+                            exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing)) +
+                                fadeOut(tween(140)),
+                        ) {
+                            ComponentDetailPanel(
+                                telemetry = focusedTelemetry,
+                                // Was `onInsightsOpen` straight into a modal; now the same tap
+                                // switches the window to the Engineering tab.
+                                onInsights = { onTabSelected(DiagnosticsTab.ENGINEERING) },
+                                // Sized to the TALLEST card, which is the motor: hero, an eight-row
+                                // capture block and the insights button. GlassCard does not clip, so a
+                                // card that outgrows this does not scroll or truncate — it draws
+                                // straight over the alert list underneath.
+                                modifier = Modifier.height(486.dp),
+                            )
+                        }
+                        AlertList(
+                            alerts = alerts,
+                            onAlertTap = onHotspotTap,
+                            onAlertDismiss = onAlertDismiss,
+                            modifier = Modifier.weight(1f),
                         )
                     }
-                    AlertList(
-                        alerts = alerts,
-                        onAlertTap = onHotspotTap,
-                        onAlertDismiss = onAlertDismiss,
-                        modifier = Modifier.weight(1f),
-                    )
                 }
-            }
-        }
 
-        // Above everything, including the debug drawer: it is a modal drill-down, and a debug
-        // control reachable through it would be a control nobody meant to expose.
-        if (captureState != null) {
-            EngineeringInsightsDialog(
-                state = captureState,
-                onRefresh = onInsightsRefresh,
-                onDismiss = onInsightsDismiss,
-            )
+                DiagnosticsTab.ENGINEERING -> EngineeringInsightsPane(
+                    state = captureState ?: CaptureState.Idle,
+                    onRefresh = onInsightsRefresh,
+                    onBackToOverview = { onTabSelected(DiagnosticsTab.OVERVIEW) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                )
+            }
         }
 
         // Top-most layer, so it sits over both the car stage and the reserved panels. Null in
@@ -317,6 +330,58 @@ internal fun DiagnosticsScreenContent(
                     onDismiss = onDebugDismiss,
                 )
             }
+        }
+    }
+}
+
+/**
+ * The Diagnostics window's own tab switch: Overview (the car stage + panels) and Engineering
+ * (the motor's raw signal plot). A compact pill row rather than a Material `TabRow` — see the
+ * call site's comment for why the height matters here.
+ */
+@Composable
+private fun DiagnosticsTabBar(
+    selected: DiagnosticsTab,
+    onSelected: (DiagnosticsTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        DiagnosticsTab.entries.forEach { tab ->
+            val isSelected = tab == selected
+            Text(
+                text = when (tab) {
+                    DiagnosticsTab.OVERVIEW -> "Overview"
+                    DiagnosticsTab.ENGINEERING -> "Engineering"
+                },
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(
+                        if (isSelected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                        } else {
+                            Color.Transparent
+                        },
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onSelected(tab) },
+                    )
+                    .padding(horizontal = 18.dp, vertical = 9.dp),
+            )
         }
     }
 }

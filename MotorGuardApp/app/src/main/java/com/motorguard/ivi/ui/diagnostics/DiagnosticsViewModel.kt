@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,10 +35,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** The Diagnostics window's own tabs — not to be confused with the app's nav rail tabs. */
+enum class DiagnosticsTab { OVERVIEW, ENGINEERING }
+
 /**
  * Owns the Diagnostics screen's state: severities derived from [VehicleData.source], plus the
- * two bits of pure UI state (which hotspot is focused, whether the debug drawer is open) that
- * have no telemetry backing at all.
+ * bits of pure UI state (which hotspot is focused, whether the debug drawer is open, which
+ * Diagnostics tab is selected) that have no telemetry backing at all.
  *
  * Fragment-scoped and dies on tab switch — intended. [VehicleData] is what outlives the
  * fragment; this VM is disposable scaffolding on top of it.
@@ -49,28 +53,43 @@ class DiagnosticsViewModel(
 ) : ViewModel() {
 
     /**
-     * The engineering-insights popup, or null when it is closed. Held here rather than as local
-     * composable state so a capture already in flight survives the recomposition that opens the
-     * panel, and so closing the popup does not silently abandon a request the diagnostics unit is
-     * still working on.
+     * The Engineering tab's capture, or null before it has ever been opened this session. Held
+     * here rather than as local composable state so a capture already in flight survives the
+     * recomposition that opens the tab, and so switching back to Overview does not abandon a
+     * request the diagnostics unit is still working on.
      */
     private val capture = MutableStateFlow<CaptureState?>(null)
     val captureState: StateFlow<CaptureState?> = capture
 
-    /** Only ever one request in flight: the button is disabled while [CaptureState.Requesting], but
-     *  a double tap that beats the recomposition would otherwise start a second acquisition. */
+    /** Only ever one request in flight: the refresh button is disabled while
+     *  [CaptureState.Requesting], but a double tap that beats the recomposition — or a live
+     *  refresh tick landing on top of one already running — would otherwise start a second
+     *  acquisition. */
     private var captureJob: Job? = null
 
-    fun onInsightsOpen() {
-        if (capture.value == null) capture.value = CaptureState.Idle
-        if (capture.value !is CaptureState.Ready) requestCapture()
-        restartIdleTimer()
-    }
+    private val tab = MutableStateFlow(DiagnosticsTab.OVERVIEW)
+    val selectedTab: StateFlow<DiagnosticsTab> = tab
 
-    fun onInsightsDismiss() {
-        capture.value = null
-        captureJob?.cancel()
-        captureJob = null
+    /** Keeps the Engineering tab's plot current without the driver having to press Refresh —
+     *  see [requestCapture]'s `live` parameter for why this does not reset the view each tick. */
+    private var liveRefreshJob: Job? = null
+
+    fun onTabSelected(selected: DiagnosticsTab) {
+        tab.value = selected
+        if (selected == DiagnosticsTab.ENGINEERING) {
+            if (capture.value == null) capture.value = CaptureState.Idle
+            if (capture.value !is CaptureState.Ready) requestCapture()
+            liveRefreshJob?.cancel()
+            liveRefreshJob = viewModelScope.launch {
+                while (isActive) {
+                    delay(LIVE_REFRESH_INTERVAL_MILLIS)
+                    requestCapture(live = true)
+                }
+            }
+        } else {
+            liveRefreshJob?.cancel()
+            liveRefreshJob = null
+        }
         restartIdleTimer()
     }
 
@@ -78,18 +97,28 @@ class DiagnosticsViewModel(
      * The analysis of the most recent successful capture, which is where every quantitative claim
      * about the motor now comes from — the vehicle publishes only a classification.
      *
-     * Survives closing the popup: having fetched a capture, the card keeps showing what it said
-     * until a newer one replaces it. Cleared only by a failed or in-flight request replacing it,
-     * never by dismissing the panel.
+     * Survives switching away from the Engineering tab: having fetched a capture, the card keeps
+     * showing what it said until a newer one replaces it. Cleared only by a request replacing it,
+     * never by leaving the tab.
      */
     private val captureSummary = MutableStateFlow<MotorCaptureSummary?>(null)
 
-    fun requestCapture() {
+    /**
+     * @param live true for the background tick started by [onTabSelected] to keep the plot
+     *   current while the tab is open. A live tick must not interrupt what is already on screen
+     *   the way opening the tab does: it does not flip [capture] to [CaptureState.Requesting]
+     *   (that would blank the plot to a spinner every few seconds), and a failed tick keeps
+     *   showing the last good capture rather than replacing it with an error — a single missed
+     *   tick is not worth interrupting the view over, unlike the very first request.
+     */
+    fun requestCapture(live: Boolean = false) {
         if (captureJob?.isActive == true) return
-        capture.value = CaptureState.Requesting
+        if (!live) capture.value = CaptureState.Requesting
         captureJob = viewModelScope.launch {
             val result = captureSource.requestCapture()
-            capture.value = result
+            if (!live || result is CaptureState.Ready || capture.value !is CaptureState.Ready) {
+                capture.value = result
+            }
             // Summarised once, here, rather than on every recomposition of the card — and OFF the
             // main thread, because it is a pass over 200,000 samples across twelve channels and
             // viewModelScope runs on Main. Doing it inline stalls the frame that is animating the
@@ -98,7 +127,7 @@ class DiagnosticsViewModel(
                 captureSummary.value = withContext(Dispatchers.Default) { result.capture.summarise() }
             }
         }
-        restartIdleTimer()
+        if (!live) restartIdleTimer()
     }
 
     /**
@@ -257,28 +286,17 @@ class DiagnosticsViewModel(
         restartIdleTimer()
     }
 
-    private var idleJob: Job? = null
-
     /**
-     * Spec §7's auto-return. Lives here rather than in the renderer or the screen because it
-     * mutates [focused] — the single source of truth for focus — and must survive both
-     * recomposition and any running camera animation.
-     *
-     * Restarted, not merely started, on every interaction: the timeout means "since the user last
-     * touched anything", not "since focus changed". Scoped to [viewModelScope], so it dies with
-     * the VM on a tab switch with no `onCleared` override needed.
+     * Used to clear focus automatically after a period of inactivity (spec §7's auto-return).
+     * Dropped per driver feedback: a focused hotspot going away on its own read as broken rather
+     * than as a timeout ("click the motor bubble, it stays a moment, then goes out" — nobody
+     * reads that as auto-return). Focus now only clears on an explicit action: tapping the
+     * focused hotspot again, a background tap, or the back button — see [onHotspotTap],
+     * [onBackgroundTap], [onBackPressed]. Kept as a no-op call site rather than removed outright
+     * so re-enabling a timeout later (if wanted) is a one-line change here, not a re-thread
+     * through every call site.
      */
-    private fun restartIdleTimer() {
-        idleJob?.cancel()
-        idleJob = if (focused.value == null) {
-            null
-        } else {
-            viewModelScope.launch {
-                delay(AUTO_RETURN_MILLIS)
-                focused.value = null
-            }
-        }
-    }
+    private fun restartIdleTimer() = Unit
 
     /**
      * Single focus enforced HERE, not in the UI (spec §7): one nullable field, so two
@@ -322,5 +340,6 @@ class DiagnosticsViewModel(
     }
 }
 
-/** Spec §7 asks for 8-10 s; the midpoint reads as unhurried without feeling stuck. */
-private const val AUTO_RETURN_MILLIS = 9_000L
+/** How often the Engineering tab pulls a fresh capture while it is open. Frequent enough to read
+ *  as live, well clear of how long one 20 kHz/200,000-sample acquisition takes to acquire. */
+private const val LIVE_REFRESH_INTERVAL_MILLIS = 4_000L
