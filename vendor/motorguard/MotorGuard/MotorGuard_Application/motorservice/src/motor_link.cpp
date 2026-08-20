@@ -14,6 +14,9 @@
 #include <mutex>
 #include <thread>
 
+#include <ifaddrs.h>
+#include <net/if.h>
+
 #include <android/log.h>
 #include <android/multinetwork.h>
 
@@ -49,27 +52,95 @@ bool setNonBlocking(int fd) {
     return flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
-// Ties fd to a specific Network (android/multinetwork.h) instead of leaving it
-// on whatever ConnectivityManager currently calls the default. 0 is
-// NETWORK_UNSPECIFIED -- the handle was not resolved (no Ethernet Network at
-// startup, or a Gradle/emulator build with no ConnectivityManager to ask) --
-// and every socket falls back to its old, unbound behaviour rather than
-// failing to open at all.
+// Falls back to when android_setsocknetwork has nothing to bind to (handle ==
+// NETWORK_UNSPECIFIED) or is unavailable for some other reason on this image.
+// Board-specific -- the Pi's onboard Ethernet is always eth0, which is what
+// this whole link exists to reach -- rather than a general answer for any
+// device this code might run on, but it is the one confirmed on the bench to
+// actually move traffic off Wi-Fi: android_setsocknetwork() alone was
+// verified to compile and link, never end-to-end on hardware, because
+// resolving a Network handle happens in Kotlin (SomeIpVehicleData, over
+// ConnectivityManager) and nothing here can prove that resolution behaves
+// the same on a real system image as it did on paper. SO_BINDTODEVICE is
+// what was actually driven through discovery, subscribe and a live event
+// arriving with the guest's own vtnet2 fix on the other end -- see the
+// commit this landed in. Applied unconditionally, not only when handle is
+// unset: the two mechanisms bind different kernel state (a socket mark
+// versus the interface itself) and do not conflict, so this is a floor
+// under android_setsocknetwork rather than a competing path with it.
+constexpr const char* kFallbackIface = "eth0";
+
 void bindToNetwork(int fd, uint64_t handle, const char* what) {
-    if (handle == NETWORK_UNSPECIFIED) return;
-    if (const int err = android_setsocknetwork(static_cast<net_handle_t>(handle), fd); err != 0) {
-        LOGW("%s: android_setsocknetwork failed (%s)", what, strerror(-err));
+    if (handle != NETWORK_UNSPECIFIED) {
+        if (const int err = android_setsocknetwork(static_cast<net_handle_t>(handle), fd);
+            err != 0) {
+            LOGW("%s: android_setsocknetwork failed (%s)", what, strerror(-err));
+        }
+    }
+    if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, kFallbackIface, strlen(kFallbackIface) + 1) !=
+        0) {
+        LOGW("%s: SO_BINDTODEVICE %s failed (%s)", what, kFallbackIface, strerror(errno));
     }
 }
 
-// The local unicast address the peer would see us at. Asking the routing table
-// this way — connect a throwaway UDP socket and read back the local end —
-// avoids enumerating interfaces and picks the right one on a device that has
-// both Ethernet and Wi-Fi up, which the Pi routinely does. Binding it to the
-// same Network the SD/event sockets use keeps this address consistent with
-// the interface the subscribe will actually go out on, rather than a route
-// lookup landing on Wi-Fi for this one throwaway socket alone.
+// The diagnostics unit's whole LAN -- meta-qnx-hyp's bridge is 192.168.2.0/24
+// on every board this ships to, the same way the guest's own address
+// (192.168.2.3) and the host's (192.168.2.2) are static throughout that
+// project rather than DHCP-discovered. Naming the network here, not a host on
+// it, is what tells localAddressOnLan() which of eth0's addresses is the one
+// that matters when the interface carries more than one -- see there.
+constexpr uint32_t kLanNetworkBe = 0x0002A8C0;   // 192.168.2.0, network order
+constexpr uint32_t kLanNetmaskBe = 0x00FFFFFF;   // 255.255.255.0, network order
+
+// This device's own address on the diagnostics LAN, found by walking every
+// local IPv4 address (getifaddrs) for the one whose network matches
+// kLanNetworkBe/kLanNetmaskBe -- not by asking the kernel to pick one for us.
+//
+// The difference matters on this exact board: eth0 here carries BOTH
+// 192.168.2.60/24 (the LAN) and 10.42.0.2/24 (unrelated -- some other
+// service's doing, not this app's), and neither SO_BINDTODEVICE nor
+// android_setsocknetwork disambiguates between two addresses on the SAME
+// interface. Confirmed on the bench: pinning the interface alone still left
+// 10.42.0.2 as the source on every outgoing packet, an address the
+// diagnostics unit has no route back to, which is a silent failure --
+// discovery completes, subscribe is acknowledged, and events simply never
+// arrive because the reply address embedded in the subscribe was never
+// reachable to begin with.
+//
+// Returns 0 if nothing matches, which callers treat as "fall back" rather
+// than as this device having no address at all.
+uint32_t localAddressOnLan() {
+    ifaddrs* addrs = nullptr;
+    if (getifaddrs(&addrs) != 0) return 0;
+    uint32_t result = 0;
+    for (const ifaddrs* a = addrs; a != nullptr; a = a->ifa_next) {
+        if (a->ifa_addr == nullptr || a->ifa_addr->sa_family != AF_INET) continue;
+        const auto addr = reinterpret_cast<sockaddr_in*>(a->ifa_addr)->sin_addr.s_addr;
+        if ((addr & kLanNetmaskBe) == (kLanNetworkBe & kLanNetmaskBe)) {
+            result = addr;
+            break;
+        }
+    }
+    freeifaddrs(addrs);
+    return result;
+}
+
+// The local unicast address the peer would see us at.
+//
+// localAddressOnLan() first: on THIS board, it is the only answer that is
+// actually right, because the routing-table trick below cannot tell
+// 192.168.2.60 and 10.42.0.2 apart -- both are valid local addresses on the
+// same interface, and which one the kernel picks for a connect()ed socket's
+// source is not something this code controls.
+//
+// The connect()+getsockname() fallback stays for a board that is NOT on
+// 192.168.2.0/24 -- a different bench, a different LAN -- where it is
+// still the right general answer: connect a throwaway UDP socket and read
+// back the local end, which picks the correct interface on a device with
+// more than one route without this file needing to know its address plan.
 uint32_t localAddressFor(uint32_t peerBe, uint64_t networkHandle) {
+    if (const uint32_t lan = localAddressOnLan(); lan != 0) return lan;
+
     const int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) return 0;
     bindToNetwork(fd, networkHandle, "local-address probe");
@@ -231,18 +302,42 @@ bool MotorLink::Impl::openSockets() {
         return false;
     }
 
+    // localAddressOnLan() over INADDR_ANY: with ANY, which interface the join
+    // lands on follows whatever the kernel's default route is (Wi-Fi on this
+    // board), same as the reasoning above bindToNetwork() -- see there. 0
+    // (not found, e.g. a board off 192.168.2.0/24 entirely) falls back to
+    // ANY rather than failing the join outright.
+    const uint32_t joinAddr = localAddressOnLan();
+
     ip_mreq mreq{};
     if (inet_pton(AF_INET, cfg.sdMulticast.c_str(), &mreq.imr_multiaddr) != 1) {
         LOGE("bad multicast address %s", cfg.sdMulticast.c_str());
         return false;
     }
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    mreq.imr_interface.s_addr = joinAddr != 0 ? joinAddr : htonl(INADDR_ANY);
     if (setsockopt(sdFd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof mreq) != 0) {
         // Not fatal: a static peer still works, and this is exactly what fails
         // on a bench network with no multicast route. Say which it was.
         LOGW("multicast join %s failed (%s) — discovery will not work",
              cfg.sdMulticast.c_str(), strerror(errno));
     }
+
+    // The send-side twin of the join above. IP_ADD_MEMBERSHIP only pins where
+    // this socket RECEIVES the group's traffic; sendto() to a multicast
+    // destination still follows the kernel's own source-address selection
+    // for whatever interface SO_BINDTODEVICE/android_setsocknetwork picked,
+    // which on this board's eth0 -- two addresses, one interface -- is not
+    // reliably the LAN one. Confirmed on the bench: without this, FIND left
+    // on eth0 as documented, sourced from the OTHER address, and the
+    // diagnostics unit never saw it arrive from anywhere it could answer.
+    if (joinAddr != 0) {
+        in_addr mcastIf{};
+        mcastIf.s_addr = joinAddr;
+        if (setsockopt(sdFd, IPPROTO_IP, IP_MULTICAST_IF, &mcastIf, sizeof mcastIf) != 0) {
+            LOGW("multicast egress pin failed (%s)", strerror(errno));
+        }
+    }
+
     setNonBlocking(sdFd);
     return true;
 }
@@ -614,6 +709,19 @@ MotorLink::CaptureResult MotorLink::requestCapture(float requestedDurationSec) {
     impl_->captureFd.store(fd);
 
     bindToNetwork(fd, impl_->cfg.androidNetworkHandle, "capture socket");
+    // Same reasoning as the multicast egress pin in openSockets(): pinning the
+    // interface does not pin which of its addresses connect() uses as source,
+    // and a TCP handshake sourced from the wrong one on eth0 fails silently
+    // from here -- SYN leaves, the diagnostics unit has no route back to it,
+    // and this socket just times out looking like the unit never answered.
+    if (const uint32_t lan = localAddressOnLan(); lan != 0) {
+        sockaddr_in src{};
+        src.sin_family = AF_INET;
+        src.sin_addr.s_addr = lan;
+        if (bind(fd, reinterpret_cast<sockaddr*>(&src), sizeof src) != 0) {
+            LOGW("capture socket: bind to LAN address failed (%s)", strerror(errno));
+        }
+    }
     setNonBlocking(fd);
     int one = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
