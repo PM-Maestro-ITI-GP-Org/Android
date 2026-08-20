@@ -123,6 +123,15 @@ private object HotspotTokens {
     /** Past this occlusion the 76 dp hit target is withdrawn entirely. */
     const val OCCLUSION_TAP_CUTOFF = 0.5f
 
+    /**
+     * Floor for the visual dot's crowding shrink (see the `graphicsLayer` scale beside
+     * [HotspotProjector.tapDiameterOf]'s use in [HotspotOverlay]). Two dots at their most
+     * crowded still touch at this scale rather than at 1f — the hit circle already guarantees
+     * that geometrically — so this exists only to keep an icon a legible size instead of
+     * following the hit circle all the way down to a dot.
+     */
+    const val MIN_VISUAL_SCALE = 0.6f
+
     /** Alpha of the non-focused dots while a component is focused (spec §7: "fade other dots"). */
     const val UNFOCUSED_ALPHA = 0.10f
 
@@ -440,15 +449,31 @@ fun HotspotOverlay(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                HotspotDot(
-                    hotspot = hotspot,
-                    color = color,
-                    hasSignal = hasSignal,
-                    pulsing = pulsing,
-                    focused = focusedNow,
-                    ringColor = ringColor,
-                    pulse = pulse,
-                )
+                Box(
+                    Modifier.graphicsLayer {
+                        // Same crowding signal the hit circle already shrinks to (tapDiameter),
+                        // applied to the VISUAL dot too: two icons that were merely reachable but
+                        // still drawn on top of each other were the part a shrunk hit target alone
+                        // did not fix — this is what actually separates them on screen. 1f (no
+                        // shrink at all) the moment a dot has its full 76 dp neighbourhood to
+                        // itself, which is most dots most of the time; floored so a badly crowded
+                        // dot stays a legible icon rather than shrinking toward a dot.
+                        val scale = (projector.tapDiameterOf(hotspot) / targetPx)
+                            .coerceIn(HotspotTokens.MIN_VISUAL_SCALE, 1f)
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                ) {
+                    HotspotDot(
+                        hotspot = hotspot,
+                        color = color,
+                        hasSignal = hasSignal,
+                        pulsing = pulsing,
+                        focused = focusedNow,
+                        ringColor = ringColor,
+                        pulse = pulse,
+                    )
+                }
 
                 // The hit target lives in its OWN box, separate from the visual, so it can be
                 // withdrawn while the dot stays faintly drawn. An occluded dot has drifted onto
