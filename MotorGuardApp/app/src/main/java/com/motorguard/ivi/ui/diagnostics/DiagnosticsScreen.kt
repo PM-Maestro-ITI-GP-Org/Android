@@ -220,21 +220,26 @@ internal fun DiagnosticsScreenContent(
                         .fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    // Weights measured against the real panel: the ring is a fixed 132 dp disc and
-                    // two lines of text, so it needs the least. The alert list needs the most —
-                    // every row is a 76 dp touch target by safety requirement, so three alerts plus
-                    // a header overflow anything smaller and the top row ends up clipped.
-                    // The ring is a fixed 132 dp disc plus two lines, so it gets a fixed height
-                    // rather than a weight. The detail card is only present while something is
-                    // focused, and the alert list takes whatever is left — so with nothing selected
+                    // Weights measured against the real panel: the ring is a fixed 96 dp disc
+                    // stacked over two lines, so it needs the least. The alert list needs the
+                    // most — every row is a 76 dp touch target by safety requirement, so three
+                    // alerts plus a header overflow anything smaller and the top row ends up
+                    // clipped. The ring card gets a fixed height rather than a weight for the
+                    // same reason. The detail card is only present while something is focused,
+                    // and the alert list takes whatever is left — so with nothing selected
                     // the alerts get the full column instead of the screen carrying an empty
                     // placeholder panel.
+                    //
+                    // 208, not 184: HealthRing stacks its ring over its two text lines now
+                    // (see its own comment) rather than sitting them side by side, which is
+                    // what actually fixes the label wrapping letter-by-letter on this panel's
+                    // real width — but stacked is taller than side-by-side was.
                     HealthRing(
                         score = healthScore,
                         worst = worstSeverity,
                         onLongPress = onStageLongPress,
                         modifier = Modifier
-                            .height(184.dp)
+                            .height(208.dp)
                             .healthRingSemantics(healthScore, worstSeverity),
                     )
                     AnimatedVisibility(

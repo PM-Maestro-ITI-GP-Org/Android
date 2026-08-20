@@ -5,17 +5,14 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +27,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.ui.components.GlassCard
@@ -65,15 +64,25 @@ internal fun HealthRing(
         modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { onLongPress() }) },
         padding = PaddingValues(0.dp),
     ) {
-        Row(
+        // Stacked, not side-by-side: a Row here (ring | spacer | text) was sized against the
+        // 1828 dp preview width, where the side panel this card lives in is generous. At this
+        // panel's REAL width on the board's 240 dpi / 1280 dp-wide display -- the 4:1 split with
+        // the car stage leaves this card well under half of what the preview assumed -- the
+        // ring's fixed 132 dp plus its padding consumed nearly the whole card, and the text
+        // column was left about 20 dp to work with. "Vehicle health" has no word that short, so
+        // it wrapped one or two letters at a time instead of at word boundaries. Stacking gives
+        // the text the card's full width (minus padding only) regardless of how the ring is
+        // sized, which is what actually fixes it rather than shaving the ring down by guesswork
+        // to chase a width that depends on the panel's weight split anyway.
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(Modifier.size(132.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize()) {
-                    val stroke = 12.dp.toPx()
+                    val stroke = 10.dp.toPx()
                     val inset = stroke / 2f
                     val arcSize = Size(size.width - stroke, size.height - stroke)
                     drawArc(
@@ -99,35 +108,44 @@ internal fun HealthRing(
                 }
                 Text(
                     text = score?.toString() ?: "—",
-                    style = MaterialTheme.typography.displaySmall,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
-            Spacer(Modifier.width(24.dp))
+            Spacer(Modifier.height(10.dp))
 
-            Column(verticalArrangement = Arrangement.Center) {
-                Text(
-                    text = "Vehicle health",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    // Every branch is a statement about the DATA, never an unsupported claim about
-                    // the vehicle: with no signal the honest answer is that there is no signal.
-                    text = when {
-                        score == null -> "Waiting for telemetry"
-                        worst == Severity.CRITICAL -> "Critical fault present"
-                        worst == Severity.CAUTION -> "Needs attention"
-                        else -> "All monitored systems nominal"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-                )
-            }
+            // maxLines + ellipsis stay even with the full card width now available: a defensive
+            // floor, not the fix itself -- this card's width is a fraction of a fraction (the
+            // side panel's share of the row, times this column's share of the panel), so it is
+            // one weight-tuning change away from being narrow again, and truncating cleanly is
+            // the correct failure mode for a label next to a ring that already carries the number.
+            Text(
+                text = "Vehicle health",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                // Every branch is a statement about the DATA, never an unsupported claim about
+                // the vehicle: with no signal the honest answer is that there is no signal.
+                text = when {
+                    score == null -> "Waiting for telemetry"
+                    worst == Severity.CRITICAL -> "Critical fault present"
+                    worst == Severity.CAUTION -> "Needs attention"
+                    else -> "All monitored systems nominal"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
