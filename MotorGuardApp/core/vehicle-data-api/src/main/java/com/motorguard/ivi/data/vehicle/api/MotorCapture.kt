@@ -23,7 +23,7 @@ data class MotorCapture(
 
     val durationSec: Float get() = sampleCount / SAMPLE_RATE_HZ
 
-    /** The channels behind one [MotorSignalGroup], in the order they should be drawn. */
+    /** The channels behind one [MotorSignalGroup], in the order they should be drawn. Raw counts. */
     fun channelsOf(group: MotorSignalGroup): List<FloatArray> = when (group) {
         MotorSignalGroup.SPEED_COMMAND -> listOf(speedVoltCmd)
         MotorSignalGroup.CURRENT -> current.toList()
@@ -31,6 +31,42 @@ data class MotorCapture(
         MotorSignalGroup.VIBRATION -> vibration.toList()
         MotorSignalGroup.DC_BUS -> listOf(dcBusVolts)
         MotorSignalGroup.SPEED_ACTUAL -> listOf(rpm)
+    }
+
+    /** SI-scaled channels for display — the plot's `displayRange` is in SI (A, V, g), not raw ADC counts.
+     *  Raw capture arrives as 12-bit ADC counts (0..4095) per docs/10 §5.3; the fixed `displayRange`
+     *  was sized for SI, so drawing raw would pin every trace off-scale. Scaling here keeps the
+     *  capture itself raw (so `summarise()` and its BlockAnalyzer can stay count-based) while the
+     *  waveform sees calibrated units. Constants mirror `motor_ai_node/config/feature_extraction.json`
+     *  `adc` block and `qt-cluster/MotorBlockAnalyzer.h` bench capture (728800 rows).
+     *  Heuristic: fake synthesis (used in Gradle) already emits SI (e.g., 11A), so scaling is skipped
+     *  when the sample magnitude is already within SI range. */
+    fun scaledChannelsOf(group: MotorSignalGroup): List<FloatArray> {
+        fun isRaw(maxAbs: Float, threshold: Float) = maxAbs > threshold
+        return when (group) {
+            MotorSignalGroup.SPEED_COMMAND -> {
+                val rawMax = speedVoltCmd.maxOrNull()?.let { kotlin.math.abs(it) } ?: 0f
+                if (isRaw(rawMax, 10f)) listOf(FloatArray(speedVoltCmd.size) { i -> speedVoltCmd[i] * VOLTS_PER_COUNT_SPEED })
+                else listOf(speedVoltCmd)
+            }
+            MotorSignalGroup.CURRENT -> current.map { ch ->
+                val rawMax = ch.maxOrNull()?.let { kotlin.math.abs(it) } ?: 0f
+                if (isRaw(rawMax, 50f)) FloatArray(ch.size) { i -> (ch[i] - ADC_MIDSCALE) * AMPS_PER_COUNT } else ch
+            }
+            MotorSignalGroup.VOLTAGE -> voltage.map { ch ->
+                val rawMax = ch.maxOrNull()?.let { kotlin.math.abs(it) } ?: 0f
+                if (isRaw(rawMax, 80f)) FloatArray(ch.size) { i -> ch[i] * VOLTS_PER_COUNT_PHASE } else ch
+            }
+            MotorSignalGroup.VIBRATION -> vibration.map { ch ->
+                val rawMax = ch.maxOrNull()?.let { kotlin.math.abs(it) } ?: 0f
+                if (isRaw(rawMax, 10f)) FloatArray(ch.size) { i -> ch[i] / IMU_COUNTS_PER_G } else ch
+            }
+            MotorSignalGroup.DC_BUS -> {
+                val rawMax = dcBusVolts.maxOrNull()?.let { kotlin.math.abs(it) } ?: 0f
+                if (isRaw(rawMax, 80f)) listOf(FloatArray(dcBusVolts.size) { i -> dcBusVolts[i] * VOLTS_PER_COUNT_BUS }) else listOf(dcBusVolts)
+            }
+            MotorSignalGroup.SPEED_ACTUAL -> listOf(rpm) // no tach fitted, always 0 — kept raw
+        }
     }
 
     // Arrays give data classes reference equality, which would make two captures with identical
@@ -43,6 +79,25 @@ data class MotorCapture(
     companion object {
         /** Fixed by the acquisition hardware. */
         const val SAMPLE_RATE_HZ = 20_000f
+
+        // ADC / sensor calibration — mirrors motor_ai_node/config/feature_extraction.json `adc`
+        // and qt-cluster bench capture (MotorBlockAnalyzer.h, 728800 rows). Single source for
+        // display scaling and for `summarise()` SI corrections.
+        const val ADC_MAX = 4095f
+        const val VREF = 3.3f
+        const val ADC_MIDSCALE = 2047f
+        const val SHUNT_R = 0.0015f
+        const val CSA_GAIN = 50f
+        const val AMPS_PER_COUNT = VREF / (ADC_MAX * SHUNT_R * CSA_GAIN) // 0.010695, physics-derived (matches max_current 22A)
+        const val VBUS_VOLTS = 48f
+        const val PHASE_RAIL_COUNTS = 2071f
+        const val BUS_COUNTS = 2633f
+        const val VOLTS_PER_COUNT_PHASE = VBUS_VOLTS / PHASE_RAIL_COUNTS // 0.02318
+        const val VOLTS_PER_COUNT_BUS = VBUS_VOLTS / BUS_COUNTS // 0.01823
+        const val VOLTS_PER_COUNT_SPEED = VREF / ADC_MAX // 0.000805, divider 1.0 (0..3.3V -> 0..5V range); with 60V hint divider 18.18 would be 0..60
+        const val IMU_COUNTS_PER_G = 16384f
+        // Friend hint: volt_divider_gain 1.0 gives 0..3.3V, should be 0..60V => divider 60/3.3 ≈18.18, volts=raw*60/ADC_MAX=0.01465.
+        // Kept as PHASE/BUS above (bench-measured) since those pin bus 48V at 2633 counts; 60/4095 would read bus 38.6V.
     }
 }
 
@@ -91,9 +146,11 @@ enum class MotorSignalGroup(
     // Ranges are the instrument's, sized for a 48 V / 450 W / 750 rpm BLDC with headroom for a
     // fault: 450 W at 48 V is about 9.4 A of bus current, so a phase peak of 16 A is generous;
     // phase voltage cannot exceed the bus.
+    // Volt scaling 0..60 hint (volt_divider_gain 1.0->0..3.3 should be 0..60) is covered by
+    // VOLTS_PER_COUNT_* bench measures; display 0..60 holds rail 48V with headroom.
     SPEED_COMMAND("Speed cmd", "V", 0.5f, 0f..5f, opensZoomedIn = false),
     CURRENT("Current x3", "A", 0.04f, -16f..16f, opensZoomedIn = true),
-    VOLTAGE("Voltage x3", "V", 0.04f, -30f..30f, opensZoomedIn = true),
+    VOLTAGE("Voltage x3", "V", 0.04f, 0f..60f, opensZoomedIn = true),
     VIBRATION("Vibration xyz", "g", 0.5f, -2f..2f, opensZoomedIn = true),
     DC_BUS("DC bus", "V", 2f, 40f..52f, opensZoomedIn = true),
     SPEED_ACTUAL("Speed", "rpm", 0.5f, 0f..800f, opensZoomedIn = false),

@@ -293,7 +293,7 @@ private fun CaptureBody(
     val fromIndex = (start * MotorCapture.SAMPLE_RATE_HZ).toInt()
     val toIndex = ((start + windowSec) * MotorCapture.SAMPLE_RATE_HZ).toInt()
 
-    val channels = capture.channelsOf(group)
+    val channels = capture.scaledChannelsOf(group)
     val palette = phasePalette(MaterialTheme.colorScheme.primary, channels.size)
 
     Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 14.dp, bottom = 18.dp)) {
@@ -579,7 +579,7 @@ private fun CaptureNavigator(
     val trace = color.copy(alpha = 0.55f)
     val windowFill = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
     val windowEdge = MaterialTheme.colorScheme.primary
-    val channels = capture.channelsOf(group)
+    val channels = capture.scaledChannelsOf(group)
     val range = group.displayRange
 
     Column {

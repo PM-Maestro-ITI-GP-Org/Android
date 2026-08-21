@@ -36,14 +36,61 @@ fun MotorCapture.summarise(): MotorCaptureSummary {
         )
     }
 
+    // Heuristic: real SOME/IP captures are raw ADC counts (current ~2047, bus ~2633, vib ~1000),
+    // fake synthesis is already SI (current ~11A, bus ~48V, vib ~0.2g). Scale only when raw.
+    val probeCurrentMax = current[0].maxOrNull()?.let { abs(it) } ?: 0f
+    val isRaw = probeCurrentMax > 50f
     var dcSum = 0.0
     var vibSquares = 0.0
     for (i in 0 until n) {
-        dcSum += dcBusVolts[i]
-        val vx = vibration[0][i]
-        val vy = vibration[1][i]
-        val vz = vibration[2][i]
+        val dcRaw = dcBusVolts[i]
+        val dcV = if (isRaw) dcRaw * MotorCapture.VOLTS_PER_COUNT_BUS else dcRaw
+        dcSum += dcV
+        val vxRaw = vibration[0][i]
+        val vyRaw = vibration[1][i]
+        val vzRaw = vibration[2][i]
+        val vx = if (isRaw) vxRaw / MotorCapture.IMU_COUNTS_PER_G else vxRaw
+        val vy = if (isRaw) vyRaw / MotorCapture.IMU_COUNTS_PER_G else vyRaw
+        val vz = if (isRaw) vzRaw / MotorCapture.IMU_COUNTS_PER_G else vzRaw
         vibSquares += (vx * vx + vy * vy + vz * vz).toDouble()
+    }
+
+    // Fake synthesis already emits SI (11A, 48V) — BlockAnalyzer expects raw 0..4095 counts and would
+    // misread SI as raw. Detect once and fall back to direct SI arithmetic for the fake path.
+    if (!isRaw) {
+        var speedSum = 0.0
+        var speedMax = 0f
+        var powerSum = 0.0
+        var powerPeak = 0f
+        for (i in 0 until n) {
+            val rpmI = rpm[i]
+            speedSum += rpmI
+            speedMax = max(speedMax, rpmI)
+            val p = voltage[0][i] * current[0][i] + voltage[1][i] * current[1][i] + voltage[2][i] * current[2][i]
+            powerSum += p
+            powerPeak = max(powerPeak, p)
+        }
+        val windowFake = durationSec
+        val avgPowerFake = (powerSum / n).toFloat()
+        val rmsFake = run {
+            var sum = 0.0
+            for (p in 0 until 3) for (v in current[p]) sum += (v * v).toDouble()
+            sqrt(sum / (3 * n)).toFloat()
+        }
+        return MotorCaptureSummary(
+            capturedAtMs = capturedAtMs,
+            windowSec = windowFake,
+            averageSpeedRpm = (speedSum / n).toFloat(),
+            maxSpeedRpm = speedMax,
+            averagePowerW = avgPowerFake,
+            peakPowerW = powerPeak,
+            energyWh = avgPowerFake * windowFake / 3600f,
+            rmsCurrentA = rmsFake,
+            currentImbalancePercent = currentImbalancePercent(),
+            vibrationRmsG = sqrt(vibSquares / n).toFloat(),
+            speedTrackingErrorPercent = speedTrackingErrorPercent(emptyList()),
+            averageDcBusVolts = (dcSum / n).toFloat(),
+        )
     }
 
     val blocks = analyseBlocks()
@@ -246,15 +293,15 @@ private fun MotorCapture.analyseBlocks(): List<BlockResult> {
     return results
 }
 
-/** RMS of each phase current over the whole capture, midscale-subtracted — used only for
- *  [currentImbalancePercent], which needs the three phases individually rather than the
- *  [BlockAnalyzer]'s already-combined space-vector RMS. Not calibrated to amps: the ratio
- *  imbalance is computed from is scale-invariant, so [AMPS_PER_COUNT] would cancel out anyway. */
+/** RMS of each phase current over the whole capture, midscale-subtracted for raw counts.
+ *  Heuristic: real captures are raw ~2047, fake SI ~11A. Scale-invariant for imbalance either way. */
 private fun MotorCapture.phaseRms(): FloatArray = FloatArray(3) { phase ->
     var squares = 0.0
     val channel = current[phase]
+    val probe = channel.maxOrNull()?.let { abs(it) } ?: 0f
+    val isRawPh = probe > 50f
     for (i in channel.indices) {
-        val v = (channel[i] - ADC_MIDSCALE).toDouble()
+        val v = if (isRawPh) (channel[i] - ADC_MIDSCALE).toDouble() else channel[i].toDouble()
         squares += v * v
     }
     if (channel.isEmpty()) 0f else sqrt(squares / channel.size).toFloat()
