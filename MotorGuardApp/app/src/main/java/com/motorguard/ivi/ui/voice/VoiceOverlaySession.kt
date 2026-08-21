@@ -320,6 +320,23 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             speak(reply)
             return
         }
+        // The motor's own signal, answered rather than routed.
+        //
+        // The diagnostics unit on the other board has already done the classifying, and its
+        // verdict is a sentence — "an electrical fault, flagged as critical". Opening the
+        // diagnostics tab so the driver can read that off a card is not an answer to a question
+        // asked out loud, and the core cannot answer it either: its catalogue is compiled-in DTCs
+        // and this fault is not one of them.
+        //
+        // Ahead of the matcher because the matcher would route "is anything wrong with the motor"
+        // to the DIAGNOSTICS tab on an anchor written before this existed. Behind the taught
+        // phrases, for the reason they are ahead of everything: teaching one is an instruction.
+        MotorVoice.handle(utterance)?.let { reply ->
+            Log.i(TAG, "motor question answered from live telemetry")
+            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+            speak(reply)
+            return
+        }
         // Meaning before keywords, and before the core.
         //
         // The obvious order — core first, matcher as a fallback — cannot work: the C++ core
@@ -333,6 +350,16 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             intent.reply?.let { taught ->
                 model = model.copy(state = VoiceState.SPEAKING, reply = taught)
                 speak(taught)
+                return
+            }
+            intent.ask?.let { ask ->
+                // Matched by meaning rather than by wording, so the answer is composed here
+                // instead of by MotorVoice.claims() above — which has already declined it.
+                val reply = when (ask) {
+                    com.motorguard.ivi.ui.voice.nlu.VoiceAsk.MOTOR_STATUS -> MotorVoice.answerNow(utterance)
+                }
+                model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+                speak(reply)
                 return
             }
             intent.route?.let { target ->

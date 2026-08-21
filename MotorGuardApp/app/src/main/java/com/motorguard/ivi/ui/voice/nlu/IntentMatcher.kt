@@ -86,8 +86,20 @@ object IntentMatcher {
     /** One phrasing of one intent, with its vector. */
     private class Anchor(val vector: FloatArray, val result: Match)
 
-    /** What the matcher concluded. [reply] is set only for a taught command. */
-    data class Match(val route: VoiceRoute?, val reply: String?, val confidence: Float = 0f)
+    /**
+     * What the matcher concluded.
+     *
+     * Exactly one of the three is set. [reply] is a taught command's answer, [route] opens a tab,
+     * and [ask] is a question the assistant answers itself from live vehicle data — a tab is not
+     * an answer to "is the motor fault electrical or mechanical", and the driver asking it is
+     * usually not in a position to read one.
+     */
+    data class Match(
+        val route: VoiceRoute?,
+        val reply: String?,
+        val ask: VoiceAsk? = null,
+        val confidence: Float = 0f,
+    )
 
     /**
      * Load the model and embed the anchors. Idempotent, and safe to call when the model files
@@ -109,10 +121,15 @@ object IntentMatcher {
         val loaded = TextEmbedder.load(model, vocab) ?: return
         embedder = loaded
 
-        val built = ArrayList<Anchor>(64)
+        val built = ArrayList<Anchor>(80)
         BUILT_IN.forEach { (route, phrases) ->
             phrases.forEach { phrase ->
                 loaded.embed(phrase)?.let { built += Anchor(it, Match(route, null)) }
+            }
+        }
+        ANSWERED.forEach { (ask, phrases) ->
+            phrases.forEach { phrase ->
+                loaded.embed(phrase)?.let { built += Anchor(it, Match(null, null, ask)) }
             }
         }
         anchors = built
@@ -163,7 +180,11 @@ object IntentMatcher {
             )
             return null
         }
-        Log.i(TAG, "intent matched %.2f -> %s".format(bestScore, best.route?.name ?: "taught"))
+        Log.i(
+            TAG,
+            "intent matched %.2f -> %s"
+                .format(bestScore, best.route?.name ?: best.ask?.name ?: "taught"),
+        )
         return best.copy(confidence = bestScore)
     }
 
@@ -232,4 +253,38 @@ object IntentMatcher {
             "turn on bluetooth", "make the screen darker", "change the theme",
         ),
     )
+
+    /**
+     * Ways people ask about the motor itself, which the assistant answers out loud instead of
+     * routing.
+     *
+     * Kept apart from [BUILT_IN] and phrased around the motor rather than the car, because these
+     * anchors sit next to the DIAGNOSTICS ones and the two must not trade places: "is the car
+     * healthy" should still open the tab, where "is the motor okay" has a one-sentence answer that
+     * the diagnostics unit already computed. Nearest-anchor-wins is what keeps them apart, so the
+     * word that separates them has to be in every phrase here.
+     *
+     * [MotorVoice.claims] covers the same ground by keyword and runs first, so an image without
+     * the embedding model still answers the common wordings. This is the paraphrase net over it.
+     */
+    private val ANSWERED: Map<VoiceAsk, List<String>> = mapOf(
+        VoiceAsk.MOTOR_STATUS to listOf(
+            "is there something wrong with the motor", "what is wrong with the motor",
+            "does the motor have a fault", "is the motor okay", "how is the motor doing",
+            "is the fault electrical or mechanical", "what kind of motor fault is it",
+            "how bad is the motor fault", "is the motor fault serious",
+            "how long has the motor got left", "what is the remaining life of the motor",
+            "what did the diagnostics unit say about the motor",
+            "is it safe to keep driving with this motor fault",
+        ),
+    )
 }
+
+/**
+ * A question the assistant answers from live vehicle data rather than by opening a tab.
+ *
+ * One member today. It is an enum rather than a boolean because the next one — a battery or tyre
+ * question answered the same way — should be a new case here and a new branch at the call site,
+ * not a second flag nobody remembers to check.
+ */
+enum class VoiceAsk { MOTOR_STATUS }
