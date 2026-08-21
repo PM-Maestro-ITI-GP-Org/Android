@@ -146,11 +146,11 @@ object IntentMatcher {
         // Taught phrases are considered first and win outright, rather than competing on
         // score with the built-in anchors.
         //
-        // Competing does not work. Teach "tyre pressure" and it goes up against the shipped
-        // Diagnostics anchor "what is my tyre pressure" — nearly the same sentence, so the two
-        // score within a hair of each other and which one wins is a coin toss decided by
-        // wording nobody can see. Asking about tyres would sometimes open the Diagnostics tab
-        // instead of saying the answer that was written for exactly that question.
+        // Competing does not work. Teach "car health" and it goes up against the shipped
+        // Diagnostics anchor "is the car healthy" — nearly the same sentence, so the two score
+        // within a hair of each other and which one wins is a coin toss decided by wording
+        // nobody can see. Asking about the car would sometimes open the Diagnostics tab instead
+        // of saying the answer that was written for exactly that question.
         //
         // Teaching a phrase is an explicit instruction about what should happen when it is
         // said, so it takes precedence over anything inferred, at a slightly easier bar.
@@ -243,10 +243,14 @@ object IntentMatcher {
             "dial a number", "give her a ring", "call the office", "answer the phone",
             "hang up",
         ),
+        // No tyre, battery or charge phrasings. This vehicle has no such sensor: those five
+        // signals come from the fake source even on the board (motorservice/README.md, "Only the
+        // motor comes off this link"), so an anchor for them invites a spoken question whose only
+        // possible answer is an invented number on a tab.
         VoiceRoute.DIAGNOSTICS to listOf(
-            "how is the car doing", "is anything wrong with the vehicle", "check the battery",
-            "what is my tyre pressure", "show me the warning lights", "is the car healthy",
-            "how much charge is left", "any faults", "what is that warning light",
+            "how is the car doing", "is anything wrong with the vehicle",
+            "show me the warning lights", "is the car healthy",
+            "any faults", "what is that warning light",
         ),
         VoiceRoute.SETTINGS to listOf(
             "open the settings", "change the display", "connect to wifi", "pair my phone",
@@ -283,8 +287,9 @@ object IntentMatcher {
 /**
  * A question the assistant answers from live vehicle data rather than by opening a tab.
  *
- * One member today. It is an enum rather than a boolean because the next one — a battery or tyre
- * question answered the same way — should be a new case here and a new branch at the call site,
- * not a second flag nobody remembers to check.
+ * One member today, and the motor is the only signal on this vehicle with a real sensor behind
+ * it, so it may well stay that way. It is an enum rather than a boolean because if a second
+ * signal ever does arrive, it should be a new case here and a new branch at the call site, not a
+ * second flag nobody remembers to check.
  */
 enum class VoiceAsk { MOTOR_STATUS }

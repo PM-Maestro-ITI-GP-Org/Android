@@ -45,6 +45,12 @@ class MotorVoiceTest {
             "how serious is the engine fault",
             "how long has the motor got left",
             "what's the remaining useful life",
+            // The phrasings the keyword floor used to miss, leaving them to an embedding model
+            // that is not on every image.
+            "how is the motor doing",
+            "is the engine running okay",
+            "does the motor sound right",
+            "what is the diagnostics unit saying",
         ).forEach { assertTrue(it, MotorVoice.claims(it)) }
     }
 
@@ -106,12 +112,40 @@ class MotorVoiceTest {
         )
     }
 
-    /** A sensor fault is not a fault in the motor, and saying so is the whole value of the type. */
+    /**
+     * Electrical and mechanical are the only two type words spoken. Anything else the unit sends
+     * is still reported, with its severity, as a fault without a name — the one outcome that must
+     * not happen is a raised fault becoming silence while the card shows a coloured dot.
+     */
     @Test
-    fun `a sensor fault is not reported as a motor fault`() {
-        val reply = say("is it electrical or mechanical", live(motor(MotorFaultType.SENSOR, Severity.CAUTION)))
-        assertTrue(reply, reply.contains("sensor fault"))
-        assertTrue(reply, reply.startsWith("It's neither"))
+    fun `a fault outside the two classes is reported without being named`() {
+        val summary = say("is there a fault in the motor", live(motor(MotorFaultType.SENSOR, Severity.CRITICAL)))
+        assertTrue(summary, summary.contains("flagged a fault"))
+        assertTrue(summary, summary.contains("critical"))
+        assertFalse(summary, summary.contains("sensor"))
+
+        val type = say("is it electrical or mechanical", live(motor(MotorFaultType.SENSOR, Severity.CAUTION)))
+        assertTrue(type, type.startsWith("Neither"))
+        assertFalse(type, type.contains("sensor"))
+    }
+
+    /** No answer about the motor may invent a third class of fault. */
+    @Test
+    fun `no answer names a fault class other than electrical or mechanical`() {
+        val questions = listOf(
+            "is there a fault in the motor", "is it electrical or mechanical",
+            "how bad is the motor fault", "how long has the motor got left",
+        )
+        MotorFaultType.entries.forEach { type ->
+            Severity.entries.forEach { sev ->
+                questions.forEach { q ->
+                    val reply = say(q, live(motor(type, sev))).lowercase()
+                    listOf("sensor", "tyre", "tire", "pressure", "battery", "brake").forEach { banned ->
+                        assertFalse("$type/$sev \"$q\" -> $reply", reply.contains(banned))
+                    }
+                }
+            }
+        }
     }
 
     @Test

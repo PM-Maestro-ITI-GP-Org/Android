@@ -76,20 +76,34 @@ object MotorVoice {
     /** The subject has to be named; "how is it doing" is not something to answer about a motor. */
     private val MOTOR_WORDS = setOf("motor", "engine", "drivetrain", "powertrain")
 
-    /** ...and something has to be asked about it. */
+    /**
+     * ...and something has to be asked about it.
+     *
+     * "Doing", "running" and "sounds" are here because they are how the question is actually
+     * asked out loud — "how is the motor doing" is the most natural phrasing there is and it
+     * matched nothing, since the first version of this list only held words for a fault that had
+     * already been named. The embedding matcher covers them too, but only on an image carrying
+     * the model, and this floor exists for the images that do not.
+     */
     private val STATE_WORDS = setOf(
         "fault", "faults", "faulty", "wrong", "problem", "problems", "issue", "issues",
         "ok", "okay", "fine", "healthy", "health", "status", "condition",
         "electrical", "mechanical", "serious", "bad", "safe", "failing", "broken",
         "life", "rul", "vibration", "vibrating",
+        "doing", "running", "runs", "run", "sound", "sounds", "sounding", "noise", "noisy",
     )
 
     private val STATE_PHRASES = listOf("how long", "how much longer", "left on", "diagnos")
 
-    /** Phrases that name the motor's fault without using the word — the follow-up questions. */
+    /**
+     * Phrases that name the motor's fault without using the word — the follow-up questions, plus
+     * the unit itself. "The diagnostics unit" is unambiguous here: the motor is the only signal
+     * on this vehicle that a unit reports at all.
+     */
     private val STANDALONE = listOf(
         "electrical or mechanical", "mechanical or electrical",
         "remaining useful life", "remaining life",
+        "diagnostics unit", "diagnostic unit",
     )
 
     /**
@@ -162,21 +176,34 @@ object MotorVoice {
                 "The motor diagnostics unit has found an electrical fault, ${severityClause(data.faultSeverity)}"
             MotorFaultType.MECHANICAL ->
                 "The motor diagnostics unit has found a mechanical fault, ${severityClause(data.faultSeverity)}"
+            // Not named. The unit classifies electrical and mechanical, and those are the two
+            // words this assistant says; anything else it sends is reported as a fault with the
+            // severity it arrived with and no type. Reporting it unnamed rather than not at all
+            // is the part that matters — a fault the unit raised must never become silence here,
+            // or the voice would say the motor is fine while the card shows a coloured dot.
             MotorFaultType.SENSOR ->
-                "The motor diagnostics unit has found a sensor fault rather than a fault in the motor itself, " +
-                    severityClause(data.faultSeverity)
+                "The motor diagnostics unit has flagged a fault, ${severityClause(data.faultSeverity)}"
         }
         val life = lifeSentence(data.remainingLife, standalone = false)
         return if (life.isEmpty()) head else "$head $life"
     }
 
+    /**
+     * Electrical or mechanical, and nothing finer.
+     *
+     * Those are the two classes the model on the diagnostics unit produces and the two the driver
+     * is being asked to act on. [MotorFaultType] carries a third, and the wire contract a fourth
+     * (`docs/10` §3.2), but subdividing further in speech buys a word nobody uses and costs the
+     * clarity of a two-way answer.
+     */
     private fun typeSentence(data: MotorTelemetry): String = when (data.faultType) {
         MotorFaultType.NORMAL ->
             "There's no fault on the motor at the moment, so there's nothing to call electrical or mechanical."
         MotorFaultType.ELECTRICAL -> "It's an electrical fault, ${severityClause(data.faultSeverity)}"
         MotorFaultType.MECHANICAL -> "It's a mechanical fault, ${severityClause(data.faultSeverity)}"
         MotorFaultType.SENSOR ->
-            "It's neither — the unit classified it as a sensor fault, ${severityClause(data.faultSeverity)}"
+            "Neither — the unit is reporting a fault but hasn't called it electrical or mechanical, " +
+                severityClause(data.faultSeverity)
     }
 
     private fun severitySentence(data: MotorTelemetry): String {
@@ -184,7 +211,7 @@ object MotorVoice {
             MotorFaultType.NORMAL -> "There's no motor fault reported"
             MotorFaultType.ELECTRICAL -> "The electrical fault on the motor is"
             MotorFaultType.MECHANICAL -> "The mechanical fault on the motor is"
-            MotorFaultType.SENSOR -> "The sensor fault on the motor is"
+            MotorFaultType.SENSOR -> "The fault on the motor is"
         }
         if (data.faultType == MotorFaultType.NORMAL) {
             return if (data.faultSeverity == Severity.OK) "$named, and nothing is flagged."
