@@ -493,9 +493,12 @@ private fun MotorFaultRows(data: MotorTelemetry, stale: Boolean) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
         )
-        if (life?.percent != null) {
+        // Bound rather than smart-cast: `percent` is a nullable property of a class in
+        // vehicle-data-api, and Kotlin will not smart-cast across a module boundary.
+        val percent = life?.percent
+        if (percent != null) {
             Text(
-                text = TelemetryFormat.percent(life.percent),
+                text = TelemetryFormat.percent(percent),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
             )
