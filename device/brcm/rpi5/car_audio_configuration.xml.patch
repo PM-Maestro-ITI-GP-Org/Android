@@ -1,0 +1,37 @@
+--- a/car/car_audio_configuration.xml	2026-08-21 18:16:33.972074913 +0300
++++ b/car/car_audio_configuration.xml	2026-08-21 18:16:33.974074915 +0300
+@@ -20,6 +20,34 @@
+                                 <context context="vehicle_status"/>
+                                 <context context="announcement"/>
+                             </device>
++                            <device address="USB Device Out">
++                                <context context="music"/>
++                                <context context="navigation"/>
++                                <context context="voice_command"/>
++                                <context context="call_ring"/>
++                                <context context="call"/>
++                                <context context="alarm"/>
++                                <context context="notification"/>
++                                <context context="system_sound"/>
++                                <context context="emergency"/>
++                                <context context="safety"/>
++                                <context context="vehicle_status"/>
++                                <context context="announcement"/>
++                            </device>
++                            <device address="USB Headset Out">
++                                <context context="music"/>
++                                <context context="navigation"/>
++                                <context context="voice_command"/>
++                                <context context="call_ring"/>
++                                <context context="call"/>
++                                <context context="alarm"/>
++                                <context context="notification"/>
++                                <context context="system_sound"/>
++                                <context context="emergency"/>
++                                <context context="safety"/>
++                                <context context="vehicle_status"/>
++                                <context context="announcement"/>
++                            </device>
+                         </group>
+                     </volumeGroups>
+                 </zoneConfig>

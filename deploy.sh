@@ -223,6 +223,12 @@ apply_device_patch "eth0_routes.patch" "ramdisk/eth0_routes.sh" "persist.motorgu
 # Mono capture-only USB microphones are rejected by the stock policy.
 apply_device_patch "usb_audio_policy_configuration.xml.patch" \
   "audio/usb_audio_policy_configuration.xml" "Mono instead of stereo"
+# USB speaker via car audio — the stock config only has Speaker for every context, so a USB
+# speaker (card3 pcm0p) is detected (Available output devices shows it) but never selected.
+# One volume group with three outputs (Speaker + USB Device/Headset) shares the same volume
+# so the car UI's slider controls all, and the bar not increasing at max is fixed.
+apply_device_patch "car_audio_configuration.xml.patch" \
+  "car/car_audio_configuration.xml" "USB Device Out"
 
 # Guard against this list going stale again: every *.patch in the drop-in's
 # device/brcm/rpi5/ must be accounted for above. Two patches (eth0_routes,
@@ -232,7 +238,7 @@ for p in "$ROOT"/device/brcm/rpi5/*.patch; do
   pname="$(basename "$p")"
   case "$pname" in
     aosp_rpi5_car.mk.patch|BoardConfig.mk.patch|vendor.prop.patch| \
-    eth0_routes.patch|usb_audio_policy_configuration.xml.patch|car_bluetooth_prop.patch) ;;
+    eth0_routes.patch|usb_audio_policy_configuration.xml.patch|car_audio_configuration.xml.patch|car_bluetooth_prop.patch) ;;
     *) echo "WARNING: $pname exists but deploy.sh never applies it" >&2 ;;
   esac
 done
