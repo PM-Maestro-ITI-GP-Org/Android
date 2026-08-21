@@ -29,6 +29,7 @@ import com.motorguard.ivi.data.Conn
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
 import com.motorguard.ivi.ui.diagnostics.FaultTone
+import com.motorguard.ivi.ui.voice.MotorFaultAnnouncer
 import com.motorguard.ivi.ui.diagnostics.VehicleData
 import com.motorguard.ivi.data.LocalStore
 import com.motorguard.ivi.data.PhoneRepository
@@ -144,6 +145,7 @@ class MainActivity : AppCompatActivity() {
 
         followAlbumArtwork()
         announceFaults()
+        announceMotorFault()
     }
 
     /**
@@ -178,6 +180,28 @@ class MainActivity : AppCompatActivity() {
                         map.filterValues { it != null && it != Severity.OK }
                             .mapValues { (_, severity) -> severity!! },
                     )
+                }
+            }
+        }
+    }
+
+    /**
+     * Say a motor fault out loud when one appears, whichever tab is showing.
+     *
+     * Alongside [announceFaults] and for the same reason it lives here rather than in a card: a
+     * fault that arrives while the driver is on Media has to be heard then. The beep and the
+     * sentence are two halves of one answer — the beep gets attention, the sentence says what
+     * happened — so they are driven from the same place, off the same lifecycle.
+     *
+     * [MotorFaultAnnouncer] decides what is worth saying; this only supplies the readings. The
+     * motor flow is taken directly rather than through `VehicleSeverityFlow` because the
+     * announcement names the fault *type*, which a severity map has already discarded.
+     */
+    private fun announceMotorFault() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                VehicleData.source.motor.collect { state ->
+                    MotorFaultAnnouncer.onState(this@MainActivity, state)
                 }
             }
         }

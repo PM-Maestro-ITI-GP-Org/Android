@@ -48,6 +48,17 @@ object MotorVoice {
     fun answerNow(utterance: String): String =
         compose(utterance, VehicleData.source.motor.value, System.currentTimeMillis())
 
+    /**
+     * The sentence to say unprompted when a fault appears.
+     *
+     * Deliberately the same sentence [answerNow] gives when the driver asks — no alarm word, no
+     * second phrasing. It already opens by naming the diagnostics unit, so it identifies itself
+     * as the car speaking without being dressed up, and a driver who then asks "what was that"
+     * hears exactly what they just heard rather than a variant that leaves them wondering
+     * whether it is the same fault. [MotorFaultAnnouncer] decides *whether* to say it.
+     */
+    internal fun announcement(data: MotorTelemetry): String = summary(data)
+
     // --- what counts as a motor question -----------------------------------
 
     /**

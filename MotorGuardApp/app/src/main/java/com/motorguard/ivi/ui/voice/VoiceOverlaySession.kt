@@ -50,7 +50,19 @@ import com.motorguard.ivi.ui.dialer.PhoneVoice
  */
 class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
-    private companion object {
+    companion object {
+        /**
+         * Whether an overlay session is on screen.
+         *
+         * Read by [MotorFaultAnnouncer], which must not volunteer a fault over a question the
+         * driver is in the middle of asking. A plain flag rather than a flow: the only consumer
+         * asks once, at the moment it is about to speak, and a session is always shown and hidden
+         * on the main thread.
+         */
+        @Volatile
+        var isVisible: Boolean = false
+            private set
+
         const val TAG = "MotorGuardVoice"
         const val SILENCE_MS = 1_500L
         const val DISMISS_DELAY_MS = 1_000L
@@ -114,6 +126,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        isVisible = true
         hideSystemBars()
         // Hand the mic from the always-on wake-word recorder to our recognizer;
         // running both at once starves STT and it reports "I didn't hear anything".
@@ -185,6 +198,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
     }
 
     override fun onHide() {
+        isVisible = false
         handler.removeCallbacksAndMessages(null)
         stopListening()
         runCatching { tts?.stop() }
