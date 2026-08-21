@@ -8,6 +8,19 @@
 # Build + install the app (module name from Android.bp).
 PRODUCT_PACKAGES += MotorGuard
 
+# --- Voice STT/TTS models, shipped in the image ---
+# whisper.bin / piper.onnx / piper.json / espeak-ng-data (~105 MB) are deliberately
+# NOT inside the APK (see WhisperStt.kt / PiperTts.kt KDoc), and adb-pushing them to
+# /data only works until the next reflash — a fresh image boots with no models and
+# the assistant answers "speech recognition failed". ModelPaths.kt resolves them
+# first from /data, then from /system_ext/etc/motorguard and /system/etc/motorguard,
+# so shipping them here makes a flash work out of the box. The app branch tracks them
+# at app/models/; models/install-to-board.sh remains for overriding a single board's
+# copy via /data.
+MOTORGUARD_MODELS := vendor/motorguard/MotorGuard/MotorGuard_Application/app/models
+PRODUCT_COPY_FILES += \
+    $(foreach f,$(shell find $(MOTORGUARD_MODELS) -type f ! -name '*.sh' 2>/dev/null),$(f):system/etc/motorguard/$(patsubst $(MOTORGUARD_MODELS)/%,%,$(f)))
+
 # --- Make Motor Guard the HOME/launcher ---
 # Handled at BUILD time by `overrides: ["CarLauncher"]` in Android.bp: the stock launcher
 # isn't installed and Motor Guard becomes the default HOME from first boot. Nothing to run
