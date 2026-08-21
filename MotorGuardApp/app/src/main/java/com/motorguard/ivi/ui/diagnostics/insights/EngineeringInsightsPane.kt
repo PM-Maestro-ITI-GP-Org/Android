@@ -358,7 +358,9 @@ private fun CaptureBody(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Spacer(Modifier.height(24.dp))
-                    MotorSignalGroup.entries.forEach { entry ->
+                    // SPEED_ACTUAL (rpm) is always 0 — no tach fitted (see MotorCaptureAnalysis BlockAnalyzer
+                    // KDoc) — so it is hidden from the switcher. Keeping the enum for data compat.
+                    MotorSignalGroup.entries.filter { it != MotorSignalGroup.SPEED_ACTUAL }.forEach { entry ->
                         SignalChip(
                             label = entry.label,
                             selected = entry == group,

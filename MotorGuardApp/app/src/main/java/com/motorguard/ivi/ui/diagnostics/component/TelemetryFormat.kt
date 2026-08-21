@@ -52,8 +52,40 @@ internal object TelemetryFormat {
         else String.format(Locale.US, "%.0f ms", value * 1000f)
 
     /** Hours are what the driver acts on, so they never become "1.2 k" — a service interval read
-     *  as a rounded magnitude is one someone can be a week wrong about. */
-    fun hours(value: Float): String = String.format(Locale.US, "%,d h", value.roundToInt())
+     *  as a rounded magnitude is one someone can be a week wrong about.
+     *  Auto-scales 2922h -> "4 months" etc: <48h as hours, <30d as days, <12mo as months, else years. */
+    fun hours(value: Float): String {
+        val abs = kotlin.math.abs(value)
+        return when {
+            abs < 48f -> String.format(Locale.US, "%,d h", value.roundToInt())
+            abs < 720f -> {
+                val days = value / 24f
+                val dInt = days.roundToInt()
+                if (dInt == 1) "1 day" else String.format(Locale.US, "%d days", dInt)
+            }
+            abs < 8760f -> {
+                val months = value / 730.5f
+                // 2922h = 4.0 months -> "4 months" not "4.0 months"
+                val mInt = months.roundToInt()
+                val isNearInt = kotlin.math.abs(months - mInt) < 0.05f
+                if (isNearInt) {
+                    if (mInt == 1) "1 month" else String.format(Locale.US, "%d months", mInt)
+                } else {
+                    String.format(Locale.US, "%.1f months", months)
+                }
+            }
+            else -> {
+                val years = value / 8760f
+                val yInt = years.roundToInt()
+                val isNearInt = kotlin.math.abs(years - yInt) < 0.05f
+                if (isNearInt) {
+                    if (yInt == 1) "1 year" else String.format(Locale.US, "%d years", yInt)
+                } else {
+                    String.format(Locale.US, "%.1f years", years)
+                }
+            }
+        }
+    }
 
     fun percentPrecise(value: Float): String = String.format(Locale.US, "%.1f%%", value)
 
