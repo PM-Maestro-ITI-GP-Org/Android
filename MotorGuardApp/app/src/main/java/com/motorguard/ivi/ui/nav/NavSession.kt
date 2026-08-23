@@ -5,6 +5,7 @@ import com.motorguard.ivi.data.nav.NavConfig
 import com.motorguard.ivi.data.nav.NavProviders
 import com.motorguard.ivi.data.nav.NavRepository
 import com.motorguard.ivi.data.nav.Place
+import com.motorguard.ivi.data.nav.Route
 import com.motorguard.ivi.data.nav.VehiclePosition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -40,6 +41,19 @@ import java.net.UnknownHostException
  * same cancellable routing, same snap-to-route progress. Only the scope and the service hooks are
  * new.
  */
+/**
+ * What came of a spoken "take me to ...". Distinct cases rather than a nullable route, because the
+ * driver needs a different sentence for each and "I couldn't do that" covers over the difference
+ * between a place that does not exist and a search server that is down.
+ */
+sealed interface SpokenNavResult {
+    data class Started(val destination: Place, val route: Route) : SpokenNavResult
+    data class NoResults(val query: String) : SpokenNavResult
+    data class NoRoute(val destination: Place) : SpokenNavResult
+    data class Failed(val message: String) : SpokenNavResult
+    data object NotReady : SpokenNavResult
+}
+
 object NavSession {
 
     /**
@@ -327,6 +341,61 @@ object NavSession {
     fun cancelPreview() {
         routeJob?.cancel()
         _state.update { it.copy(phase = NavPhase.Idle, routing = false) }
+    }
+
+    /**
+     * Search, route and start guiding, as one call — the whole flow the search panel walks a
+     * driver through, for someone whose hands are on the wheel.
+     *
+     * Not driven through [onQueryChange] and [pickResult]. Those are shaped for a person typing:
+     * the query path is debounced, both are gated on the phase being [NavPhase.Searching], and
+     * reaching guidance means synthesising four UI transitions and hoping the debounce settles.
+     * This takes the same two repository calls they take and ends at the same [startGuidance], so
+     * the phase, the map and the foreground service are exactly where they would be had the
+     * driver tapped it themselves.
+     *
+     * **The first result is taken.** That is the compromise this feature is: the overlay answers
+     * one utterance and has no way to ask "did you mean?", so either voice cannot set a
+     * destination at all or it picks. What makes it defensible is that the caller speaks the
+     * resolved name back — the driver hears where they are being sent before they are sent — and
+     * "cancel the route" is one sentence away.
+     */
+    suspend fun navigateTo(query: String): SpokenNavResult {
+        val trimmed = query.trim()
+        if (trimmed.length < 2) return SpokenNavResult.NoResults(trimmed)
+        if (!started) return SpokenNavResult.NotReady
+
+        // A search panel left open would sit behind the guidance the driver is about to get.
+        searchJob?.cancel()
+        routeJob?.cancel()
+
+        val near = _state.value.position?.point ?: NavConfig.defaultOrigin
+        val places = runCatching { repository.search(trimmed, near) }.getOrElse {
+            return SpokenNavResult.Failed(it.userMessage("Search unavailable"))
+        }
+        val destination = places.firstOrNull() ?: return SpokenNavResult.NoResults(trimmed)
+
+        _state.update { it.copy(routing = true, error = null) }
+        val routes = runCatching { repository.routes(near, destination) }.getOrElse {
+            _state.update { current -> current.copy(routing = false) }
+            return SpokenNavResult.Failed(it.userMessage("Could not build a route"))
+        }
+        if (routes.isEmpty()) {
+            _state.update { it.copy(routing = false) }
+            return SpokenNavResult.NoRoute(destination)
+        }
+
+        _state.update {
+            it.copy(
+                // Origin null is "from the car", the same value the panel commits for the common
+                // case — a trip that starts wherever the vehicle happens to be.
+                phase = NavPhase.Preview(origin = null, destination = destination, routes = routes),
+                routing = false,
+                error = null,
+            )
+        }
+        startGuidance()
+        return SpokenNavResult.Started(destination, routes.first())
     }
 
     // ---------------------------------------------------------------- guidance

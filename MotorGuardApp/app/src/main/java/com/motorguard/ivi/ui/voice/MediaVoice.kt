@@ -2,10 +2,14 @@ package com.motorguard.ivi.ui.voice
 
 import android.content.Context
 import android.util.Log
+import com.motorguard.ivi.data.media.MediaSourceId
+import com.motorguard.ivi.data.media.MediaSourceManager
+import com.motorguard.ivi.data.media.PlaybackKind
 import com.motorguard.ivi.data.media.PlaybackSnapshot
 import com.motorguard.ivi.data.media.RepeatMode
 import com.motorguard.ivi.data.media.VolumeController
 import com.motorguard.ivi.media.MediaConnection
+import kotlinx.coroutines.flow.first
 
 /**
  * The transport controls, spoken.
@@ -48,6 +52,68 @@ object MediaVoice {
     fun answerNowPlaying(context: Context): String =
         runCatching { nowPlaying(MediaConnection.get(context.applicationContext).state.value) }
             .getOrElse { "Sorry, I couldn't reach the player." }
+
+    // --- switching source ----------------------------------------------------
+
+    /**
+     * Which source "play from USB" meant, or null.
+     *
+     * Kept apart from [intentOf] because it carries a value rather than a verb, and because
+     * acting on it suspends: availability and the track list are both reads off the source.
+     *
+     * "Take me home" is not the only phrase that has to be excluded deliberately — "put the radio
+     * on" must not be caught by [intentOf]'s bare PLAY, which is why that test is last and exact.
+     */
+    internal fun sourceOf(utterance: String): MediaSourceId? {
+        val text = normalise(utterance)
+        if (text.isEmpty()) return null
+        if (SPOTIFY.any { text.contains(it) }) return MediaSourceId.SPOTIFY
+        if (USB.any { text.contains(it) }) return MediaSourceId.USB
+        if (BLUETOOTH.any { text.contains(it) }) return MediaSourceId.BLUETOOTH
+        if (RADIO.any { text.contains(it) }) return MediaSourceId.RADIO
+        if (LIBRARY.any { text.contains(it) }) return MediaSourceId.LOCAL
+        return null
+    }
+
+    private val SPOTIFY = listOf("spotify")
+    private val USB = listOf("usb", "the stick", "memory stick", "flash drive", "thumb drive")
+    private val BLUETOOTH = listOf("bluetooth", "blue tooth", "from my phone", "off my phone")
+    private val RADIO = listOf("radio", "fm", "a station")
+    private val LIBRARY = listOf("my library", "the library", "local music", "my own music")
+
+    /**
+     * Switch, and start something playing if this source is ours to play.
+     *
+     * The availability message comes from the source itself — "Insert USB drive" and "Connect a
+     * phone" are not interchangeable, and only the source knows which applies. Saying its own
+     * sentence is what keeps the spoken failure and the one on the tab identical.
+     *
+     * [PlaybackKind.EXTERNAL_SESSION] switches and stops there: Bluetooth audio is the phone's
+     * session mirrored, so there is no queue here to load and pretending otherwise would report
+     * playback that never started. [PlaybackKind.STREAM] does load, because radio is our own
+     * player holding the socket.
+     */
+    suspend fun playFrom(context: Context, id: MediaSourceId): String {
+        val app = context.applicationContext
+        val manager = MediaSourceManager.get(app)
+        val source = manager.source(id)
+
+        val availability = runCatching { source.availability().first() }.getOrNull()
+        if (availability != null && !availability.available) return availability.emptyMessage
+
+        val connection = MediaConnection.get(app)
+        connection.setSource(id)
+
+        if (source.playbackKind != PlaybackKind.LOCAL_PLAYER && source.playbackKind != PlaybackKind.STREAM) {
+            return "Switched to ${source.label}."
+        }
+        val tracks = runCatching { manager.tracks(id) }.getOrElse { emptyList() }
+        if (tracks.isEmpty()) {
+            return availability?.emptyMessage ?: "There's nothing to play on ${source.label}."
+        }
+        connection.play(tracks, 0)
+        return "Playing from ${source.label}."
+    }
 
     // --- what was asked ------------------------------------------------------
 

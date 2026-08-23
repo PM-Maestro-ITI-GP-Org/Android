@@ -1,9 +1,11 @@
 package com.motorguard.ivi.ui.voice
 
+import android.content.Context
 import android.util.Log
 import com.motorguard.ivi.data.nav.NavFormat
 import com.motorguard.ivi.ui.nav.NavPhase
 import com.motorguard.ivi.ui.nav.NavSession
+import com.motorguard.ivi.ui.nav.SpokenNavResult
 import com.motorguard.ivi.ui.nav.NavUiState
 
 /**
@@ -36,6 +38,69 @@ object NavVoice {
             return "Route cancelled."
         }
         return compose(ask, state)
+    }
+
+    /**
+     * The place in "take me to <place>", or null.
+     *
+     * **"Home" and "work" are refused, not resolved.** They are the two most natural things to
+     * say and the two this app cannot answer: nothing stores either address, so searching for the
+     * literal word "home" would find a pub called Home and drive there with the same confidence
+     * it would show for the right answer. Those keep routing to the Nav tab, where the driver
+     * types what they mean. Giving them a real answer is a stored-address feature, not a
+     * phrasing one.
+     */
+    internal fun destinationOf(utterance: String): String? {
+        val text = normalise(utterance)
+        if (text.isEmpty()) return null
+        if (NO_STORED_ADDRESS.any { text.contains(it) }) return null
+        val lead = LEAD_INS.firstOrNull { text.startsWith(it) } ?: return null
+        var rest = text.removePrefix(lead).trim()
+        // "Take me to" on its own reaches the shorter "take me " lead-in and leaves "to" behind;
+        // "navigate to the" leaves "the". Both are a search for a preposition, which finds
+        // something — that is the danger — so strip them and refuse what is left.
+        while (true) {
+            val filler = FILLER.firstOrNull { rest == it || rest.startsWith("$it ") } ?: break
+            rest = rest.removePrefix(filler).trim()
+        }
+        return rest.takeIf { it.length >= 2 }
+    }
+
+    /**
+     * Anchored to the start, so "how far is it to the airport" stays a distance question, and
+     * longest first so "take me to " is tested before the "take me " that also matches it.
+     *
+     * "Find me ..." is deliberately absent: the C++ core answers "find me a garage" from its
+     * service-station list, and taking it here would replace a curated answer with a map search.
+     */
+    private val LEAD_INS = listOf(
+        "take me to ", "drive me to ", "navigate to ", "directions to ", "route to ",
+        "let s go to ", "lets go to ", "go to ", "take me ",
+    ).sortedByDescending { it.length }
+
+    private val FILLER = listOf("to", "the", "a", "an")
+
+    private val NO_STORED_ADDRESS = listOf("home", "work", "the office")
+
+    /**
+     * Search, route and go — see [NavSession.navigateTo] for why the first result is taken.
+     *
+     * The resolved name is always spoken back. That is the whole safeguard: the overlay answers
+     * one utterance and cannot ask "did you mean?", so the driver's check is hearing where they
+     * are being sent, with "cancel the route" one sentence away.
+     */
+    suspend fun navigateTo(context: Context, query: String): String {
+        NavSession.ensureStarted(context.applicationContext)
+        return when (val result = NavSession.navigateTo(query)) {
+            is SpokenNavResult.Started ->
+                "Heading to ${result.destination.name}. " +
+                    "${NavFormat.distance(result.route.distanceMeters)}, " +
+                    "about ${NavFormat.duration(result.route.durationSeconds)}."
+            is SpokenNavResult.NoResults -> "I couldn't find anywhere called ${result.query}."
+            is SpokenNavResult.NoRoute -> "I found ${result.destination.name}, but I can't build a route there."
+            is SpokenNavResult.Failed -> result.message
+            SpokenNavResult.NotReady -> "Navigation isn't ready yet."
+        }
     }
 
     /**

@@ -38,6 +38,12 @@ import com.motorguard.ivi.data.media.MediaSourceManager
 import com.motorguard.ivi.data.media.sources.RadioMediaSource
 import com.motorguard.ivi.media.MediaConnection
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.util.Locale
 import com.motorguard.ivi.ui.dialer.PhoneVoice
 
@@ -98,6 +104,14 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
     private var model by mutableStateOf(VoiceUiModel())
 
     private var recognizer: SpeechRecognizer? = null
+
+    /**
+     * For commands that suspend. Main-immediate because everything it touches afterwards — the
+     * Compose model and the TTS engine — is main-thread confined, and the work itself suspends on
+     * IO rather than blocking. Cancelled in [onDestroy]; individual commands in [onHide].
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var commandJob: Job? = null
     private var tts: TextToSpeech? = null
     private var focusRequest: AudioFocusRequest? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -203,6 +217,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onHide() {
         isVisible = false
+        commandJob?.cancel()
         handler.removeCallbacksAndMessages(null)
         stopListening()
         runCatching { tts?.stop() }
@@ -223,6 +238,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
     }
 
     override fun onDestroy() {
+        scope.cancel()
         overlayHost?.destroy()
         overlayHost = null
         super.onDestroy()
@@ -370,11 +386,16 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             speak(reply)
             return
         }
-        // "Open the USB drive", "switch to Spotify" -- naming a source by name, which is a
-        // different request from MediaVoice's bare "play" (resume whatever is already loaded).
-        MediaSourceVoice.handle(context, utterance)?.let { reply ->
-            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
-            speak(reply)
+        // The two that have to go and ask something before they can answer: a source has an
+        // availability and a track list to read, and a destination has a search and a route
+        // behind it. Both show THINKING meanwhile — the overlay already has the state, and a
+        // silent overlay for the second a route takes reads as one that did not hear.
+        MediaVoice.sourceOf(utterance)?.let { source ->
+            answerAsync { MediaVoice.playFrom(context, source) }
+            return
+        }
+        NavVoice.destinationOf(utterance)?.let { place ->
+            answerAsync { NavVoice.navigateTo(context, place) }
             return
         }
         NavVoice.handle(utterance)?.let { reply ->
@@ -432,12 +453,36 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         }
 
         // The core last, and it always answers — including its own apology when it cannot.
-        val reply = VoiceEngine.handle(utterance)
-            ?: "Sorry, I didn't catch that. You can ask me to explain a warning " +
-            "light, whether it's serious, or where the nearest garage is."
+        //
+        // The apology names nothing it can do. It used to list three, which was already only a
+        // fraction of them and is now a much smaller fraction — and a driver who has just not
+        // been understood is being made to sit through a menu before they can try again. "What
+        // can you do" is a question they can ask when they actually want the list.
+        val reply = VoiceEngine.handle(utterance) ?: "Sorry, I didn't catch that."
         Log.i(TAG, "reply: $reply")
         model = model.copy(state = VoiceState.SPEAKING, reply = reply)
         speak(reply)
+    }
+
+    /**
+     * Run a command that has to wait, and speak whatever it concludes.
+     *
+     * Cancelled in [onHide]: the driver closing the overlay mid-route-search should not be
+     * spoken to a moment later by a session that is no longer on screen. The failure branch
+     * speaks rather than staying silent, because an assistant that goes quiet is
+     * indistinguishable from one that crashed.
+     */
+    private fun answerAsync(block: suspend () -> String) {
+        model = model.copy(state = VoiceState.THINKING)
+        commandJob?.cancel()
+        commandJob = scope.launch {
+            val reply = runCatching { block() }.getOrElse {
+                Log.e(TAG, "voice command failed", it)
+                "Sorry, that didn't work."
+            }
+            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+            speak(reply)
+        }
     }
 
     private fun fail(message: String) {
