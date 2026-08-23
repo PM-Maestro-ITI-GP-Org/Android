@@ -227,16 +227,19 @@ object IntentMatcher {
      * while "put some music on" pulls in every neighbouring phrasing with it.
      */
     private val BUILT_IN: Map<VoiceRoute, List<String>> = mapOf(
+        // Browsing only. The transport phrasings that used to live here — skip, pause, stop,
+        // turn it up — are commands now, claimed by MediaVoice before this runs, and an anchor
+        // advertising a route they no longer take would just be a lie in a list.
         VoiceRoute.MEDIA to listOf(
             "play some music", "put something on", "put a song on",
-            "i want to listen to something", "turn the radio on", "next track",
-            "skip this song", "play my playlist", "some tunes please",
-            "turn the music up", "stop the music", "pause the music",
+            "i want to listen to something", "turn the radio on",
+            "play my playlist", "some tunes please",
         ),
+        // "how long until we arrive" has an answer now; see ANSWERED below.
         VoiceRoute.NAV to listOf(
             "take me home", "drive me home", "navigate somewhere", "give me directions",
             "how do i get there", "where am i", "find a petrol station", "route to work",
-            "show me the map", "how long until we arrive",
+            "show me the map",
         ),
         VoiceRoute.PHONE to listOf(
             "call someone", "ring mona", "phone my wife", "make a phone call",
@@ -281,6 +284,14 @@ object IntentMatcher {
             "what did the diagnostics unit say about the motor",
             "is it safe to keep driving with this motor fault",
         ),
+        VoiceAsk.NOW_PLAYING to listOf(
+            "what is playing", "what song is this", "who sings this",
+            "what am i listening to", "what is this track",
+        ),
+        VoiceAsk.TRIP_PROGRESS to listOf(
+            "how long until we arrive", "when will we get there", "what is our eta",
+            "how much further is it", "are we nearly there",
+        ),
     )
 }
 
@@ -292,4 +303,4 @@ object IntentMatcher {
  * signal ever does arrive, it should be a new case here and a new branch at the call site, not a
  * second flag nobody remembers to check.
  */
-enum class VoiceAsk { MOTOR_STATUS }
+enum class VoiceAsk { MOTOR_STATUS, NOW_PLAYING, TRIP_PROGRESS }
