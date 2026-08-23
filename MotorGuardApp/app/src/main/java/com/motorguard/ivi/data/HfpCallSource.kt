@@ -72,14 +72,22 @@ class HfpCallSource(private val app: Context) {
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                ACTION_CALL_CHANGED -> onCallChanged(intent)
-                ACTION_AUDIO_STATE_CHANGED -> {
-                    val state = intent.getIntExtra(EXTRA_STATE, -1)
-                    _audioRouted.value = state == STATE_AUDIO_CONNECTED
-                    Log.i(TAG, "HFP audio state=$state routed=${_audioRouted.value}")
+            // Everything below this line runs on the launcher's main thread, unmarshals a
+            // platform Parcelable out of the intent and calls @SystemApi methods by
+            // reflection. An exception escaping onReceive reaches ActivityThread and kills
+            // the process -- so a call arriving would take the whole head unit down instead
+            // of drawing the in-call screen. A call we cannot read is a call we do not show;
+            // it is never a crash.
+            runCatching {
+                when (intent?.action) {
+                    ACTION_CALL_CHANGED -> onCallChanged(intent)
+                    ACTION_AUDIO_STATE_CHANGED -> {
+                        val state = intent.getIntExtra(EXTRA_STATE, -1)
+                        _audioRouted.value = state == STATE_AUDIO_CONNECTED
+                        Log.i(TAG, "HFP audio state=$state routed=${_audioRouted.value}")
+                    }
                 }
-            }
+            }.onFailure { Log.e(TAG, "HFP broadcast ${intent?.action} not handled", it) }
         }
     }
 
@@ -126,8 +134,12 @@ class HfpCallSource(private val app: Context) {
     // ---------------------------------------------------------------- events
 
     private fun onCallChanged(intent: Intent) {
-        @Suppress("DEPRECATION")
-        val platformCall = intent.getParcelableExtra<android.os.Parcelable>(EXTRA_CALL) ?: run {
+        // The broadcast carries the call, but the proxy is the authority. Reading the extra
+        // needs android.bluetooth.BluetoothHeadsetClientCall, a platform class this app never
+        // links against, and a failure there must not be mistaken for "the call ended".
+        val platformCall = callExtra(intent) ?: liveCallFromProxy()
+        if (platformCall == null) {
+            Log.i(TAG, "AG_CALL_CHANGED with no readable call, and none live on the link")
             clear()
             return
         }
@@ -176,6 +188,43 @@ class HfpCallSource(private val app: Context) {
         _audioRouted.value = false
     }
 
+    /**
+     * The call object out of the broadcast.
+     *
+     * Unmarshalling it instantiates `BluetoothHeadsetClientCall`, which lives in the platform
+     * (the Bluetooth APEX) rather than in this APK. When that resolution fails the framework
+     * raises a `BadParcelableException` from inside `getParcelableExtra` — on the main thread,
+     * inside a receiver, which is fatal to the process. Guarded, with [liveCallFromProxy] to
+     * fall back on, so an unreadable extra costs a log line instead of the launcher.
+     */
+    private fun callExtra(intent: Intent): Any? = runCatching {
+        @Suppress("DEPRECATION")
+        intent.getParcelableExtra<android.os.Parcelable>(EXTRA_CALL)
+    }.getOrElse {
+        Log.w(TAG, "call object in AG_CALL_CHANGED could not be read", it)
+        null
+    }
+
+    /**
+     * The live call read straight off the profile.
+     *
+     * `getCurrentCalls` is the same state the broadcast was announcing, so asking for it after
+     * an unreadable extra still gets the in-call screen up rather than dropping the event.
+     */
+    private fun liveCallFromProxy(): Any? {
+        val device = connectedDevice() ?: return null
+        val active = proxy ?: return null
+        return runCatching {
+            val calls = active.javaClass
+                .getMethod("getCurrentCalls", BluetoothDevice::class.java)
+                .invoke(active, device) as? List<*>
+            calls?.firstOrNull { it != null && invokeInt(it, "getState") != CALL_STATE_TERMINATED }
+        }.getOrElse {
+            Log.w(TAG, "getCurrentCalls unavailable on this image", it)
+            null
+        }
+    }
+
     // ---------------------------------------------------------------- commands
 
     fun answer() {
@@ -204,6 +253,40 @@ class HfpCallSource(private val app: Context) {
         }
         // A ringing call that was never answered is rejected, not terminated.
         invokeVoid(proxy, "rejectCall", arrayOf(BluetoothDevice::class.java), arrayOf(device))
+    }
+
+    /**
+     * Hold the active call, or bring the held one back.
+     *
+     * Both directions are AT+CHLD=2 on the wire; AOSP's own HfpClientConnection spells them
+     * `holdCall` and `acceptCall(CALL_ACCEPT_HOLD)`, and this follows it exactly. Without
+     * this the Hold button reached [InCallBridge], which has no service bound on a board
+     * with no DIALER role, and did nothing at all.
+     */
+    fun setOnHold(hold: Boolean) {
+        val device = connectedDevice() ?: return
+        val dispatched = if (hold) {
+            invokeVoid(proxy, "holdCall", arrayOf(BluetoothDevice::class.java), arrayOf(device))
+        } else {
+            invokeVoid(
+                proxy,
+                "acceptCall",
+                arrayOf(BluetoothDevice::class.java, Int::class.javaPrimitiveType!!),
+                arrayOf(device, CALL_ACCEPT_HOLD),
+            )
+        }
+        if (!dispatched) Log.w(TAG, "hold toggle unavailable on this image")
+    }
+
+    /** In-call DTMF. Sent to the phone as AT+VTS, which plays it into the call for us. */
+    fun sendDtmf(digit: Char) {
+        val device = connectedDevice() ?: return
+        invokeVoid(
+            proxy,
+            "sendDTMF",
+            arrayOf(BluetoothDevice::class.java, Byte::class.javaPrimitiveType!!),
+            arrayOf(device, digit.code.toByte()),
+        )
     }
 
     /**
@@ -262,6 +345,9 @@ class HfpCallSource(private val app: Context) {
 
         /** BluetoothProfile.HEADSET_CLIENT — not a public SDK constant. */
         const val PROFILE_HEADSET_CLIENT = 16
+
+        /** BluetoothHeadsetClient.CALL_ACCEPT_HOLD — resume the call that is on hold. */
+        const val CALL_ACCEPT_HOLD = 1
 
         const val ACTION_CALL_CHANGED =
             "android.bluetooth.headsetclient.profile.action.AG_CALL_CHANGED"

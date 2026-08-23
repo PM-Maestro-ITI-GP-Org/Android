@@ -2,6 +2,7 @@ package com.motorguard.ivi.data
 
 import android.telecom.Call
 import android.telecom.InCallService
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,14 +35,18 @@ object InCallBridge {
         override fun onDetailsChanged(call: Call, details: Call.Details) { _revision.value++ }
     }
 
+    // The platform calls in here from its own binder threads with objects it owns. Losing a
+    // callback registration is a stale in-call screen; letting the throw out is a dead app.
     fun onCallAdded(call: Call) {
-        call.registerCallback(callback)
+        runCatching { call.registerCallback(callback) }
+            .onFailure { Log.w(TAG, "call callback not registered", it) }
         _call.value = call
         _revision.value++
     }
 
     fun onCallRemoved(call: Call) {
-        call.unregisterCallback(callback)
+        runCatching { call.unregisterCallback(callback) }
+            .onFailure { Log.w(TAG, "call callback not unregistered", it) }
         if (_call.value == call) _call.value = null
         _revision.value++
     }
@@ -51,6 +56,9 @@ object InCallBridge {
     }
 
     fun setMuted(muted: Boolean) {
-        service?.setMuted(muted)
+        runCatching { service?.setMuted(muted) }
+            .onFailure { Log.w(TAG, "mute refused by the in-call service", it) }
     }
+
+    private const val TAG = "MotorGuardPhone"
 }
