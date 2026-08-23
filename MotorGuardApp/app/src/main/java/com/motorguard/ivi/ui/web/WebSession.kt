@@ -87,6 +87,34 @@ class WebSession(
                 override fun onPageFinished(view: WebView?, url: String?) {
                     view?.evaluateJavascript(WATCHER_JS, null)
                 }
+
+                /**
+                 * A site that thinks it is being viewed on mobile routinely redirects itself to
+                 * an `intent://` deep link the moment it loads — Anghami's home page does this
+                 * unconditionally, aiming the driver at its native app. There is no such app on
+                 * this image, and letting WebView load the URL verbatim fails outright
+                 * (`ERR_UNKNOWN_URL_SCHEME`), stranding the pane on Chromium's own error page
+                 * instead of the site.
+                 *
+                 * Chrome's `intent://` syntax carries a `browser_fallback_url` extra for exactly
+                 * this case — the web page to show when the target app is not installed. Follow
+                 * it when present; otherwise return to the pane's own home page rather than a
+                 * dead end.
+                 */
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: android.webkit.WebResourceRequest,
+                ): Boolean {
+                    val url = request.url
+                    if (url.scheme == "http" || url.scheme == "https") return false
+                    val fallback = runCatching {
+                        android.content.Intent
+                            .parseUri(url.toString(), android.content.Intent.URI_INTENT_SCHEME)
+                            .getStringExtra("browser_fallback_url")
+                    }.getOrNull()
+                    view.loadUrl(fallback ?: homeUrl)
+                    return true
+                }
             }
             addJavascriptInterface(Bridge(sourceId), "MotorGuard")
             // HTML5 fullscreen inside the page needs this to work at all.
