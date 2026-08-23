@@ -115,6 +115,20 @@ class OfflineRecognitionService : RecognitionService() {
          */
         private const val CALIBRATION_MS = 400L
 
+        /**
+         * Calibration does not start the instant the mic opens -- it waits this long first,
+         * discarding those chunks entirely (neither calibrated nor gated). The mic for this
+         * session opens immediately after the wake word fires, while the driver may still be
+         * finishing "...Vega" and the room is still ringing with it -- on this sensitive a
+         * mic (the same sensitivity that makes the wake word work from a distance) that tail
+         * energy calibrates a noise floor far above normal speech. Live telemetry caught it
+         * directly: rms 8213, 6312, 4822, 4737 for the first four calibration chunks, decaying
+         * toward the room's real ~1000-1300 ambient only after that -- calibrating on the
+         * decay pinned the frozen threshold at MAX_SPEECH_RMS (6000), which the driver's
+         * actual request (rms ~1000-1300) could never reach: "it hears vega only".
+         */
+        private const val SETTLE_MS = 350L
+
         /** Floor reported for a silent chunk, rather than log10(0) = -infinity. */
         private const val SILENCE_DB = -60f
 
@@ -239,7 +253,14 @@ class OfflineRecognitionService : RecognitionService() {
                 }
                 safe { listener.rmsChanged(rmsDb) }
 
-                if (now - started < CALIBRATION_MS) {
+                val elapsed = now - started
+                if (elapsed < SETTLE_MS) {
+                    // Neither calibrated nor gated -- see SETTLE_MS's KDoc for why the mic's
+                    // own opening moment is the wrong time to start measuring "ambient".
+                    if (VERBOSE_LEVELS) {
+                        Log.d(TAG, "settling rms=%.0f".format(rms))
+                    }
+                } else if (elapsed < SETTLE_MS + CALIBRATION_MS) {
                     // No gate check at all yet -- every chunk in this window unconditionally
                     // feeds the estimate, so it reflects this session's actual room/mic
                     // instead of a seeded guess (see CALIBRATION_MS's KDoc for why a seed
