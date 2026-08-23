@@ -183,6 +183,13 @@ class OfflineRecognitionService : RecognitionService() {
             // somehow delivers zero chunks (a near-immediate mic failure).
             var noiseFloor = MIN_SPEECH_RMS / SPEECH_MARGIN
 
+            // Set once, from noiseFloor, the instant CALIBRATION_MS ends -- then frozen for
+            // the rest of the session. See the gating block below for why recomputing this
+            // continuously (the first version of this fix) let the threshold chase a rising
+            // voice instead of ever being crossed by it.
+            var speechThreshold = Double.MAX_VALUE
+            var calibrated = false
+
             // Sample offsets of the speech itself, so the silence around it can
             // be trimmed before inference. Whisper's cost scales with what it is
             // handed, and a capture is often more silence than speech.
@@ -242,16 +249,31 @@ class OfflineRecognitionService : RecognitionService() {
                         Log.d(TAG, "calibrating rms=%.0f noiseFloor=%.0f".format(rms, noiseFloor))
                     }
                 } else {
-                    // The threshold rides SPEECH_MARGIN above the room's own measured noise
-                    // floor rather than a fixed constant -- see SPEECH_MARGIN's KDoc for why
-                    // a fixed one does not survive a mic swap.
-                    val speechThreshold =
-                        (noiseFloor * SPEECH_MARGIN).coerceIn(MIN_SPEECH_RMS, MAX_SPEECH_RMS)
+                    // speechThreshold is computed ONCE, right as calibration ends, from
+                    // whatever noiseFloor it measured -- then frozen for the rest of the
+                    // session, not recomputed from a live-updating noiseFloor.
+                    //
+                    // The first version of this fix kept updating noiseFloor on every
+                    // non-triggering chunk for the rest of the session (not just during
+                    // CALIBRATION_MS), on the theory that a longer look at ambient could only
+                    // help. Live telemetry showed why that is wrong: normal speech ramps up
+                    // over multiple chunks rather than jumping straight from silence to full
+                    // volume, and the EMA chased every rising chunk upward right along with
+                    // it -- rms and threshold were seen moving together in lockstep for the
+                    // full 6 s NO_SPEECH_MS window (e.g. rms=2043 threshold=3003, rms=1913
+                    // threshold=3085, never separating), so a gradually loudening voice could
+                    // never get SPEECH_MARGIN ahead of a threshold rising to meet it. A frozen
+                    // threshold has a real ceiling a rising voice can actually cross.
+                    if (!calibrated) {
+                        speechThreshold =
+                            (noiseFloor * SPEECH_MARGIN).coerceIn(MIN_SPEECH_RMS, MAX_SPEECH_RMS)
+                        calibrated = true
+                    }
                     if (VERBOSE_LEVELS) {
                         Log.d(
                             TAG,
-                            "rms=%.0f noiseFloor=%.0f threshold=%.0f heardSpeech=%b"
-                                .format(rms, noiseFloor, speechThreshold, heardSpeech),
+                            "rms=%.0f threshold=%.0f heardSpeech=%b"
+                                .format(rms, speechThreshold, heardSpeech),
                         )
                     }
                     if (rms > speechThreshold) {
@@ -262,11 +284,6 @@ class OfflineRecognitionService : RecognitionService() {
                         }
                         lastVoice = now
                         voiceEnd = used
-                    } else if (!heardSpeech) {
-                        // Only track the floor before speech starts: once real speech is
-                        // underway, a quiet consonant or a mid-word pause must not drag the
-                        // floor up and make the *next* threshold check harder to clear.
-                        noiseFloor += (rms - noiseFloor) * NOISE_FLOOR_EMA_ALPHA
                     }
                 }
             }
