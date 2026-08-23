@@ -180,15 +180,19 @@ class WebSession(
                 try {
                   var ms = navigator.mediaSession;
                   var m = ms && ms.metadata;
-                  var vids = document.getElementsByTagName('video');
-                  var v = vids.length ? vids[0] : null;
-                  // Fall back to the <video> element and the document title: YouTube's mobile
-                  // site does not always populate the Media Session API, but there is always a
-                  // media element and a title once something is playing.
-                  var t = (m && m.title) || (v && !v.paused ? document.title.replace(/ - YouTube$/, '') : '');
+                  // <audio> as well as <video>: Spotify's web player has no video element at
+                  // all, it plays through <audio> (or, where that is blocked, an inaudible one
+                  // it still creates) -- checking video only meant Spotify could never be
+                  // detected as playing even when it genuinely was, because the metadata API
+                  // isn't reliably populated by every site in an embedded WebView.
+                  var media = document.querySelector('video, audio');
+                  // Fall back to the media element and the document title: not every site
+                  // populates the Media Session API, but there is always an element and a
+                  // title once something is playing.
+                  var t = (m && m.title) || (media && !media.paused ? document.title.replace(/ - YouTube$/, '') : '');
                   var a = (m && m.artist) || '';
                   var al = (m && m.album) || '';
-                  var playing = (ms && ms.playbackState === 'playing') || (v ? !v.paused : false);
+                  var playing = (ms && ms.playbackState === 'playing') || (media ? !media.paused : false);
                   var key = t + '|' + a + '|' + al + '|' + playing;
                   if (key === last) return;
                   last = key;

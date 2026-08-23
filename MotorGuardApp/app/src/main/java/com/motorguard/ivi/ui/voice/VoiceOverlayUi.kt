@@ -223,8 +223,8 @@ fun VoiceOverlay(
                     Text(
                         text = model.reply,
                         color = OnPanel,
-                        fontSize = 28.sp,
-                        lineHeight = 38.sp,
+                        fontSize = 20.sp,
+                        lineHeight = 27.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 4,
                         overflow = TextOverflow.Ellipsis,

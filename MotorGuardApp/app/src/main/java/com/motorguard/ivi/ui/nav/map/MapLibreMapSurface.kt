@@ -156,7 +156,14 @@ internal fun MapLibreMapSurface(
                     passedColor = colors.onBaseDim.toArgb(),
                     destinationColor = colors.accent.toArgb(),
                     destinationRing = colors.highlight.toArgb(),
+                    homeColor = colors.accent2.toArgb(),
+                    homeRing = if (dark) 0xFF05070A.toInt() else 0xFFFFFFFF.toInt(),
+                    labelColor = colors.onBaseDim.toArgb(),
+                    labelHalo = if (dark) 0xFF05070A.toInt() else 0xFFFFFFFF.toInt(),
                 )
+                // The one place-mark that is always on the map, not just while routing:
+                // NavConfig.defaultOrigin is ITI, and this is the sign for it.
+                loaded.setPoint(SOURCE_HOME, NavConfig.defaultOrigin)
                 style = loaded
             }
             map = ready
@@ -299,12 +306,17 @@ private fun Style.installRouteLayers(
     passedColor: Int,
     destinationColor: Int,
     destinationRing: Int,
+    homeColor: Int,
+    homeRing: Int,
+    labelColor: Int,
+    labelHalo: Int,
 ) {
     addSource(GeoJsonSource(SOURCE_ROUTE))
     addSource(GeoJsonSource(SOURCE_PASSED))
     addSource(GeoJsonSource(SOURCE_DESTINATION))
     addSource(GeoJsonSource(SOURCE_ORIGIN))
     addSource(GeoJsonSource(SOURCE_VEHICLE))
+    addSource(GeoJsonSource(SOURCE_HOME))
 
     addLayer(
         LineLayer(LAYER_CASING, SOURCE_ROUTE).withProperties(
@@ -362,6 +374,30 @@ private fun Style.installRouteLayers(
             PropertyFactory.circleStrokeWidth(3f),
         ),
     )
+    // The ITI sign — always on the map, not gated on a route existing. A slightly larger ring
+    // than the destination dot so it reads as a landmark rather than a stop on a trip.
+    addLayer(
+        CircleLayer(LAYER_HOME, SOURCE_HOME).withProperties(
+            PropertyFactory.circleColor(homeColor),
+            PropertyFactory.circleRadius(8f),
+            PropertyFactory.circleStrokeColor(homeRing),
+            PropertyFactory.circleStrokeWidth(3f),
+        ),
+    )
+    addLayer(
+        SymbolLayer(LAYER_HOME_LABEL, SOURCE_HOME).withProperties(
+            PropertyFactory.textField("ITI"),
+            PropertyFactory.textFont(arrayOf("Noto Sans Bold")),
+            PropertyFactory.textSize(12f),
+            PropertyFactory.textOffset(arrayOf(0f, 1.1f)),
+            PropertyFactory.textAnchor("top"),
+            PropertyFactory.textColor(labelColor),
+            PropertyFactory.textHaloColor(labelHalo),
+            PropertyFactory.textHaloWidth(1.4f),
+            PropertyFactory.textAllowOverlap(true),
+            PropertyFactory.textIgnorePlacement(true),
+        ),
+    )
     // Topmost, and exempt from collision so it is never dropped in favour of a place label —
     // the one marker on this map that must always be visible.
     addLayer(
@@ -407,6 +443,7 @@ private const val SOURCE_PASSED = "mg-src-passed"
 private const val SOURCE_DESTINATION = "mg-src-destination"
 private const val SOURCE_ORIGIN = "mg-src-origin"
 private const val SOURCE_VEHICLE = "mg-src-vehicle"
+private const val SOURCE_HOME = "mg-src-home"
 
 private const val LAYER_CASING = "mg-route-casing"
 private const val LAYER_ROUTE = "mg-route-line"
@@ -415,6 +452,8 @@ private const val LAYER_PASSED = "mg-route-passed"
 private const val LAYER_DESTINATION = "mg-route-destination"
 private const val LAYER_ORIGIN = "mg-route-origin"
 private const val LAYER_VEHICLE = "mg-vehicle"
+private const val LAYER_HOME = "mg-home"
+private const val LAYER_HOME_LABEL = "mg-home-label"
 private const val IMAGE_VEHICLE = "mg-vehicle-icon"
 
 private const val CASING_WIDTH = 15f

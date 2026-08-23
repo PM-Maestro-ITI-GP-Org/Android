@@ -64,6 +64,7 @@ fun HomeScreen(
                 onOpenMedia = onOpenMedia,
                 modifier = Modifier.fillMaxWidth(),
             )
+            WeatherCard(modifier = Modifier.fillMaxWidth())
 
             // Notifications have nowhere else to go: this app is the launcher and hides the
             // system bars, so CarSystemUI's heads-up and Notification Center are both covered.

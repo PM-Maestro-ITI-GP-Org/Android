@@ -105,6 +105,13 @@ object MediaVoice {
         connection.setSource(id)
 
         if (source.playbackKind != PlaybackKind.LOCAL_PLAYER && source.playbackKind != PlaybackKind.STREAM) {
+            // Bluetooth still needs telling: switching the *source* only changes which mirror
+            // MediaConnection reads, it sends the phone nothing. Without an explicit AVRCP play
+            // command a phone sitting paused stays paused, so "play from my phone" switched the
+            // tab and then did nothing audible.
+            if (id == MediaSourceId.BLUETOOTH) {
+                com.motorguard.ivi.media.BluetoothSessionMirror.get(app).play()
+            }
             return "Switched to ${source.label}."
         }
         val tracks = runCatching { manager.tracks(id) }.getOrElse { emptyList() }

@@ -143,6 +143,10 @@ class BluetoothSessionMirror private constructor(context: Context) {
      */
     fun playPause() = withBrowser { if (isPlaying) pause() else play() }
 
+    /** Unconditional resume, for a voice command that named this source explicitly ("play from
+     *  my phone") — [playPause] would silently pause an already-playing phone instead. */
+    fun play() = withBrowser { play() }
+
     fun next() = withBrowser { seekToNext() }
 
     fun previous() = withBrowser {

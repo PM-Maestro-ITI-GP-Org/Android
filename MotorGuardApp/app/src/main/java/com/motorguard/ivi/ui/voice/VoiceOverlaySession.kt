@@ -78,9 +78,6 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         const val DISMISS_DELAY_MS = 1_000L
         const val UTTERANCE_ID = "motorguard-reply"
 
-        /** Long enough for "Opening media." to be heard before the tab changes under it. */
-        const val ROUTE_AFTER_SPEAK_MS = 900L
-
         /**
          * Floor on how long the overlay stays up, measured from onShow(). Exists because
          * onCreateContentView()'s window is stood up by the platform asynchronously, and
@@ -445,9 +442,10 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                 }
                 val reply = "Opening ${target.label.lowercase()}."
                 model = model.copy(state = VoiceState.SPEAKING, reply = reply)
-                speak(reply)
-                // Let the confirmation be heard before the screen changes under it.
-                handler.postDelayed({ route(target) }, ROUTE_AFTER_SPEAK_MS)
+                // Route once the confirmation has actually finished being heard, not after a
+                // guessed delay -- see [speak]'s `onSpoken` for why a fixed timer cut long
+                // replies off mid-sentence.
+                speak(reply) { route(target) }
                 return
             }
         }
@@ -491,14 +489,36 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         speak(message)
     }
 
+    /**
+     * What to do once the current reply has actually finished being spoken — a tab switch, for
+     * instance, that must not cut the sentence announcing it off mid-word. Set by [speak]'s
+     * `onSpoken`, run once from [ensureTts]'s `onDone`, then cleared so a later reply with
+     * nothing to do afterwards does not re-run a stale action.
+     */
+    private var onSpoken: (() -> Unit)? = null
+
     private fun ensureTts() {
         if (tts != null) return
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.US
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onDone(utteranceId: String?) = scheduleDismiss()
-                    override fun onError(utteranceId: String?) = scheduleDismiss()
+                    // TextToSpeech delivers these off the main thread; every one of `onSpoken`,
+                    // `model` and `scheduleDismiss` is main-thread-confined, so both branches
+                    // post back rather than running here.
+                    override fun onDone(utteranceId: String?) {
+                        handler.post {
+                            onSpoken?.invoke()
+                            onSpoken = null
+                            scheduleDismiss()
+                        }
+                    }
+                    override fun onError(utteranceId: String?) {
+                        handler.post {
+                            onSpoken = null
+                            scheduleDismiss()
+                        }
+                    }
                     override fun onStart(utteranceId: String?) {}
                 })
             } else {
@@ -507,13 +527,30 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         }
     }
 
-    private fun speak(text: String) {
+    /**
+     * @param onSpoken run once [text] has finished being heard — after a route or another
+     *   action that should not talk over its own confirmation. Runs immediately, inline, when
+     *   there is no TTS engine to wait on: no speech means nothing to finish waiting for.
+     */
+    private fun speak(text: String, onSpoken: (() -> Unit)? = null) {
+        this.onSpoken = onSpoken
         val engine = tts
-        if (engine == null) { scheduleDismiss(); return }
+        if (engine == null) {
+            this.onSpoken = null
+            onSpoken?.invoke()
+            scheduleDismiss()
+            return
+        }
         engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID)
-        // Belt and braces: if the callback never lands, don't leave the bar up.
-        handler.postDelayed({ if (model.state == VoiceState.SPEAKING) scheduleDismiss() },
-            20_000L)
+        // Belt and braces: if the callback never lands, don't leave the bar (or a pending
+        // action) stuck forever.
+        handler.postDelayed({
+            if (model.state == VoiceState.SPEAKING) {
+                this.onSpoken?.invoke()
+                this.onSpoken = null
+                scheduleDismiss()
+            }
+        }, 20_000L)
     }
 
     /** Auto-dismiss 1 s after the reply finishes (docs/07-voice.md). */

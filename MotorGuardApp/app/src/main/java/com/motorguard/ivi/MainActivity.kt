@@ -137,6 +137,14 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+
+            // Reachable from every tab, so it lives here rather than inside any one fragment.
+            // paintBackground = false for the same reason the call overlay above needs the
+            // null-check outside MotorGuardTheme: an opaque theme background here would black
+            // out the tab underneath even while the drawer itself is closed.
+            MotorGuardTheme(paintBackground = false) {
+                com.motorguard.ivi.ui.components.VolumeDrawer(modifier = Modifier.fillMaxSize())
+            }
         }
 
         if (savedInstanceState == null) {

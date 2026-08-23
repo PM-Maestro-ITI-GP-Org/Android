@@ -53,19 +53,17 @@ class VehicleSeverityFlow(
             }
         }
 
-    /** Health score 0..100 for the ring: 100 when everything OK, sinking toward 0 with worst severity. */
+    /**
+     * Health score 0..100 for the ring: the motor's remaining useful life as a fraction of a
+     * 4-month full-life assumption. Null (the ring reads "waiting") until the diagnostics unit
+     * has published a remaining-life estimate at all — no other hotspot has one, so there is
+     * nothing else to derive a score from.
+     */
     val healthScore: kotlinx.coroutines.flow.Flow<Int?> =
         kotlinx.coroutines.flow.flow {
-            severities.collect { map ->
-                val present = map.values.filterNotNull()
-                if (present.isEmpty()) emit(null)
-                else {
-                    val worst = present.maxBy { it.ordinal }
-                    val cautions = present.count { it == Severity.CAUTION }
-                    val criticals = present.count { it == Severity.CRITICAL }
-                    emit((100 - cautions * 8 - criticals * 30 - if (worst == Severity.CRITICAL) 20 else 0)
-                        .coerceIn(0, 100))
-                }
+            snapshot.collect { s ->
+                val life = s.motor.latestValueOrNull?.remainingLife
+                emit(life?.let { ((it.hours / FULL_LIFE_HOURS) * 100f).toInt().coerceIn(0, 100) })
             }
         }
 
@@ -76,4 +74,9 @@ class VehicleSeverityFlow(
         s.tires.getOrNull(Hotspot.tireCorners.indexOf(corner))
             ?.latestValueOrNull
             ?.let { resolver.severityFor(corner, tirePsi = it.psi, tireTempC = it.tempC) }
+
+    private companion object {
+        /** A 4-month full life, in hours, at a flat 30-day month. */
+        const val FULL_LIFE_HOURS = 4 * 30 * 24f
+    }
 }

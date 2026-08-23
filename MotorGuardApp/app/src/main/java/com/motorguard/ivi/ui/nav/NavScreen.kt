@@ -259,6 +259,7 @@ fun NavScreen(viewModel: NavViewModel = viewModel()) {
             LocationStatusChip(
                 permissionGranted = permissionGranted,
                 onGrantPermission = requestPermission,
+                onUseSimulated = viewModel::useSimulatedLocation,
             )
         }
 

@@ -47,6 +47,7 @@ import com.motorguard.ivi.ui.theme.MotorGuard
 fun LocationStatusChip(
     permissionGranted: Boolean,
     onGrantPermission: () -> Unit,
+    onUseSimulated: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MotorGuard.colors
@@ -89,10 +90,12 @@ fun LocationStatusChip(
                 color = MaterialTheme.colorScheme.onSurface,
             )
 
+            Spacer(Modifier.width(20.dp))
             if (!permissionGranted) {
-                Spacer(Modifier.width(20.dp))
                 ChipAction(label = "Grant", primary = true, onClick = onGrantPermission)
+                Spacer(Modifier.width(10.dp))
             }
+            ChipAction(label = "Simulate", primary = permissionGranted, onClick = onUseSimulated)
         }
     }
 }

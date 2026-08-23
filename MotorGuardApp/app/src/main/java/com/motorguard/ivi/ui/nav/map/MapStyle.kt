@@ -44,9 +44,11 @@ internal object MapStyle {
           "layers": [
             ${background(p)},
             ${landcover(p)},
+            ${landuse(p)},
             ${park(p)},
             ${water(p)},
             ${waterway(p)},
+            ${railway(p)},
             ${building(p)},
             ${roadCasing("mg-road-minor-casing", MINOR, p.roadCasing, MINOR_WIDTHS, 12.0)},
             ${roadCasing("mg-road-major-casing", MAJOR, p.roadCasing, MAJOR_WIDTHS, 8.0)},
@@ -55,6 +57,7 @@ internal object MapStyle {
             ${roadFill("mg-road-major", MAJOR, p.roadMajor, MAJOR_WIDTHS, 8.0)},
             ${roadFill("mg-road-trunk", TRUNK, p.roadTrunk, TRUNK_WIDTHS, 5.0)},
             ${roadLabel(p)},
+            ${poiLabel(p)},
             ${placeLabel(p)}
           ]
         }
@@ -70,8 +73,10 @@ internal object MapStyle {
     private class Palette(
         val background: Color,
         val land: Color,
+        val landuse: Color,
         val park: Color,
         val water: Color,
+        val railway: Color,
         val building: Color,
         val buildingOpacity: Double,
         val roadCasing: Color,
@@ -87,8 +92,10 @@ internal object MapStyle {
         return Palette(
             background = base,
             land = lerp(base, t.panel, 0.35f),
+            landuse = lerp(base, t.panel, 0.55f),
             park = lerp(base, t.success, 0.10f),
             water = lerp(base, accent, 0.16f),
+            railway = lerp(base, t.onBaseDim, 0.45f),
             building = lerp(base, t.panel, 0.85f),
             buildingOpacity = 0.9,
             roadCasing = lerp(base, Color.Black, 0.45f),
@@ -105,8 +112,10 @@ internal object MapStyle {
         return Palette(
             background = base,
             land = lerp(base, t.onBaseDim, 0.06f),
+            landuse = lerp(base, t.onBaseDim, 0.10f),
             park = lerp(base, t.success, 0.16f),
             water = lerp(base, accent, 0.30f),
+            railway = lerp(base, t.onBaseDim, 0.55f),
             building = lerp(base, t.onBaseDim, 0.14f),
             buildingOpacity = 0.8,
             roadCasing = lerp(base, t.onBaseDim, 0.28f),
@@ -130,6 +139,25 @@ internal object MapStyle {
     private fun landcover(p: Palette) = """
         { "id": "mg-landcover", "type": "fill", "source": "omt", "source-layer": "landcover",
           "paint": { "fill-color": "${p.land.hex()}", "fill-opacity": 0.5 } }
+    """.trimIndent()
+
+    /** Residential/commercial/industrial shading — landcover alone (forest, grass, sand) reads
+     *  as a mostly-empty map over any built-up area, which is most of where this app is used. */
+    private fun landuse(p: Palette) = """
+        { "id": "mg-landuse", "type": "fill", "source": "omt", "source-layer": "landuse",
+          "minzoom": 9,
+          "filter": ["match", ["get", "class"],
+                     ["residential", "commercial", "industrial", "retail"], true, false],
+          "paint": { "fill-color": "${p.landuse.hex()}", "fill-opacity": 0.45 } }
+    """.trimIndent()
+
+    private fun railway(p: Palette) = """
+        { "id": "mg-railway", "type": "line", "source": "omt", "source-layer": "transportation",
+          "minzoom": 10,
+          "filter": ["match", ["get", "class"], ["rail", "transit"], true, false],
+          "paint": { "line-color": "${p.railway.hex()}",
+                     "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 16, 2.0],
+                     "line-dasharray": [2, 1.5] } }
     """.trimIndent()
 
     private fun park(p: Palette) = """
@@ -185,6 +213,22 @@ internal object MapStyle {
                       "text-size": ["interpolate", ["linear"], ["zoom"], 13, 11, 17, 14] },
           "paint": { "text-color": "${p.label.hex()}",
                      "text-halo-color": "${p.labelHalo.hex()}", "text-halo-width": 1.2 } }
+    """.trimIndent()
+
+    /** Shops, restaurants, cafés and the rest of what actually fills a city in real life — the
+     *  layer that was missing entirely, which is most of what "not much detail" meant. Kept to
+     *  high zoom only: at the zoom levels used for a route overview, hundreds of POI labels
+     *  would just overlap into noise. */
+    private fun poiLabel(p: Palette) = """
+        { "id": "mg-poi-label", "type": "symbol", "source": "omt", "source-layer": "poi",
+          "minzoom": 15,
+          "layout": { "text-field": ["coalesce", ["get", "name_en"], ["get", "name"]],
+                      "text-font": ["Noto Sans Regular"],
+                      "text-size": 11,
+                      "text-max-width": 7,
+                      "text-optional": true },
+          "paint": { "text-color": "${p.label.hex()}",
+                     "text-halo-color": "${p.labelHalo.hex()}", "text-halo-width": 1.0 } }
     """.trimIndent()
 
     private fun placeLabel(p: Palette) = """
