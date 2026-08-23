@@ -243,6 +243,16 @@ apply_device_patch "android_rpi_overlay_safe_volume.patch" \
 # either path can be the one that first touches the card.
 apply_device_patch "usb_mic_unmute.patch" \
   "audio/include/core-impl/StreamAlsa.h" "unmuteCapture"
+# This board runs two USB audio peripherals at once: a combo speaker+mic unit and a
+# separate standalone microphone. The framework's USB device selection tracks only one
+# "current" device per direction and always locks onto the combo unit (it enumerates
+# first), so input silently read from its low-sensitivity onboard mic instead of the
+# actual microphone -- confirmed live: capture was healthy (unmuted, gain correct), it
+# just never heard anything, because nothing was said near that card. Override input
+# routing to whichever connected USB card is capture-only (no playback controls at all),
+# which is what distinguishes the standalone mic from the combo unit.
+apply_device_patch "usb_mic_route.patch" \
+  "audio/usb/StreamUsb.cpp" "findDedicatedCaptureOnlyCard"
 
 # Guard against this list going stale again: every *.patch in the drop-in's
 # device/brcm/rpi5/ must be accounted for above. Two patches (eth0_routes,
@@ -253,7 +263,7 @@ for p in "$ROOT"/device/brcm/rpi5/*.patch; do
   case "$pname" in
     aosp_rpi5_car.mk.patch|BoardConfig.mk.patch|vendor.prop.patch| \
     eth0_routes.patch|usb_audio_policy_configuration.xml.patch|car_audio_configuration.xml.patch| \
-    android_rpi_overlay_safe_volume.patch|usb_mic_unmute.patch|car_bluetooth_prop.patch) ;;
+    android_rpi_overlay_safe_volume.patch|usb_mic_unmute.patch|usb_mic_route.patch|car_bluetooth_prop.patch) ;;
     *) echo "WARNING: $pname exists but deploy.sh never applies it" >&2 ;;
   esac
 done

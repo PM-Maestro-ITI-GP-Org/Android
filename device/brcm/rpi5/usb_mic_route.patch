@@ -1,0 +1,92 @@
+diff --git a/audio/usb/StreamUsb.cpp b/audio/usb/StreamUsb.cpp
+index 9b10432..8c9651b 100644
+--- a/audio/usb/StreamUsb.cpp
++++ b/audio/usb/StreamUsb.cpp
+@@ -20,6 +20,10 @@
+ #include <android-base/logging.h>
+ #include <error/expected_utils.h>
+ 
++extern "C" {
++#include <tinyalsa/mixer.h>
++}
++
+ #include "UsbAlsaMixerControl.h"
+ #include "core-impl/StreamUsb.h"
+ 
+@@ -32,6 +36,56 @@ using aidl::android::media::audio::common::MicrophoneInfo;
+ 
+ namespace aidl::android::hardware::audio::core {
+ 
++namespace {
++
++// This board can have two USB audio peripherals connected at once -- a speaker unit and a
++// separate standalone microphone -- but the framework's USB device selection only tracks one
++// "current" USB audio device per direction, and it locks onto whichever one it saw first at
++// boot. On this board that is always the speaker unit's card, because it is a combo device
++// (has both playback AND capture controls) and enumerates before the mic-only dongle. The
++// framework then hands the HAL that same card's address for BOTH directions, so input capture
++// silently reads from the speaker unit's low-sensitivity onboard mic instead of the actual
++// microphone the driver is speaking into -- confirmed live: capture worked (unmuted, gain
++// maxed, correctly calibrated), it just never heard anything, because nothing was ever said
++// near that card.
++//
++// Rather than resolve this in the framework's UsbAlsaManager (Java, generic to every USB-audio
++// board, high blast radius for a board-specific topology), override it here: for an INPUT
++// stream only, prefer whichever connected USB card is capture-only -- no output-capable mixer
++// controls at all -- over whatever card the framework selected. A combo device always has at
++// least a playback mute/volume control; a dedicated mic dongle does not. Falls back to the
++// framework's own selection if no such card exists, so a board with only one USB audio
++// peripheral (the common case) is unaffected.
++constexpr int kMaxProbedCard = 7;
++
++bool cardHasControl(struct mixer* mixer, const char* name) {
++    return mixer_get_ctl_by_name(mixer, name) != nullptr;
++}
++
++// Returns the lowest-numbered ALSA card that exposes capture controls but no playback
++// controls, or -1 if none is found.
++int findDedicatedCaptureOnlyCard() {
++    for (int card = 0; card <= kMaxProbedCard; ++card) {
++        struct mixer* mixer = mixer_open(card);
++        if (mixer == nullptr) continue;
++        const bool hasPlayback = cardHasControl(mixer, "Speaker Playback Switch") ||
++                                 cardHasControl(mixer, "Speaker Playback Volume") ||
++                                 cardHasControl(mixer, "Master Playback Switch") ||
++                                 cardHasControl(mixer, "PCM Playback Volume");
++        const bool hasCapture = cardHasControl(mixer, "Mic Capture Switch") ||
++                                cardHasControl(mixer, "Capture Switch") ||
++                                cardHasControl(mixer, "Mic Capture Volume") ||
++                                cardHasControl(mixer, "Capture Volume");
++        mixer_close(mixer);
++        if (hasCapture && !hasPlayback) {
++            return card;
++        }
++    }
++    return -1;
++}
++
++}  // namespace
++
+ StreamUsb::StreamUsb(StreamContext* context, const Metadata& metadata)
+     : StreamAlsa(context, metadata, 1 /*readWriteRetries*/) {}
+ 
+@@ -52,6 +106,19 @@ ndk::ScopedAStatus StreamUsb::setConnectedDevices(
+         }
+         connectedDeviceProfiles.push_back(*profile);
+     }
++    if (mIsInput) {
++        if (const int dedicatedCard = findDedicatedCaptureOnlyCard(); dedicatedCard >= 0) {
++            for (auto& deviceProfile : connectedDeviceProfiles) {
++                if (deviceProfile.card != dedicatedCard) {
++                    LOG(INFO) << __func__ << ": redirecting input from card "
++                              << deviceProfile.card << " to dedicated capture-only card "
++                              << dedicatedCard;
++                    deviceProfile.card = dedicatedCard;
++                    deviceProfile.device = 0;
++                }
++            }
++        }
++    }
+     RETURN_STATUS_IF_ERROR(StreamCommonImpl::setConnectedDevices(connectedDevices));
+     std::lock_guard guard(mLock);
+     mConnectedDeviceProfiles = std::move(connectedDeviceProfiles);
