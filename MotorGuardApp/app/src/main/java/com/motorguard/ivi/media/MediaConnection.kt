@@ -176,6 +176,9 @@ class MediaConnection private constructor(context: Context) {
     fun seekTo(positionMs: Long) {
         if (VideoPlayback.state.value != null) return VideoPlayback.seekTo(positionMs)
         if (isBluetooth) return bluetooth.seekTo(positionMs)
+        if (_state.value.playbackKind == PlaybackKind.WEB) {
+            return webSessionFor(_state.value.source)?.seekTo(positionMs) ?: Unit
+        }
         withController { seekTo(positionMs) }
     }
 

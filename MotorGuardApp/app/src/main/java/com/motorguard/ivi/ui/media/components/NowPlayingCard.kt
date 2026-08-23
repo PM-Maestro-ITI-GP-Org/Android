@@ -37,8 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -127,7 +125,12 @@ fun NowPlayingCard(
                 }
 
                 Spacer(Modifier.height(14.dp))
-                MiniProgress(fraction = playback.progress)
+                Scrubber(
+                    positionMs = playback.positionMs,
+                    durationMs = playback.durationMs,
+                    enabled = playback.hasTrack && playback.canSeek,
+                    onSeek = connection::seekTo,
+                )
 
                 Spacer(Modifier.height(12.dp))
                 Row(
@@ -166,30 +169,6 @@ fun NowPlayingCard(
         }
     }
 
-/** Thin progress line under the metadata — scaled, never re-laid out. */
-@Composable
-private fun MiniProgress(fraction: Float) {
-    val colors = MotorGuard.colors
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(3.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(colors.glassBorder),
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(3.dp)
-                .graphicsLayer {
-                    scaleX = fraction.coerceIn(0f, 1f)
-                    transformOrigin = TransformOrigin(0f, 0.5f)
-                }
-                .clip(RoundedCornerShape(2.dp))
-                .background(colors.accent),
-        )
-    }
-}
 
 @Composable
 private fun MiniControl(

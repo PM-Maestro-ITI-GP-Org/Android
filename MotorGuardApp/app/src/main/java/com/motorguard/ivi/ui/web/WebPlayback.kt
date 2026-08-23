@@ -28,15 +28,16 @@ object WebPlayback {
     private val _state = MutableStateFlow<PlaybackSnapshot?>(null)
     val state: StateFlow<PlaybackSnapshot?> = _state.asStateFlow()
 
-    /** Called from the JavaScript bridge, off the main thread. */
+    /** Called from the JavaScript bridge, off the main thread, roughly once a second. */
     fun report(
         source: MediaSourceId,
         title: String,
         artist: String,
         album: String,
         playing: Boolean,
+        positionMs: Long = 0L,
+        durationMs: Long = 0L,
     ) {
-        android.util.Log.d("MGWeb", "report $source '$title' / '$artist' playing=$playing")
         if (title.isBlank()) {
             clear(source)
             return
@@ -50,18 +51,20 @@ object WebPlayback {
                 title = title,
                 artist = artist,
                 album = album,
-                durationMs = 0L,
+                durationMs = durationMs,
                 uri = null,
                 artworkUri = null,
                 source = source,
             ),
             isPlaying = playing,
+            positionMs = positionMs,
+            durationMs = durationMs,
             source = source,
             playbackKind = PlaybackKind.WEB,
             // The page owns both, so neither is generally safe to advertise — except YouTube
-            // Music, whose player bar always keeps a real next/previous queue that
-            // WebSession.skipNext/skipPrevious can reach by clicking the page's own buttons.
-            canSeek = false,
+            // Music, whose player bar always keeps a real seek bar and next/previous queue that
+            // WebSession.seekTo/skipNext/skipPrevious can reach directly.
+            canSeek = source == MediaSourceId.YOUTUBE_MUSIC,
             canSkip = source == MediaSourceId.YOUTUBE_MUSIC,
         )
     }

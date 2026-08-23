@@ -140,13 +140,22 @@ class WebSession(
      */
     private class Bridge(private val sourceId: com.motorguard.ivi.data.media.MediaSourceId) {
         @android.webkit.JavascriptInterface
-        fun nowPlaying(title: String?, artist: String?, album: String?, playing: Boolean) {
+        fun nowPlaying(
+            title: String?,
+            artist: String?,
+            album: String?,
+            playing: Boolean,
+            positionMs: Double,
+            durationMs: Double,
+        ) {
             WebPlayback.report(
                 source = sourceId,
                 title = title.orEmpty(),
                 artist = artist.orEmpty(),
                 album = album.orEmpty(),
                 playing = playing,
+                positionMs = positionMs.toLong(),
+                durationMs = durationMs.toLong(),
             )
         }
     }
@@ -177,6 +186,21 @@ class WebSession(
 
     fun skipPrevious() {
         webView?.evaluateJavascript(PREVIOUS_TRACK_JS, null)
+    }
+
+    /**
+     * Best-effort remote seek, for the Home now-playing card's scrubber.
+     *
+     * Same reasoning as [togglePlayback]: the `<video>`/`<audio>` element's own `currentTime` is
+     * a standard target, and setting it is exactly what dragging the page's own seek bar does
+     * under the hood.
+     */
+    fun seekTo(positionMs: Long) {
+        webView?.evaluateJavascript(
+            "(function(){var m=document.querySelector('video, audio');" +
+                "if(m)m.currentTime=${positionMs / 1000.0};})();",
+            null,
+        )
     }
 
     /** Coming into view. */
@@ -223,14 +247,15 @@ class WebSession(
          * both sites are single-page apps that swap tracks without any navigation. One second is
          * far below what a driver notices and costs nothing measurable.
          *
-         * Only *changes* cross the bridge, so a paused page is silent rather than chattering
-         * once a second.
+         * Called every tick regardless of whether anything changed — the Home scrubber needs
+         * [positionMs] moving in real time while playing, and there is no cheaper way to notice
+         * that than asking the media element again. [WebPlayback.report] still drops it entirely
+         * when the title is blank, so an idle page stays silent on the state that matters.
          */
         private val WATCHER_JS = """
             (function () {
               if (window.__mgWatch) return;
               window.__mgWatch = true;
-              var last = '';
               setInterval(function () {
                 try {
                   var ms = navigator.mediaSession;
@@ -253,10 +278,9 @@ class WebSession(
                   var a = (m && m.artist) || (barByline && barByline.textContent.trim().split(' • ')[0]) || '';
                   var al = (m && m.album) || '';
                   var playing = (ms && ms.playbackState === 'playing') || (media ? !media.paused : false);
-                  var key = t + '|' + a + '|' + al + '|' + playing;
-                  if (key === last) return;
-                  last = key;
-                  MotorGuard.nowPlaying(t, a, al, !!playing);
+                  var pos = (media && isFinite(media.currentTime)) ? media.currentTime * 1000 : 0;
+                  var dur = (media && isFinite(media.duration)) ? media.duration * 1000 : 0;
+                  MotorGuard.nowPlaying(t, a, al, !!playing, pos, dur);
                 } catch (e) { /* a page mid-navigation is not an error worth reporting */ }
               }, 1000);
             })();
@@ -269,22 +293,24 @@ class WebSession(
             })();
         """
 
-        // YouTube Music's player bar exposes stable ids on its transport buttons; the
-        // aria-label fallbacks are for if that markup ever changes under us.
+        // Scoped to ytmusic-player-bar deliberately: an unscoped `[aria-label="Next"]` also
+        // matches a *disabled* carousel arrow earlier in the DOM (the Home feed's row-scroll
+        // button), and querySelector returns that one first — clicking a disabled element is a
+        // silent no-op, which is why the first version of this never advanced the track.
         private val NEXT_TRACK_JS = """
             (function () {
-              var b = document.querySelector('#next-button') ||
-                document.querySelector('[aria-label="Next"]') ||
-                document.querySelector('[aria-label="Next song"]');
+              var bar = document.querySelector('ytmusic-player-bar');
+              var b = bar && (bar.querySelector('.next-button, #next-button') ||
+                bar.querySelector('[aria-label="Next"], [aria-label="Next song"]'));
               if (b) b.click();
             })();
         """
 
         private val PREVIOUS_TRACK_JS = """
             (function () {
-              var b = document.querySelector('#previous-button') ||
-                document.querySelector('[aria-label="Previous"]') ||
-                document.querySelector('[aria-label="Previous song"]');
+              var bar = document.querySelector('ytmusic-player-bar');
+              var b = bar && (bar.querySelector('.previous-button, #previous-button') ||
+                bar.querySelector('[aria-label="Previous"], [aria-label="Previous song"]'));
               if (b) b.click();
             })();
         """
