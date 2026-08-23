@@ -14,23 +14,23 @@ index e72502b..6b11fe8 100644
 +                {Mixer::MIC_GAIN,
 +                 {{"Capture Volume", MIXER_CTL_TYPE_INT},
 +                  {"Mic Capture Volume", MIXER_CTL_TYPE_INT}}}};
-
+ 
  // static
  Mixer::Controls Mixer::initializeMixerControls(struct mixer* mixer) {
 diff --git a/audio/alsa/StreamAlsa.cpp b/audio/alsa/StreamAlsa.cpp
-index c77bfca..789ed0c 100644
+index c77bfca..bd81c31 100644
 --- a/audio/alsa/StreamAlsa.cpp
 +++ b/audio/alsa/StreamAlsa.cpp
 @@ -24,6 +24,10 @@
  #include <audio_utils/clock.h>
  #include <error/expected_utils.h>
-
+ 
 +extern "C" {
 +#include <tinyalsa/mixer.h>
 +}
 +
  #include "core-impl/StreamAlsa.h"
-
+ 
  namespace aidl::android::hardware::audio::core {
 @@ -100,6 +104,18 @@ StreamAlsa::~StreamAlsa() {
          return ::android::NO_INIT;
@@ -50,11 +50,11 @@ index c77bfca..789ed0c 100644
 +    }
      return ::android::OK;
  }
-
-@@ -172,4 +188,58 @@ ndk::ScopedAStatus StreamAlsa::setGain(float gain) {
+ 
+@@ -172,4 +188,66 @@ ndk::ScopedAStatus StreamAlsa::setGain(float gain) {
      return ndk::ScopedAStatus::ok();
  }
-
+ 
 +// USB microphones ship with the capture path muted by default. The USB audio
 +// module only drives output volumes, so an opened input stream patches through
 +// to the hardware yet pcm_read() returns no samples. Flip the capture switch
@@ -101,8 +101,16 @@ index c77bfca..789ed0c 100644
 +    if (ctl != nullptr) {
 +        int maxv = mixer_ctl_get_range_max(ctl);
 +        if (maxv > 0) {
-+            mixer_ctl_set_value(ctl, 0, maxv / 2);  // 50% gain
-+            LOG(INFO) << "unmuteCapture: " << volName << " set to " << (maxv / 2)
++            // Full gain, not half: measured live on this C-Media chip, half gain (the
++            // previous value here) put the captured signal at rms ~7-9 out of the int16
++            // range even close to the mic -- indistinguishable from noise floor to the
++            // wake-word model, which never crossed its detection threshold. This also
++            // matches UsbAlsaMixerControl::setDeviceConnectionState(), which sets
++            // setMicGain(1.0f) once at USB-connect time; that setting was getting
++            // silently undone back to half gain every time a new input stream opened
++            // here, since this runs again on every wake-word pause/resume cycle.
++            mixer_ctl_set_value(ctl, 0, maxv);
++            LOG(INFO) << "unmuteCapture: " << volName << " set to " << maxv
 +                      << " on card " << card;
 +        }
 +    }
@@ -117,7 +125,7 @@ index 8bdf208..75adabb 100644
 @@ -47,6 +47,12 @@ class StreamAlsa : public StreamCommonImpl {
      void shutdown() override;
      ndk::ScopedAStatus setGain(float gain) override;
-
+ 
 +    // Unmutes the capture path (e.g. "Mic Capture Switch"/"Capture Switch") and
 +    // sets a sane level for an input card. USB microphones ship with capture
 +    // muted by default, which makes pcm_read() return no samples even though
