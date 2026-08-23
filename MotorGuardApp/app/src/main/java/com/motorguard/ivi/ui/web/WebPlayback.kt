@@ -58,9 +58,11 @@ object WebPlayback {
             isPlaying = playing,
             source = source,
             playbackKind = PlaybackKind.WEB,
-            // The page owns both. Advertising them would be advertising buttons that do nothing.
+            // The page owns both, so neither is generally safe to advertise — except YouTube
+            // Music, whose player bar always keeps a real next/previous queue that
+            // WebSession.skipNext/skipPrevious can reach by clicking the page's own buttons.
             canSeek = false,
-            canSkip = false,
+            canSkip = source == MediaSourceId.YOUTUBE_MUSIC,
         )
     }
 

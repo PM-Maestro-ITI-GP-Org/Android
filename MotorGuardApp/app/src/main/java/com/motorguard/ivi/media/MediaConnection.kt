@@ -157,6 +157,9 @@ class MediaConnection private constructor(context: Context) {
      */
     fun previous() {
         if (isBluetooth) return bluetooth.previous()
+        if (_state.value.playbackKind == PlaybackKind.WEB) {
+            return webSessionFor(_state.value.source)?.skipPrevious() ?: Unit
+        }
         withController {
             if (currentPosition > RESTART_THRESHOLD_MS) seekTo(0) else seekToPrevious()
         }
@@ -164,6 +167,9 @@ class MediaConnection private constructor(context: Context) {
 
     fun next() {
         if (isBluetooth) return bluetooth.next()
+        if (_state.value.playbackKind == PlaybackKind.WEB) {
+            return webSessionFor(_state.value.source)?.skipNext() ?: Unit
+        }
         withController { seekToNext() }
     }
 

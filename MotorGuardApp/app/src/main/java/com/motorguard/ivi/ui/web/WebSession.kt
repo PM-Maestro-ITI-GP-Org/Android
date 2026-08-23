@@ -165,6 +165,20 @@ class WebSession(
         webView?.evaluateJavascript(TOGGLE_PLAYBACK_JS, null)
     }
 
+    /**
+     * Best-effort remote skip, for sources whose page keeps a real queue — YouTube Music's player
+     * bar always has next/previous buttons, unlike a plain video page. Clicking the page's own
+     * button rather than reimplementing the queue is what keeps this correct as the site's own
+     * shuffle/autoplay/radio-mix logic decides what "next" means.
+     */
+    fun skipNext() {
+        webView?.evaluateJavascript(NEXT_TRACK_JS, null)
+    }
+
+    fun skipPrevious() {
+        webView?.evaluateJavascript(PREVIOUS_TRACK_JS, null)
+    }
+
     /** Coming into view. */
     fun attach(view: WebView) {
         attachments++
@@ -223,11 +237,20 @@ class WebSession(
                   var m = ms && ms.metadata;
                   // <audio> as well as <video>: not every site's player is a <video> element.
                   var media = document.querySelector('video, audio');
+                  // YouTube Music never fills in navigator.mediaSession, so its own persistent
+                  // player bar is the only place a clean title/artist exist separately —
+                  // otherwise this falls all the way to document.title, which glues them
+                  // together (e.g. "Toba Toba | YouTube Music") with no way to split them back
+                  // apart. Same trick this used for Spotify's bar before it was dropped.
+                  var bar = document.querySelector('ytmusic-player-bar');
+                  var barTitle = bar && bar.querySelector('.title');
+                  var barByline = bar && bar.querySelector('.byline');
                   // Fall back to the media element and the document title: not every site
                   // populates the Media Session API, but there is always an element and a
                   // title once something is playing.
-                  var t = (m && m.title) || (media && !media.paused ? document.title.replace(/ - YouTube$/, '') : '');
-                  var a = (m && m.artist) || '';
+                  var t = (m && m.title) || (barTitle && barTitle.textContent.trim()) ||
+                    (media && !media.paused ? document.title.replace(/ - YouTube( Music)?$/, '') : '');
+                  var a = (m && m.artist) || (barByline && barByline.textContent.trim().split(' • ')[0]) || '';
                   var al = (m && m.album) || '';
                   var playing = (ms && ms.playbackState === 'playing') || (media ? !media.paused : false);
                   var key = t + '|' + a + '|' + al + '|' + playing;
@@ -243,6 +266,26 @@ class WebSession(
             (function () {
               var v = document.querySelector('video, audio');
               if (v) { if (v.paused) v.play(); else v.pause(); }
+            })();
+        """
+
+        // YouTube Music's player bar exposes stable ids on its transport buttons; the
+        // aria-label fallbacks are for if that markup ever changes under us.
+        private val NEXT_TRACK_JS = """
+            (function () {
+              var b = document.querySelector('#next-button') ||
+                document.querySelector('[aria-label="Next"]') ||
+                document.querySelector('[aria-label="Next song"]');
+              if (b) b.click();
+            })();
+        """
+
+        private val PREVIOUS_TRACK_JS = """
+            (function () {
+              var b = document.querySelector('#previous-button') ||
+                document.querySelector('[aria-label="Previous"]') ||
+                document.querySelector('[aria-label="Previous song"]');
+              if (b) b.click();
             })();
         """
 
