@@ -1,5 +1,5 @@
 diff --git a/overlay/AndroidRpiOverlay/res/values/config.xml b/overlay/AndroidRpiOverlay/res/values/config.xml
-index e17fa96..72cbad2 100644
+index e17fa96..b5196ca 100644
 --- a/overlay/AndroidRpiOverlay/res/values/config.xml
 +++ b/overlay/AndroidRpiOverlay/res/values/config.xml
 @@ -99,6 +99,15 @@
@@ -10,8 +10,8 @@ index e17fa96..72cbad2 100644
 +         capture endpoint too, for the mic voice assistant input relies on), so the stock
 +         hearing-safety limiter treats it like personal headphones and clamps STREAM_MUSIC
 +         to its safe index (~1/4 of max) regardless of the volume the user sets. The
-+         speaker here is a fixed in-car unit, not earphones, so the limiter is not
-+         protecting anyone -- disable it rather than reclassifying the device type, which
++         speaker here is a fixed in-car unit, not earphones, so the limiter protects no
++         one; disable it rather than reclassifying the device type, which
 +         would also drop the automatic USB-mic association the voice assistant needs. -->
 +    <bool name="config_safe_media_volume_enabled">false</bool>
 +
