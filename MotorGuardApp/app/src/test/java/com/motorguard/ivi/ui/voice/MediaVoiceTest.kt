@@ -112,6 +112,37 @@ class MediaVoiceTest {
             .forEach { assertNull(it, ask(it)) }
     }
 
+    /**
+     * The other side of the phone handler's gating.
+     *
+     * PhoneVoice runs first and claims "mute" only while a call exists; with no call it returns
+     * null and the word has to land here, or muting the music during a quiet moment would do
+     * nothing at all. Tested from this side because the phone half needs a Context and a
+     * repository, and this half is the one that must not stop working.
+     */
+    @Test
+    fun `mute still belongs to the player when no call is up`() {
+        assertEquals(MediaVoice.Ask.MUTE, ask("mute"))
+        assertEquals(MediaVoice.Ask.UNMUTE, ask("unmute"))
+    }
+
+    /**
+     * "Who is this" is a question about a song. PhoneVoice runs ahead of this and deliberately
+     * does not list it, so it has to arrive here — its phone equivalent is "who's calling".
+     */
+    @Test
+    fun `who is this is a now playing question`() {
+        assertEquals(MediaVoice.Ask.NOW_PLAYING, ask("who is this"))
+        assertEquals(MediaVoice.Ask.NOW_PLAYING, ask("who sings this"))
+    }
+
+    /** Call commands are the phone's, and must not be read as playback. */
+    @Test
+    fun `call commands are not playback commands`() {
+        listOf("call back", "redial", "decline", "who is calling", "hang up", "put the call on hold")
+            .forEach { assertNull(it, ask(it)) }
+    }
+
     // --- what it says --------------------------------------------------------
 
     @Test
