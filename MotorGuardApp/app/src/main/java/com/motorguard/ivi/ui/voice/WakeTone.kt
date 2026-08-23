@@ -24,8 +24,18 @@ object WakeTone {
             // setAudioAttributes() is rejected in that state at the native layer ("trying
             // to set audio attributes called in state 8") — attributes have to go in at
             // construction time via this overload instead.
+            //
+            // USAGE_ASSISTANCE_SONIFICATION, not USAGE_ASSISTANCE_NAVIGATION_GUIDANCE: it
+            // is the semantically correct usage for a UI chime. But car_audio_configuration.xml
+            // routes car audio purely by usage -> context, and "system_sound" (what
+            // ASSISTANCE_SONIFICATION maps to) sits in the Speaker group -- which on this
+            // board has no real speaker behind it, so the chime came out of the HDMI/screen
+            // audio while the spoken response right after it (USAGE_ASSISTANCE_NAVIGATION_
+            // GUIDANCE, same as VoiceOverlaySession's TTS and MotorFaultAnnouncer) correctly
+            // used the USB speaker. Match their usage so the whole wake interaction — tone
+            // and speech alike — comes out of the same device.
             val attrs = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
             val player = MediaPlayer.create(
