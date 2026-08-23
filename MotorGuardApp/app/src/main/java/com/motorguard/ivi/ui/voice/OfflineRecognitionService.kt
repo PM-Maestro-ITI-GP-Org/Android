@@ -73,8 +73,15 @@ class OfflineRecognitionService : RecognitionService() {
          * from *this session's own* measured noise floor (see noiseFloor below),
          * so it keeps working across mics, rooms, and distances instead of
          * assuming one fixed ambient level.
+         *
+         * NOT 2.5: live on card 3, that missed real speech outright (recognizer error 6,
+         * ERROR_SPEECH_TIMEOUT) on roughly half of a small sample of attempts, and clipped
+         * one true utterance down to a 0.8 s fragment ("PTH") -- the gate opened on a loud
+         * onset, then closed after SILENCE_MS the moment the driver's *actual* speaking
+         * level (not the wake-word volume) dipped back near it. 1.8 trades a little
+         * noise-rejection margin for reliably catching normal conversational volume.
          */
-        private const val SPEECH_MARGIN = 2.5
+        private const val SPEECH_MARGIN = 1.8
 
         /** Absolute floor on the adaptive threshold: a near-silent room should not
          *  make the gate so sensitive that its own residual noise crosses it. */
