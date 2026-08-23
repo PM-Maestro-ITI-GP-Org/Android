@@ -200,6 +200,24 @@ class WebSession(
                   var a = (m && m.artist) || '';
                   var al = (m && m.album) || '';
                   var playing = (ms && ms.playbackState === 'playing') || (media ? !media.paused : false);
+                  // Spotify's web player calls neither of the above in this embedded WebView --
+                  // confirmed live: its own now-playing bar shows a real track, playing audibly,
+                  // while navigator.mediaSession stays unset and no <audio>/<video> element ever
+                  // appears (it renders through Web Audio, not a plain media element). Read its
+                  // own now-playing bar directly when nothing else found anything -- these
+                  // data-testid values are what Spotify's web client itself uses to label the
+                  // bar, and have stayed stable across web-client releases.
+                  if (!t) {
+                    var stTitle = document.querySelector('[data-testid="context-item-info-title"]');
+                    if (stTitle) {
+                      t = stTitle.textContent || '';
+                      var stArtist = document.querySelector('[data-testid="context-item-info-subtitles"]');
+                      a = stArtist ? (stArtist.textContent || '') : '';
+                      var stPlayBtn = document.querySelector('[data-testid="control-button-playpause"]');
+                      var stLabel = stPlayBtn ? (stPlayBtn.getAttribute('aria-label') || '') : '';
+                      playing = stLabel.toLowerCase().indexOf('pause') !== -1;
+                    }
+                  }
                   var key = t + '|' + a + '|' + al + '|' + playing;
                   if (key === last) return;
                   last = key;
