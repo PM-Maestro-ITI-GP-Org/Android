@@ -102,11 +102,18 @@ class OnnxWakeWordDetector(
         // range at the *hardware's* maximum: "Mic Capture Volume" maxed, "Mic Capture
         // Switch" on, "Auto Gain Control" on -- confirmed with tinymix, nothing left to
         // turn up at the ALSA layer. That is silence to the wake-word model regardless
-        // of what is said, so boost it here instead. 24x brings the idle noise floor
-        // (rms ~22-25 after the AOSP-side unmute/gain fix) to the few-hundred range,
-        // leaving headroom below the int16 ceiling for actual speech to register
-        // clearly above it without clipping on quiet-room noise alone.
-        private const val MIC_GAIN = 24f
+        // of what is said, so boost it here instead.
+        //
+        // NOT 24x: that was the first attempt, and it overshot. OfflineRecognitionService's
+        // SPEECH_RMS was tuned to this same hardware with ambient at rms 100-250 and speech
+        // at 1000-3400 -- some prior gain state this board no longer has. 24x pushed idle
+        // noise to rms ~500-620, *above* SPEECH_RMS (400), so the recognizer's silence gate
+        // never closed: a 12 s test session never found a gap and Whisper got a wall of
+        // amplified noise with the actual words buried in it ("A" transcribed from 11.9 s of
+        // audio). 6.5x reproduces the documented ambient range instead (~150 from the
+        // measured ~23 baseline), which is what SPEECH_RMS and the wake-word threshold were
+        // actually tuned against.
+        private const val MIC_GAIN = 6.5f
 
         /** How long to wait for a candidate config to actually deliver frames. */
         private const val PROBE_MS = 3_000L

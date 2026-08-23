@@ -40,12 +40,20 @@ class MicSource(private val targetRate: Int = 16_000) {
     companion object {
         private const val TAG = "MotorGuardVoice"
 
-        // Matches WakeWord.kt's MIC_GAIN: this board's C-Media dongle delivers
-        // rms ~7-9 out of the int16 range even at the ALSA layer's own maximum gain
-        // (Mic Capture Volume maxed, Auto Gain Control on -- confirmed with tinymix,
-        // nothing left to raise at that layer). Silence to Whisper regardless of what
-        // was said, so boost it here too.
-        private const val MIC_GAIN = 24f
+        // Matches WakeWord.kt's MIC_GAIN -- keep the two in sync. this board's C-Media
+        // dongle delivers rms ~7-9 out of the int16 range even at the ALSA layer's own
+        // maximum gain (Mic Capture Volume maxed, Auto Gain Control on -- confirmed with
+        // tinymix, nothing left to raise at that layer). Silence to Whisper regardless of
+        // what was said, so boost it here too.
+        //
+        // NOT 24x: SPEECH_RMS below was tuned against this same hardware at ambient
+        // rms 100-250 / speech 1000-3400 -- a gain state this board no longer has. 24x
+        // pushed idle noise to rms ~500-620, above SPEECH_RMS (400), so the silence gate
+        // (line ~180) never closed: a live test ran the full 12 s session and Whisper
+        // transcribed "A" from it, the actual words drowned in amplified noise. 6.5x
+        // reproduces the documented ambient range instead (~150 from the measured ~23
+        // baseline), matching what SPEECH_RMS was actually tuned against.
+        private const val MIC_GAIN = 6.5f
 
         /**
          * How long a candidate gets to deliver its first frames. Generous
