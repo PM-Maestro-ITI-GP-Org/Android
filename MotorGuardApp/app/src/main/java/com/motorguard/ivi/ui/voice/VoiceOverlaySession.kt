@@ -33,6 +33,10 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.motorguard.ivi.MainActivity
+import com.motorguard.ivi.data.media.MediaSourceId
+import com.motorguard.ivi.data.media.MediaSourceManager
+import com.motorguard.ivi.data.media.sources.RadioMediaSource
+import com.motorguard.ivi.media.MediaConnection
 import com.motorguard.ivi.ui.theme.MotorGuardTheme
 import java.util.Locale
 import com.motorguard.ivi.ui.dialer.PhoneVoice
@@ -447,7 +451,29 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         }
         runCatching { context.startActivity(intent) }
             .onFailure { Log.e(TAG, "could not route to ${target.name}", it) }
+        // MEDIA used to be tab-navigation only: it opened the Media tab but never played
+        // anything, so "play music" got a TTS reply claiming to be playing music while the
+        // driver stared at a silent, empty tab. Auto-start the same default station list the
+        // tab's own search field falls back to on a blank query (RadioMediaSource.tracks()),
+        // so a driver who has never added local files still gets audio, not a UI tour.
+        if (target == VoiceRoute.MEDIA) startDefaultRadio()
         requestHide()
+    }
+
+    /** Starts the top popular station, same source the Media tab's Radio source uses. */
+    private fun startDefaultRadio() {
+        Thread({
+            runCatching {
+                val source = MediaSourceManager.get(context).source(MediaSourceId.RADIO)
+                    as? RadioMediaSource ?: return@runCatching
+                val stations = kotlinx.coroutines.runBlocking { source.tracks() }
+                if (stations.isNotEmpty()) {
+                    MediaConnection.get(context).play(stations, 0)
+                } else {
+                    Log.w(TAG, "startDefaultRadio: no stations returned")
+                }
+            }.onFailure { Log.e(TAG, "startDefaultRadio failed", it) }
+        }, "voice-play-music").start()
     }
 
     // --- audio focus -------------------------------------------------------
