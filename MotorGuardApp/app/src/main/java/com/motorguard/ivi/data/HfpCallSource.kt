@@ -86,6 +86,11 @@ class HfpCallSource(private val app: Context) {
                         _audioRouted.value = state == STATE_AUDIO_CONNECTED
                         Log.i(TAG, "HFP audio state=$state routed=${_audioRouted.value}")
                     }
+                    // A String subject can never be proven exhaustive, so the in-tree kotlinc
+                    // (stricter here than the Gradle build this branch was authored against)
+                    // requires this else even though every actual broadcast this receiver is
+                    // registered for is one of the two cases above.
+                    else -> Unit
                 }
             }.onFailure { Log.e(TAG, "HFP broadcast ${intent?.action} not handled", it) }
         }
