@@ -17,6 +17,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.motorguard.ivi.data.nav.GeoPoint
+import com.motorguard.ivi.data.nav.NavConfig
 import com.motorguard.ivi.ui.nav.NavMotion
 import com.motorguard.ivi.ui.theme.MotorGuard
 import kotlinx.coroutines.delay
