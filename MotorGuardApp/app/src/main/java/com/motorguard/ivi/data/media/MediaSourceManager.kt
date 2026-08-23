@@ -1,6 +1,7 @@
 package com.motorguard.ivi.data.media
 
 import android.content.Context
+import com.motorguard.ivi.data.media.sources.AnghamiMediaSource
 import com.motorguard.ivi.data.media.sources.BluetoothMediaSource
 import com.motorguard.ivi.data.media.sources.LocalMediaSource
 import com.motorguard.ivi.data.media.sources.RadioMediaSource
@@ -37,6 +38,7 @@ class MediaSourceManager private constructor(context: Context) {
         RadioMediaSource(appContext),
         VideoMediaSource(appContext),
         SpotifyMediaSource(appContext),
+        AnghamiMediaSource(appContext),
     )
 
     private val _active = MutableStateFlow(MediaSourceId.LOCAL)

@@ -143,10 +143,12 @@ class MediaConnection private constructor(context: Context) {
         withController { if (isPlaying) pause() else play() }
     }
 
-    /** Which page a [PlaybackKind.WEB] snapshot came from — see [WebSession.YouTube]/[WebSession.Spotify]. */
+    /** Which page a [PlaybackKind.WEB] snapshot came from — see [WebSession.YouTube]/
+     *  [WebSession.Spotify]/[WebSession.Anghami]. */
     private fun webSessionFor(source: MediaSourceId): com.motorguard.ivi.ui.web.WebSession? = when (source) {
         MediaSourceId.VIDEO -> com.motorguard.ivi.ui.web.WebSession.YouTube
         MediaSourceId.SPOTIFY -> com.motorguard.ivi.ui.web.WebSession.Spotify
+        MediaSourceId.ANGHAMI -> com.motorguard.ivi.ui.web.WebSession.Anghami
         else -> null
     }
 

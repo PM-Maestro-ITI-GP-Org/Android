@@ -147,14 +147,19 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
         // of two branches at a single, stable call site -- the pattern most often cited for
         // slot-table corruption crashes ("Vega, play music" reliably crashed this screen with
         // IntStack.peek2 ArrayIndexOutOfBoundsException on switching into the Spotify tab).
-        if (state.activeSource == MediaSourceId.SPOTIFY) {
+        if (state.activeSource == MediaSourceId.SPOTIFY || state.activeSource == MediaSourceId.ANGHAMI) {
             // The page brings its own library, search and transport, so it gets the whole row —
             // a queue card beside it would duplicate what is already on screen, and our controls
             // cannot reach into it anyway (see PlaybackKind.WEB).
+            val isSpotify = state.activeSource == MediaSourceId.SPOTIFY
             WebPane(
-                session = WebSession.Spotify,
+                session = if (isSpotify) WebSession.Spotify else WebSession.Anghami,
                 blocked = state.isMoving,
-                blockedMessage = "Spotify resumes when the car is stopped",
+                blockedMessage = if (isSpotify) {
+                    "Spotify resumes when the car is stopped"
+                } else {
+                    "Anghami resumes when the car is stopped"
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -670,9 +675,10 @@ private fun emptyLibraryMessage(source: MediaSourceId): String = when (source) {
     MediaSourceId.BLUETOOTH -> "Bluetooth shows the phone's current track only"
     MediaSourceId.RADIO -> "No stations found — try another search"
     MediaSourceId.VIDEO -> "No videos on this device or drive"
-    // Never reached — the Spotify source replaces this pane entirely — but the compiler is
-    // right to insist, and a new source should not be able to slip through silently.
+    // Never reached — the Spotify/Anghami sources replace this pane entirely — but the
+    // compiler is right to insist, and a new source should not be able to slip through silently.
     MediaSourceId.SPOTIFY -> "Spotify plays in its own page"
+    MediaSourceId.ANGHAMI -> "Anghami plays in its own page"
 }
 
 /**

@@ -17,7 +17,7 @@ import android.net.Uri
  */
 
 /** Which source a track came from, and which tab owns it. */
-enum class MediaSourceId { LOCAL, USB, BLUETOOTH, RADIO, VIDEO, SPOTIFY }
+enum class MediaSourceId { LOCAL, USB, BLUETOOTH, RADIO, VIDEO, SPOTIFY, ANGHAMI }
 
 /** How audio is actually produced for a source. */
 enum class PlaybackKind {

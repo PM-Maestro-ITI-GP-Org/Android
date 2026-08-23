@@ -68,6 +68,7 @@ object MediaVoice {
         val text = normalise(utterance)
         if (text.isEmpty()) return null
         if (SPOTIFY.any { text.contains(it) }) return MediaSourceId.SPOTIFY
+        if (ANGHAMI.any { text.contains(it) }) return MediaSourceId.ANGHAMI
         if (USB.any { text.contains(it) }) return MediaSourceId.USB
         if (BLUETOOTH.any { text.contains(it) }) return MediaSourceId.BLUETOOTH
         if (RADIO.any { text.contains(it) }) return MediaSourceId.RADIO
@@ -76,6 +77,7 @@ object MediaVoice {
     }
 
     private val SPOTIFY = listOf("spotify")
+    private val ANGHAMI = listOf("anghami")
     private val USB = listOf("usb", "the stick", "memory stick", "flash drive", "thumb drive")
     private val BLUETOOTH = listOf("bluetooth", "blue tooth", "from my phone", "off my phone")
     private val RADIO = listOf("radio", "fm", "a station")

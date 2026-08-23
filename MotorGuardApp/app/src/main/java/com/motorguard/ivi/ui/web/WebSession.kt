@@ -264,5 +264,21 @@ class WebSession(
             // Music keeps playing when the driver navigates away, like every other audio source.
             pauseOnLeave = false,
         )
+
+        /**
+         * Anghami's web player — offered alongside Spotify because Spotify's free tier gates
+         * full playback behind Premium (confirmed live: tapping play redirected the whole page
+         * to its subscription upsell instead of playing anything). Anghami's free tier is
+         * ad-supported and does not carry that wall.
+         */
+        val Anghami = WebSession(
+            "https://play.anghami.com/",
+            sourceId = com.motorguard.ivi.data.media.MediaSourceId.ANGHAMI,
+            // Same reasoning as Spotify's override: claim the real underlying engine rather
+            // than the "; wv" embedded-WebView marker some sites refuse outright.
+            userAgent = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/128.0.6613.88 Mobile Safari/537.36",
+            pauseOnLeave = false,
+        )
     }
 }
