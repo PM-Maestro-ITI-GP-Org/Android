@@ -77,7 +77,7 @@ class OnnxWakeWordDetector(
         private const val TAG = "MotorGuardVoice"
 
         /** Per-chunk mic level logging. Off: see the call site for why. */
-        private const val VERBOSE_LEVELS = true
+        private const val VERBOSE_LEVELS = false
 
         /** Swap this when the phrase changes (see docs/07-voice-implementation.md). */
         const val WAKE_MODEL_FILE = "hey_vega.onnx"

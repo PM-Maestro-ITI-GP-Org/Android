@@ -42,11 +42,11 @@ class OfflineRecognitionService : RecognitionService() {
     companion object {
         private const val TAG = "MotorGuardVoice"
 
-        /** Per-chunk rms/noiseFloor/threshold logging, temporary while tuning
-         *  SPEECH_MARGIN for card 3 live. Off by default: same reasoning as
+        /** Per-chunk rms/noiseFloor/threshold logging, useful when SPEECH_MARGIN next
+         *  needs tuning for a different mic/room. Off by default: same reasoning as
          *  WakeWord.kt's flag of the same name -- a line per chunk forever would
          *  rotate the log buffer. */
-        private const val VERBOSE_LEVELS = true
+        private const val VERBOSE_LEVELS = false
 
         /** 80 ms at 16 kHz, matching the wake word so both share MicSource. */
         private const val CHUNK = 1280
