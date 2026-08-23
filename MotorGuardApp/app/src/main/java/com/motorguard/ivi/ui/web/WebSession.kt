@@ -59,6 +59,11 @@ class WebSession(
     fun acquire(context: Context): WebView {
         webView?.let { return it }
 
+        // userdebug-only diagnostic: lets `chrome://inspect` (or a raw CDP client over
+        // `adb forward`) attach to these pages, which is how the Spotify now-playing detection
+        // above was actually debugged rather than guessed at a second time.
+        WebView.setWebContentsDebuggingEnabled(true)
+
         val view = WebView(context.applicationContext).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
