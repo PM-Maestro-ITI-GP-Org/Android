@@ -163,12 +163,17 @@ class HfpCallSource(private val app: Context) {
             else -> return
         }
 
-        if (domainState == CallState.ACTIVE) {
-            if (answeredAtElapsedMs == 0L) answeredAtElapsedMs = SystemClock.elapsedRealtime()
-            // The whole point: once the call is up, bring the SCO link up too, or the
-            // driver can hear the caller through the phone but the phone cannot hear them.
-            routeAudioToPhone()
+        if (domainState == CallState.ACTIVE && answeredAtElapsedMs == 0L) {
+            answeredAtElapsedMs = SystemClock.elapsedRealtime()
         }
+
+        // SCO carries more than the conversation. Ringback on an outgoing call and the
+        // phone's own in-band ringtone on an incoming one both arrive over it, so waiting
+        // for CALL_STATE_ACTIVE to raise the link meant every call rang in silence and only
+        // found its voice once it was answered. Raising it as soon as there is a call is
+        // safe: the stack ignores a connect on a link that is already up, and the
+        // audio-state broadcast stays the authority on whether it took.
+        routeAudioToPhone()
 
         _call.value = ActiveCall(
             number = number,
@@ -240,10 +245,24 @@ class HfpCallSource(private val app: Context) {
         invokeVoid(proxy, "rejectCall", arrayOf(BluetoothDevice::class.java), arrayOf(device))
     }
 
+    /**
+     * End the call, whichever kind of ending it is.
+     *
+     * A call that is still ringing is *rejected*: AT+CHUP applies to a call that has been
+     * established, and the stack refuses `terminateCall` for one that has not. Decline
+     * therefore did nothing at all until the driver had answered first — the refusal was
+     * read as a success (see [invokeVoid]) and the reject below was never reached.
+     */
     fun hangUp() {
-        val device = connectedDevice() ?: return
+        val device = connectedDevice() ?: run {
+            Log.w(TAG, "no hands-free device to hang up on")
+            return
+        }
         val live = currentCall
-        if (live != null) {
+        val state = live?.let { invokeInt(it, "getState") }
+        val unanswered = state == CALL_STATE_INCOMING || state == CALL_STATE_WAITING
+
+        if (!unanswered && live != null) {
             val callClass = runCatching { Class.forName(CALL_CLASS) }.getOrNull()
             if (callClass != null &&
                 invokeVoid(proxy, "terminateCall", arrayOf(BluetoothDevice::class.java, callClass), arrayOf(device, live))
@@ -251,8 +270,9 @@ class HfpCallSource(private val app: Context) {
                 return
             }
         }
-        // A ringing call that was never answered is rejected, not terminated.
-        invokeVoid(proxy, "rejectCall", arrayOf(BluetoothDevice::class.java), arrayOf(device))
+        if (!invokeVoid(proxy, "rejectCall", arrayOf(BluetoothDevice::class.java), arrayOf(device))) {
+            Log.w(TAG, "the link accepted neither terminateCall nor rejectCall")
+        }
     }
 
     /**
@@ -298,9 +318,13 @@ class HfpCallSource(private val app: Context) {
      */
     fun routeAudioToPhone() {
         val device = connectedDevice() ?: return
-        if (!invokeVoid(proxy, "connectAudio", arrayOf(BluetoothDevice::class.java), arrayOf(device))) {
-            Log.w(TAG, "connectAudio failed — the driver will not be heard")
-        }
+        // connectAudio took no arguments before the profile was reworked and takes the device
+        // after it. Try the modern shape, then the old one, rather than assume the image --
+        // guessing wrong here is a call with no audio in either direction.
+        val raised =
+            invokeVoid(proxy, "connectAudio", arrayOf(BluetoothDevice::class.java), arrayOf(device)) ||
+                invokeVoid(proxy, "connectAudio", emptyArray(), emptyArray())
+        if (!raised) Log.w(TAG, "connectAudio refused — the call will have no audio")
     }
 
     fun stopRoutingAudio() {
@@ -323,7 +347,16 @@ class HfpCallSource(private val app: Context) {
     private fun invokeBoolean(target: Any, name: String): Boolean? =
         runCatching { target.javaClass.getMethod(name).invoke(target) as? Boolean }.getOrNull()
 
-    /** @return true when the call was actually dispatched. */
+    /**
+     * @return true when the profile **accepted** the command — not merely that the reflective
+     * call did not throw.
+     *
+     * Every one of these methods answers with a boolean for "the stack took it", and throwing
+     * that away is what broke Decline: `terminateCall` refuses a call that is still ringing,
+     * returned false, and the caller read the dispatch as a success and never reached its
+     * `rejectCall` fallback. The same blindness would hide a refused `connectAudio`, which is
+     * a call with no sound in it.
+     */
     private fun invokeVoid(
         target: Any?,
         name: String,
@@ -332,8 +365,9 @@ class HfpCallSource(private val app: Context) {
     ): Boolean {
         val receiverObj = target ?: return false
         return runCatching {
-            receiverObj.javaClass.getMethod(name, *types).invoke(receiverObj, *args)
-            true
+            val answer = receiverObj.javaClass.getMethod(name, *types).invoke(receiverObj, *args)
+            // A void method comes back as null; only an explicit false is a refusal.
+            answer !is Boolean || answer
         }.getOrElse {
             Log.w(TAG, "$name unavailable on this image", it)
             false
