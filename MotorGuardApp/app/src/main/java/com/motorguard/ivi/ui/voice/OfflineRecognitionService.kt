@@ -42,6 +42,12 @@ class OfflineRecognitionService : RecognitionService() {
     companion object {
         private const val TAG = "MotorGuardVoice"
 
+        /** Per-chunk rms/noiseFloor/threshold logging, temporary while tuning
+         *  SPEECH_MARGIN for card 3 live. Off by default: same reasoning as
+         *  WakeWord.kt's flag of the same name -- a line per chunk forever would
+         *  rotate the log buffer. */
+        private const val VERBOSE_LEVELS = true
+
         /** 80 ms at 16 kHz, matching the wake word so both share MicSource. */
         private const val CHUNK = 1280
 
@@ -232,12 +238,22 @@ class OfflineRecognitionService : RecognitionService() {
                     // instead of a seeded guess (see CALIBRATION_MS's KDoc for why a seed
                     // does not work on this hardware).
                     noiseFloor += (rms - noiseFloor) * NOISE_FLOOR_EMA_ALPHA
+                    if (VERBOSE_LEVELS) {
+                        Log.d(TAG, "calibrating rms=%.0f noiseFloor=%.0f".format(rms, noiseFloor))
+                    }
                 } else {
                     // The threshold rides SPEECH_MARGIN above the room's own measured noise
                     // floor rather than a fixed constant -- see SPEECH_MARGIN's KDoc for why
                     // a fixed one does not survive a mic swap.
                     val speechThreshold =
                         (noiseFloor * SPEECH_MARGIN).coerceIn(MIN_SPEECH_RMS, MAX_SPEECH_RMS)
+                    if (VERBOSE_LEVELS) {
+                        Log.d(
+                            TAG,
+                            "rms=%.0f noiseFloor=%.0f threshold=%.0f heardSpeech=%b"
+                                .format(rms, noiseFloor, speechThreshold, heardSpeech),
+                        )
+                    }
                     if (rms > speechThreshold) {
                         if (!heardSpeech) {
                             heardSpeech = true
