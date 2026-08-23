@@ -84,6 +84,34 @@ class MediaVoiceTest {
             .forEach { assertNull(it, ask(it)) }
     }
 
+    // --- switching source ----------------------------------------------------
+
+    @Test
+    fun `sources are recognised`() {
+        assertEquals(MediaSourceId.USB, MediaVoice.sourceOf("play from usb"))
+        assertEquals(MediaSourceId.USB, MediaVoice.sourceOf("play the memory stick"))
+        assertEquals(MediaSourceId.BLUETOOTH, MediaVoice.sourceOf("play from bluetooth"))
+        assertEquals(MediaSourceId.BLUETOOTH, MediaVoice.sourceOf("play from my phone"))
+        assertEquals(MediaSourceId.RADIO, MediaVoice.sourceOf("turn the radio on"))
+        assertEquals(MediaSourceId.RADIO, MediaVoice.sourceOf("put the radio on"))
+    }
+
+    @Test
+    fun `non source utterances are not read as a source`() {
+        listOf("play some music", "skip this song", "take me to the airport", "", "pause")
+            .forEach { assertNull(it, MediaVoice.sourceOf(it)) }
+    }
+
+    /**
+     * A source phrase must not also register as a transport command, or "turn the radio on" would
+     * both switch source and be caught by something else on the way past.
+     */
+    @Test
+    fun `source phrases are not also transport commands`() {
+        listOf("play from usb", "turn the radio on", "play from bluetooth")
+            .forEach { assertNull(it, ask(it)) }
+    }
+
     // --- what it says --------------------------------------------------------
 
     @Test

@@ -232,14 +232,16 @@ object IntentMatcher {
         // advertising a route they no longer take would just be a lie in a list.
         VoiceRoute.MEDIA to listOf(
             "play some music", "put something on", "put a song on",
-            "i want to listen to something", "turn the radio on",
+            "i want to listen to something",
             "play my playlist", "some tunes please",
         ),
-        // "how long until we arrive" has an answer now; see ANSWERED below.
+        // "how long until we arrive" has an answer now, and "take me to <place>" is acted on;
+        // see ANSWERED below and NavVoice.destinationOf. What is left here is what still needs
+        // the tab: the two stored-address phrasings this app has no address for, and the
+        // open-ended asks with no destination in them to extract.
         VoiceRoute.NAV to listOf(
             "take me home", "drive me home", "navigate somewhere", "give me directions",
-            "how do i get there", "where am i", "find a petrol station", "route to work",
-            "show me the map",
+            "how do i get there", "where am i", "route to work", "show me the map",
         ),
         VoiceRoute.PHONE to listOf(
             "call someone", "ring mona", "phone my wife", "make a phone call",

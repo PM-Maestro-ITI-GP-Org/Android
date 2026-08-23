@@ -69,6 +69,45 @@ class NavVoiceTest {
             .forEach { assertNull(it, ask(it)) }
     }
 
+    // --- setting a destination ----------------------------------------------
+
+    @Test
+    fun `a destination is lifted out of the phrasing`() {
+        assertEquals("cairo airport", NavVoice.destinationOf("take me to Cairo Airport"))
+        assertEquals("maadi", NavVoice.destinationOf("navigate to Maadi"))
+        assertEquals("nearest petrol station", NavVoice.destinationOf("directions to the nearest petrol station"))
+        assertEquals("city centre", NavVoice.destinationOf("let's go to the city centre"))
+    }
+
+    /**
+     * The two most natural things to say, and the two this app cannot answer: no address is
+     * stored for either, so resolving them would search for the literal word and drive to a pub
+     * called Home with full confidence. They keep routing to the tab.
+     */
+    @Test
+    fun `home and work are refused rather than searched for`() {
+        assertNull(NavVoice.destinationOf("take me home"))
+        assertNull(NavVoice.destinationOf("drive me home"))
+        assertNull(NavVoice.destinationOf("navigate to work"))
+        assertNull(NavVoice.destinationOf("take me to the office"))
+    }
+
+    /** Anchored to the start, so a distance question is not mistaken for a new destination. */
+    @Test
+    fun `questions that merely mention a place are not destinations`() {
+        assertNull(NavVoice.destinationOf("how far is it to the airport"))
+        assertNull(NavVoice.destinationOf("how long until we arrive"))
+        assertNull(NavVoice.destinationOf("what is playing"))
+        assertNull(NavVoice.destinationOf(""))
+    }
+
+    /** A lead-in with nothing after it is not a destination. */
+    @Test
+    fun `an empty destination is refused`() {
+        assertNull(NavVoice.destinationOf("take me to"))
+        assertNull(NavVoice.destinationOf("navigate to the"))
+    }
+
     @Test
     fun `eta gives a duration and an arrival time`() {
         val reply = NavVoice.compose(NavVoice.Ask.ETA, guiding(progress()))
