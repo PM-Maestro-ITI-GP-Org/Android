@@ -98,22 +98,19 @@ class OnnxWakeWordDetector(
         // build. The value is stable platform ABI.
         private const val SRC_HOTWORD = 1999
 
-        // The C-Media USB dongle on this board delivers rms ~7-9 out of the int16
-        // range at the *hardware's* maximum: "Mic Capture Volume" maxed, "Mic Capture
-        // Switch" on, "Auto Gain Control" on -- confirmed with tinymix, nothing left to
-        // turn up at the ALSA layer. That is silence to the wake-word model regardless
-        // of what is said, so boost it here instead.
-        //
-        // NOT 24x: that was the first attempt, and it overshot. OfflineRecognitionService's
-        // SPEECH_RMS was tuned to this same hardware with ambient at rms 100-250 and speech
-        // at 1000-3400 -- some prior gain state this board no longer has. 24x pushed idle
-        // noise to rms ~500-620, *above* SPEECH_RMS (400), so the recognizer's silence gate
-        // never closed: a 12 s test session never found a gap and Whisper got a wall of
-        // amplified noise with the actual words buried in it ("A" transcribed from 11.9 s of
-        // audio). 6.5x reproduces the documented ambient range instead (~150 from the
-        // measured ~23 baseline), which is what SPEECH_RMS and the wake-word threshold were
-        // actually tuned against.
-        private const val MIC_GAIN = 6.5f
+        // 6.5x and 24x (both tried earlier) were calibrated against card 2's weak onboard
+        // mic (rms ~7-9 at the ALSA layer's own maximum -- confirmed with tinymix, nothing
+        // left to raise there). Neither applies any more: input capture is now correctly
+        // redirected to card 3, the actual standalone microphone (see
+        // usb_mic_route.patch/StreamUsb.cpp), which is a real, sensitive mic that needs no
+        // help at all -- with 6.5x still applied it clipped hard (peak pinned at the int16
+        // ceiling, rms in the thousands even resting), destroying the waveform the wake-word
+        // model scores against: Whisper (used by the mic-button path) tolerated the
+        // distortion well enough to still transcribe, but the wake word never fired. 1x
+        // leaves the now-correct capture path alone; re-tune from live telemetry if the
+        // (much better) card-3 signal still needs shaping once it is no longer being
+        // gained past clipping.
+        private const val MIC_GAIN = 1.0f
 
         /** How long to wait for a candidate config to actually deliver frames. */
         private const val PROBE_MS = 3_000L
