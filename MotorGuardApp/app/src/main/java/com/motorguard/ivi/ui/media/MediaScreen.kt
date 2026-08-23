@@ -69,6 +69,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.motorguard.ivi.data.media.MediaSourceId
 import com.motorguard.ivi.data.media.MediaSourceManager
 import com.motorguard.ivi.data.media.PlaybackKind
+import com.motorguard.ivi.data.media.PlaybackSnapshot
 import com.motorguard.ivi.ui.components.GlassCard
 import com.motorguard.ivi.ui.media.components.AlbumArtStack
 import com.motorguard.ivi.ui.media.components.Scrubber
@@ -114,7 +115,23 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
         if (!permissionGranted) permissionLauncher.launch(mediaPermissions())
     }
 
-    val artwork = rememberAlbumArt(state.playback.track)
+    // [state.playback] is deliberately the one globally-audible snapshot — see PlaybackSnapshot's
+    // KDoc — so that Home's now-playing widget never drifts from the Media tab. But that means it
+    // keeps reporting YouTube Music (pauseOnLeave = false, so it is still audible) even after the
+    // driver taps over to browse a *different* tab, and NowPlayingPane/BluetoothPanel below render
+    // whatever is in `state.playback` unconditionally — without this, switching to Bluetooth while
+    // YouTube Music plays showed YouTube Music's cover, title and a working scrubber inside the
+    // Bluetooth pane, as if that were what Bluetooth was doing. Substituting an idle snapshot
+    // scoped to the browsed tab when it is not the one actually making sound is what keeps each
+    // tab's now-playing panel honest about its own source; Home is unaffected; it always reads
+    // MediaConnection directly, never this copy.
+    val displayedPlayback = if (state.playback.source == state.activeSource) {
+        state.playback
+    } else {
+        PlaybackSnapshot(source = state.activeSource, playbackKind = sources.source(state.activeSource).playbackKind)
+    }
+    val displayState = state.copy(playback = displayedPlayback)
+    val artwork = rememberAlbumArt(displayedPlayback.track)
 
     Column(
         modifier = Modifier
@@ -183,7 +200,7 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
                     )
                 } else {
                     NowPlayingPane(
-                        state = state,
+                        state = displayState,
                         artwork = artwork,
                         viewModel = viewModel,
                         modifier = Modifier
@@ -192,7 +209,7 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
                     )
                 }
                 QueuePane(
-                    state = state,
+                    state = displayState,
                     onPlayTrack = {
                         if (state.activeSource == MediaSourceId.VIDEO) {
                             viewModel.playVideo(it)
