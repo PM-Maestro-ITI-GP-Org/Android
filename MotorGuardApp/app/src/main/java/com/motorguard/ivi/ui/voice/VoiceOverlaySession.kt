@@ -460,7 +460,15 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         requestHide()
     }
 
-    /** Starts the top popular station, same source the Media tab's Radio source uses. */
+    /**
+     * Starts the top popular station, same source the Media tab's Radio source uses.
+     *
+     * Fetches off the main thread (a suspend network call has no business blocking it), but
+     * MediaConnection.play() goes through a Media3 MediaController, which throws
+     * IllegalStateException if called anywhere else -- confirmed live: the fetch succeeded every
+     * time, play() then silently threw on the background thread and nothing ever played. The
+     * result is handed back to [handler] (main-looper) for that one call.
+     */
     private fun startDefaultRadio() {
         Thread({
             runCatching {
@@ -468,7 +476,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                     as? RadioMediaSource ?: return@runCatching
                 val stations = kotlinx.coroutines.runBlocking { source.tracks() }
                 if (stations.isNotEmpty()) {
-                    MediaConnection.get(context).play(stations, 0)
+                    handler.post { MediaConnection.get(context).play(stations, 0) }
                 } else {
                     Log.w(TAG, "startDefaultRadio: no stations returned")
                 }
