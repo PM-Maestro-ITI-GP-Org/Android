@@ -1,0 +1,148 @@
+diff --git a/audio/alsa/Mixer.cpp b/audio/alsa/Mixer.cpp
+index e72502b..6b11fe8 100644
+--- a/audio/alsa/Mixer.cpp
++++ b/audio/alsa/Mixer.cpp
+@@ -49,8 +49,12 @@ const std::map<Mixer::Control, std::vector<Mixer::ControlNamesAndExpectedCtlType
+                  {{"Headphone Playback Volume", MIXER_CTL_TYPE_INT},
+                   {"Headset Playback Volume", MIXER_CTL_TYPE_INT},
+                   {"PCM Playback Volume", MIXER_CTL_TYPE_INT}}},
+-                {Mixer::MIC_SWITCH, {{"Capture Switch", MIXER_CTL_TYPE_BOOL}}},
+-                {Mixer::MIC_GAIN, {{"Capture Volume", MIXER_CTL_TYPE_INT}}}};
++                {Mixer::MIC_SWITCH,
++                 {{"Capture Switch", MIXER_CTL_TYPE_BOOL},
++                  {"Mic Capture Switch", MIXER_CTL_TYPE_BOOL}}},
++                {Mixer::MIC_GAIN,
++                 {{"Capture Volume", MIXER_CTL_TYPE_INT},
++                  {"Mic Capture Volume", MIXER_CTL_TYPE_INT}}}};
+
+ // static
+ Mixer::Controls Mixer::initializeMixerControls(struct mixer* mixer) {
+diff --git a/audio/alsa/StreamAlsa.cpp b/audio/alsa/StreamAlsa.cpp
+index c77bfca..789ed0c 100644
+--- a/audio/alsa/StreamAlsa.cpp
++++ b/audio/alsa/StreamAlsa.cpp
+@@ -24,6 +24,10 @@
+ #include <audio_utils/clock.h>
+ #include <error/expected_utils.h>
+
++extern "C" {
++#include <tinyalsa/mixer.h>
++}
++
+ #include "core-impl/StreamAlsa.h"
+
+ namespace aidl::android::hardware::audio::core {
+@@ -100,6 +104,18 @@ StreamAlsa::~StreamAlsa() {
+         return ::android::NO_INIT;
+     }
+     mAlsaDeviceProxies = std::move(alsaDeviceProxies);
++
++    if (mIsInput && !mAlsaDeviceProxies.empty()) {
++        // External USB microphones (e.g. the C-Media "USB PnP") ship with their
++        // capture path muted by default -- the "Mic Capture Switch" (INV_BOOLEAN)
++        // and "Capture Volume" sit at 0, so pcm_read() never returns any sample
++        // (the HAL opens the stream and patches it to AUDIO_DEVICE_IN_USB_DEVICE,
++        // but the endpoint never streams). The USB module only ever touches output
++        // volumes via UsbAlsaMixerControl; nothing unmutes input, so do it here on
++        // first start. Only wired for the external (USB) input path on this board.
++        const auto* profile = mAlsaDeviceProxies[0].getProfile();
++        unmuteCapture(profile ? profile->card : -1);
++    }
+     return ::android::OK;
+ }
+
+@@ -172,4 +188,58 @@ ndk::ScopedAStatus StreamAlsa::setGain(float gain) {
+     return ndk::ScopedAStatus::ok();
+ }
+
++// USB microphones ship with the capture path muted by default. The USB audio
++// module only drives output volumes, so an opened input stream patches through
++// to the hardware yet pcm_read() returns no samples. Flip the capture switch
++// and raise the capture volume for the card the input opened on. Robust to the
++// variant control names ("Capture Switch" generic vs "Mic Capture Switch") and
++// to boards that don't expose either control at all.
++void StreamAlsa::unmuteCapture(int card) {
++    if (card < 0) return;
++    struct mixer_ctl* ctl = nullptr;
++    struct mixer* mixer = mixer_open(card);
++    if (mixer == nullptr) {
++        PLOG(WARNING) << "unmuteCapture: mixer_open failed for card " << card;
++        return;
++    }
++    // Try the common names in priority order; the C-Media "USB PnP" uses
++    // "Mic Capture Switch" (INV_BOOLEAN).
++    for (const char* name : {"Mic Capture Switch", "Capture Switch"}) {
++        ctl = mixer_get_ctl_by_name(mixer, name);
++        if (ctl != nullptr) break;
++    }
++    if (ctl == nullptr) {
++        LOG(DEBUG) << "unmuteCapture: no capture-switch control on card " << card;
++        mixer_close(mixer);
++        return;
++    }
++    int cur = mixer_ctl_get_value(ctl, 0);
++    // Boolean mute switches are usually inactive-high: 1 = unmuted.
++    if (cur != 1) {
++        if (mixer_ctl_set_value(ctl, 0, 1) != 0) {
++            LOG(WARNING) << "unmuteCapture: could not unmute capture switch on card " << card;
++        } else {
++            LOG(INFO) << "unmuteCapture: capture switch enabled on card " << card;
++        }
++    }
++    // Some USB codecs also need the capture volume nonzero to actually run.
++    const char* volName = nullptr;
++    ctl = mixer_get_ctl_by_name(mixer, "Mic Capture Volume");
++    if (ctl == nullptr) {
++        ctl = mixer_get_ctl_by_name(mixer, "Capture Volume");
++        volName = "Capture Volume";
++    } else {
++        volName = "Mic Capture Volume";
++    }
++    if (ctl != nullptr) {
++        int maxv = mixer_ctl_get_range_max(ctl);
++        if (maxv > 0) {
++            mixer_ctl_set_value(ctl, 0, maxv / 2);  // 50% gain
++            LOG(INFO) << "unmuteCapture: " << volName << " set to " << (maxv / 2)
++                      << " on card " << card;
++        }
++    }
++    mixer_close(mixer);
++}
++
+ }  // namespace aidl::android::hardware::audio::core
+diff --git a/audio/include/core-impl/StreamAlsa.h b/audio/include/core-impl/StreamAlsa.h
+index 8bdf208..75adabb 100644
+--- a/audio/include/core-impl/StreamAlsa.h
++++ b/audio/include/core-impl/StreamAlsa.h
+@@ -47,6 +47,12 @@ class StreamAlsa : public StreamCommonImpl {
+     void shutdown() override;
+     ndk::ScopedAStatus setGain(float gain) override;
+
++    // Unmutes the capture path (e.g. "Mic Capture Switch"/"Capture Switch") and
++    // sets a sane level for an input card. USB microphones ship with capture
++    // muted by default, which makes pcm_read() return no samples even though
++    // the stream opens. No-op safe if the controls are absent.
++    static void unmuteCapture(int card);
++
+   protected:
+     // Called from 'start' to initialize 'mAlsaDeviceProxies', the vector must be non-empty.
+     virtual std::vector<alsa::DeviceProfile> getDeviceProfiles() = 0;
+diff --git a/audio/usb/UsbAlsaMixerControl.cpp b/audio/usb/UsbAlsaMixerControl.cpp
+index 0a49446..8bf0389 100644
+--- a/audio/usb/UsbAlsaMixerControl.cpp
++++ b/audio/usb/UsbAlsaMixerControl.cpp
+@@ -39,6 +39,14 @@ void UsbAlsaMixerControl::setDeviceConnectionState(int card, bool masterMuted, f
+         }
+         alsaMixer->setMasterMute(masterMuted);
+         alsaMixer->setMasterVolume(masterVolume);
++        // The C-Media USB audio chip (e.g. card 2 "USB PnP Sound Device")
++        // exposes its capture controls as "Mic Capture Switch" and
++        // "Mic Capture Volume".  By default it boots at roughly half gain
++        // (8/16) with the switch set to muted, which makes the microphone
++        // nearly inaudible.  Force full gain and unmute so the voice
++        // assistant receives usable levels.
++        alsaMixer->setMicMute(false);
++        alsaMixer->setMicGain(1.0f);
+         const std::lock_guard guard(mLock);
+         mMixerControls.emplace(card, alsaMixer);
+     } else {

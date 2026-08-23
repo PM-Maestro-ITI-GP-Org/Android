@@ -229,6 +229,20 @@ apply_device_patch "usb_audio_policy_configuration.xml.patch" \
 # so the car UI's slider controls all, and the bar not increasing at max is fixed.
 apply_device_patch "car_audio_configuration.xml.patch" \
   "car/car_audio_configuration.xml" "USB Device Out"
+# The USB DAC enumerates as AUDIO_DEVICE_OUT_USB_HEADSET (it has a capture endpoint too,
+# for the mic), so the stock hearing-safety limiter clamps STREAM_MUSIC to its safe index
+# (~1/4 of max) no matter what the user sets. Disable the limiter instead of reclassifying
+# the device type — reclassifying would also drop the automatic USB-mic association the
+# voice assistant needs, which is what broke the mic the last time this was "fixed".
+apply_device_patch "android_rpi_overlay_safe_volume.patch" \
+  "overlay/AndroidRpiOverlay/res/values/config.xml" "config_safe_media_volume_enabled"
+# USB microphones (the C-Media "USB PnP" on this board) ship with the capture path muted
+# and half gain by default; nothing in the stock USB audio module unmutes an input, so
+# pcm_read() returns no samples even though the stream opens. Unmute + set a sane capture
+# level both on device connect (UsbAlsaMixerControl) and on stream start (StreamAlsa), since
+# either path can be the one that first touches the card.
+apply_device_patch "usb_mic_unmute.patch" \
+  "audio/include/core-impl/StreamAlsa.h" "unmuteCapture"
 
 # Guard against this list going stale again: every *.patch in the drop-in's
 # device/brcm/rpi5/ must be accounted for above. Two patches (eth0_routes,
@@ -238,7 +252,8 @@ for p in "$ROOT"/device/brcm/rpi5/*.patch; do
   pname="$(basename "$p")"
   case "$pname" in
     aosp_rpi5_car.mk.patch|BoardConfig.mk.patch|vendor.prop.patch| \
-    eth0_routes.patch|usb_audio_policy_configuration.xml.patch|car_audio_configuration.xml.patch|car_bluetooth_prop.patch) ;;
+    eth0_routes.patch|usb_audio_policy_configuration.xml.patch|car_audio_configuration.xml.patch| \
+    android_rpi_overlay_safe_volume.patch|usb_mic_unmute.patch|car_bluetooth_prop.patch) ;;
     *) echo "WARNING: $pname exists but deploy.sh never applies it" >&2 ;;
   esac
 done

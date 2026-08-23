@@ -1,0 +1,20 @@
+diff --git a/overlay/AndroidRpiOverlay/res/values/config.xml b/overlay/AndroidRpiOverlay/res/values/config.xml
+index e17fa96..72cbad2 100644
+--- a/overlay/AndroidRpiOverlay/res/values/config.xml
++++ b/overlay/AndroidRpiOverlay/res/values/config.xml
+@@ -99,6 +99,15 @@
+          Do not set this to true for production devices. Doing so will cause you to fail CTS. -->
+     <bool name="config_disableUsbPermissionDialogs">true</bool>
+
++    <!-- The USB DAC's output enumerates as AUDIO_DEVICE_OUT_USB_HEADSET (it exposes a
++         capture endpoint too, for the mic voice assistant input relies on), so the stock
++         hearing-safety limiter treats it like personal headphones and clamps STREAM_MUSIC
++         to its safe index (~1/4 of max) regardless of the volume the user sets. The
++         speaker here is a fixed in-car unit, not earphones, so the limiter is not
++         protecting anyone -- disable it rather than reclassifying the device type, which
++         would also drop the automatic USB-mic association the voice assistant needs. -->
++    <bool name="config_safe_media_volume_enabled">false</bool>
++
+     <!-- Control the behavior when the user long presses the power button.
+             0 - Nothing
+             1 - Global actions menu
