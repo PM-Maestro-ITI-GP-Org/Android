@@ -144,7 +144,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         isVisible = true
         hideSystemBars()
         // Hand the mic from the always-on wake-word recorder to our recognizer;
-        // running both at once starves STT and it reports "I didn't hear anything".
+        // running both at once starves STT and it reports "I didn't catch that."
         VoiceOverlayService.pauseWakeWord()
         shownAtElapsedMs = SystemClock.elapsedRealtime()
         WakeTone.play(context)
@@ -282,7 +282,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                 override fun onResults(results: Bundle?) {
                     val text = firstResult(results)
                     if (text.isNullOrBlank()) {
-                        fail("Sorry, I didn't catch that.")
+                        fail("I didn't catch that.")
                     } else {
                         Log.i(TAG, "heard: $text")
                         model = model.copy(state = VoiceState.THINKING, transcript = text)
@@ -296,7 +296,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                         when (error) {
                             SpeechRecognizer.ERROR_NO_MATCH,
                             SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
-                                "I didn't hear anything."
+                                "I didn't catch that."
                             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
                                 "I need microphone permission."
                             else -> "Speech recognition failed."
@@ -456,7 +456,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         // fraction of them and is now a much smaller fraction — and a driver who has just not
         // been understood is being made to sit through a menu before they can try again. "What
         // can you do" is a question they can ask when they actually want the list.
-        val reply = VoiceEngine.handle(utterance) ?: "Sorry, I didn't catch that."
+        val reply = VoiceEngine.handle(utterance) ?: "I didn't catch that."
         Log.i(TAG, "reply: $reply")
         model = model.copy(state = VoiceState.SPEAKING, reply = reply)
         speak(reply)

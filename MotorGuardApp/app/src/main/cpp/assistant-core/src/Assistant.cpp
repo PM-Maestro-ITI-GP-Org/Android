@@ -98,7 +98,7 @@ std::string Assistant::handleUtterance(const std::string& text) {
             // No list. It named three things out of a set that has grown well past them, and
             // reciting a menu at someone who has just not been understood delays the retry
             // that is the only thing they want. Intent::Help still gives the full answer.
-            std::string resp = "Sorry, I didn't catch that.";
+            std::string resp = "I didn't catch that.";
             say(resp, UiSeverity::Info);
             return resp;
         }
