@@ -119,6 +119,14 @@ android_app {
         // android_library_import modules below.
         "androidx.media3_media3-common",
         "androidx.media3_media3-exoplayer",
+        // HLS extension -- DefaultMediaSourceFactory reflectively loads
+        // androidx.media3.exoplayer.hls.HlsMediaSource$Factory for any .m3u8/HLS
+        // stream URL, which many internet radio stations use for "play music". Without
+        // this the class does not exist anywhere in the APK, so playback fails with
+        // ClassNotFoundException and the session cycles BUFFERING -> ERROR (the driver
+        // sees this as the player hanging) instead of ever producing an error the app
+        // can visibly react to.
+        "androidx.media3_media3-exoplayer-hls",
         "androidx.media3_media3-session",
         // MapLibre Native 11.8.0 (nav map) — vendored AARs, see the import below.
         "motorguard-maplibre",
@@ -376,6 +384,16 @@ android_library_import {
         "androidx.collection_collection",
         "androidx.core_core",
         "androidx.exifinterface_exifinterface",
+    ],
+}
+
+android_library_import {
+    name: "androidx.media3_media3-exoplayer-hls",
+    aars: ["prebuilts/media3-exoplayer-hls-1.4.1.aar"],
+    sdk_version: "current",
+    static_libs: [
+        "androidx.media3_media3-exoplayer",
+        "androidx.annotation_annotation",
     ],
 }
 

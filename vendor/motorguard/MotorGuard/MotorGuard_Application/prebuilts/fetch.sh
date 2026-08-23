@@ -28,6 +28,7 @@ f7d97c5a39dca3c3c21bc8a70145d931d8633ed0dae89198c370e7b7e3c3f183  media3-decoder
 1f51e4633e1e6137f0a4b80552afc399e269208b700352f96543d4513be6bf28  media3-extractor-1.4.1.aar      https://dl.google.com/android/maven2/androidx/media3/media3-extractor/1.4.1/media3-extractor-1.4.1.aar
 65b6d22c96dfb5ce76754b08f5b004ee0dbdbe60793c5eab9f95c1f54f95f4b0  media3-container-1.4.1.aar      https://dl.google.com/android/maven2/androidx/media3/media3-container/1.4.1/media3-container-1.4.1.aar
 66cd0f99209191660823d32c8fc329e383a8a7ff33e0d676632387361abcba70  media3-exoplayer-1.4.1.aar      https://dl.google.com/android/maven2/androidx/media3/media3-exoplayer/1.4.1/media3-exoplayer-1.4.1.aar
+43546b6b2ef0c2816f5d3af181c2179a5c1bddb9df85b7b84b3428cd37c887de  media3-exoplayer-hls-1.4.1.aar  https://dl.google.com/android/maven2/androidx/media3/media3-exoplayer-hls/1.4.1/media3-exoplayer-hls-1.4.1.aar
 b619b200405e237136e7daaaec79eb694348f0562390c8b8b545a4294e3641d4  media3-session-1.4.1.aar        https://dl.google.com/android/maven2/androidx/media3/media3-session/1.4.1/media3-session-1.4.1.aar
 1d7635d0f0f423f18d5dd827bf1e76a262154ba01843bb7ef8ba94bf5998b26a  kotlinx-coroutines-guava-1.8.1.jar https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-guava/1.8.1/kotlinx-coroutines-guava-1.8.1.jar
 3c9c4740d97c9cb454d3b3a1c09c7b3d228fb171cd42140af20e1ba0aab63082  android-sdk-11.8.0.aar          https://repo1.maven.org/maven2/org/maplibre/gl/android-sdk/11.8.0/android-sdk-11.8.0.aar
