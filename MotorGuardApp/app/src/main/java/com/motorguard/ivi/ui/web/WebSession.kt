@@ -135,7 +135,6 @@ class WebSession(
     fun attach(view: WebView) {
         attachments++
         view.onResume()
-        view.resumeTimers()
     }
 
     /**
@@ -144,6 +143,15 @@ class WebSession(
      * Note it does *not* detach the view from its parent: Compose's AndroidView already removes
      * its child on dispose, and doing it here as well steals the view from whichever holder is
      * taking over.
+     *
+     * [WebView.pauseTimers]/[WebView.resumeTimers] are deliberately never called: despite being
+     * instance methods, the platform documents them as pausing JavaScript timers for **every**
+     * WebView in the process, not just this one. Leaving the YouTube tab (`pauseOnLeave = true`)
+     * was therefore also silencing Spotify's background metadata poll (`pauseOnLeave = false`,
+     * so it never asked to be paused at all) — confirmed live: exactly one now-playing report
+     * ever arrived, right after Spotify's page first loaded, and none after the driver visited
+     * Video and left it. `onPause()` alone is per-instance and covers the intent — reduced
+     * rendering/media load on the page that was actually left — without the global side effect.
      */
     fun detach(view: WebView) {
         attachments--
@@ -151,7 +159,6 @@ class WebSession(
         attachments = 0
         if (pauseOnLeave) {
             view.onPause()
-            view.pauseTimers()
             // Stopped, so it must stop claiming the now-playing card too.
             WebPlayback.clear(sourceId)
         }

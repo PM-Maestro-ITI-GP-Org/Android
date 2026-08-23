@@ -36,6 +36,7 @@ import kotlin.math.roundToInt
 fun WeatherCard(modifier: Modifier = Modifier) {
     LaunchedEffect(Unit) { WeatherRepository.ensureStarted() }
     val weather by WeatherRepository.state.collectAsStateWithLifecycle()
+    val failed by WeatherRepository.failed.collectAsStateWithLifecycle()
     val colors = MotorGuard.colors
 
     GlassCard(
@@ -59,7 +60,11 @@ fun WeatherCard(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.width(12.dp))
             Text(
-                text = weather?.description ?: "Loading weather…",
+                text = when {
+                    weather != null -> weather!!.description
+                    failed -> "Weather unavailable"
+                    else -> "Loading weather…"
+                },
                 fontSize = 14.sp,
                 color = colors.onBaseDim,
                 maxLines = 1,
