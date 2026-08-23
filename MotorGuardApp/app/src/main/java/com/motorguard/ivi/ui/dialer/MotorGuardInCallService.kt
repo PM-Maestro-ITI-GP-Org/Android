@@ -20,19 +20,26 @@ import com.motorguard.ivi.data.InCallBridge
  */
 class MotorGuardInCallService : InCallService() {
 
+    // Each of these is the platform calling into the launcher process. An exception thrown
+    // back at Telecom from here is an uncaught exception in *this* app, so a call that cannot
+    // be taken up must degrade to no in-call screen rather than to no launcher.
     override fun onCallAdded(call: Call) {
         Log.i(TAG, "call added")
-        InCallBridge.service = this
-        InCallBridge.onCallAdded(call)
+        runCatching {
+            InCallBridge.service = this
+            InCallBridge.onCallAdded(call)
+        }.onFailure { Log.e(TAG, "call not added", it) }
     }
 
     override fun onCallRemoved(call: Call) {
         Log.i(TAG, "call removed")
-        InCallBridge.onCallRemoved(call)
+        runCatching { InCallBridge.onCallRemoved(call) }
+            .onFailure { Log.e(TAG, "call not removed", it) }
     }
 
     override fun onCallAudioStateChanged(audioState: CallAudioState) {
-        InCallBridge.onMuteChanged(audioState.isMuted)
+        runCatching { InCallBridge.onMuteChanged(audioState.isMuted) }
+            .onFailure { Log.w(TAG, "audio state not applied", it) }
     }
 
     override fun onDestroy() {

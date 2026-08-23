@@ -54,6 +54,27 @@ backends behind one interface:
 repository projects it into `ActiveCall`. Nothing above the data layer ever sees a
 Telecom type.
 
+### Control on a board with no DIALER role
+
+Telecom is preferred, but the Pi has no telephony hardware, so the role is never offered
+and `InCallBridge` stays empty for the whole life of the app. Everything that reached the
+call *through* the bridge was therefore a no-op, and the in-call screen's controls lied:
+
+| Control | Hands-free path |
+|---------|-----------------|
+| Answer / End | `acceptCall` / `terminateCall` on the HFP client |
+| Hold / Resume | `holdCall` / `acceptCall(CALL_ACCEPT_HOLD)` — both AT+CHLD=2 |
+| Keypad (DTMF) | `sendDTMF`, which the phone plays into the call |
+| Mute | the **car's own** microphone (`AudioManager.isMicrophoneMute`) — the SCO uplink is our mic, so muting it locally is what the driver means, and it is cleared when the call ends |
+
+`HfpCallSource` reaches these by reflection (`@SystemApi`, absent from the compile SDK) and
+every lookup is guarded, so an image without the profile reports no calls rather than
+throwing. The broadcast receiver body is guarded for the same reason and one more: it runs
+on the launcher's main thread, so anything escaping it kills the whole head unit rather
+than one screen. The call object in `AG_CALL_CHANGED` is a platform Parcelable this APK
+does not link against; when it cannot be unmarshalled the profile's `getCurrentCalls` is
+asked instead, so an unreadable extra still raises the in-call screen.
+
 ## Bring-up on the Pi (real backend)
 
 ```bash

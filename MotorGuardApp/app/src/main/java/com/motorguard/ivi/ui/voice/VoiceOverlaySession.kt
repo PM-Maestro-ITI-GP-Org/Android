@@ -355,6 +355,31 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             speak(reply)
             return
         }
+        // The rest of the head unit, acted on rather than opened.
+        //
+        // Same argument as the motor: "skip this song" and "how long until we arrive" are not
+        // requests to be shown a screen, and answering them with one is how an assistant makes
+        // a driver look away from the road to read something it already knew. Each handler
+        // returns null for anything outside its domain, so the order among them is only about
+        // which claims an overlapping phrase first — and none of them overlap today.
+        //
+        // All ahead of the matcher, which would otherwise route these to a tab on anchors
+        // written before any of it could act.
+        MediaVoice.handle(context, utterance)?.let { reply ->
+            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+            speak(reply)
+            return
+        }
+        NavVoice.handle(utterance)?.let { reply ->
+            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+            speak(reply)
+            return
+        }
+        ThemeVoice.handle(utterance)?.let { reply ->
+            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+            speak(reply)
+            return
+        }
         // Meaning before keywords, and before the core.
         //
         // The obvious order — core first, matcher as a fallback — cannot work: the C++ core
@@ -375,6 +400,8 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                 // instead of by MotorVoice.claims() above — which has already declined it.
                 val reply = when (ask) {
                     com.motorguard.ivi.ui.voice.nlu.VoiceAsk.MOTOR_STATUS -> MotorVoice.answerNow(utterance)
+                    com.motorguard.ivi.ui.voice.nlu.VoiceAsk.NOW_PLAYING -> MediaVoice.answerNowPlaying(context)
+                    com.motorguard.ivi.ui.voice.nlu.VoiceAsk.TRIP_PROGRESS -> NavVoice.answerProgress()
                 }
                 model = model.copy(state = VoiceState.SPEAKING, reply = reply)
                 speak(reply)

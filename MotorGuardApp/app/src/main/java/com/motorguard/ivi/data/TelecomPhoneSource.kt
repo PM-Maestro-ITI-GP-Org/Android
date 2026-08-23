@@ -27,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -76,6 +77,16 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
     private val _call = MutableStateFlow<ActiveCall?>(null)
     private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
     private val _recents = MutableStateFlow<List<CallLogEntry>>(emptyList())
+
+    /**
+     * Mute, on the hands-free path.
+     *
+     * [InCallBridge] carries it when Telecom owns the call, but with no InCallService bound
+     * there is nothing behind it — the button toggled a flag no one read. The car is the
+     * hands-free unit, so the microphone being muted is *our* microphone, and this is the
+     * state of it.
+     */
+    private val _micMuted = MutableStateFlow(false)
 
     override val link: StateFlow<PhoneLink> = _link.asStateFlow()
     override val deviceName: StateFlow<String?> = _deviceName.asStateFlow()
@@ -129,12 +140,30 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
         // InCallBridge stays empty forever and the hands-free link is the only source that
         // ever reports anything. Keeping both means this still does the right thing on an
         // image that does have telephony, without a build flag deciding it.
-        combine(InCallBridge.call, InCallBridge.revision, InCallBridge.muted, hfp.call) {
-            call, _, muted, hfpCall ->
-            project(call, muted) ?: hfpCall?.let { named(it) }
-        }.onEach {
-            updateDucking(it != null)
-            _call.value = it
+        combine(
+            InCallBridge.call,
+            InCallBridge.revision,
+            InCallBridge.muted,
+            hfp.call,
+            _micMuted,
+        ) { call, _, telecomMuted, hfpCall, micMuted ->
+            // Nothing read here is trusted. A projection that throws would cancel this flow
+            // and, on Main.immediate, surface as an uncaught exception on the main thread —
+            // one bad call object would end both this call and every call after it.
+            runCatching {
+                project(call, telecomMuted) ?: hfpCall?.let { named(it).copy(muted = micMuted) }
+            }.getOrElse {
+                Log.e(TAG, "could not read the live call", it)
+                null
+            }
+        }.onEach { live ->
+            runCatching { updateDucking(live != null) }
+                .onFailure { Log.w(TAG, "ducking not applied", it) }
+            // Never leave the driver's microphone muted after the call it belonged to.
+            if (live == null) clearMicMute()
+            _call.value = live
+        }.catch {
+            Log.e(TAG, "call flow stopped", it)
         }.launchIn(scope)
 
         refresh()
@@ -187,20 +216,49 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
         hfp.hangUp()
     }
 
-    override fun setMuted(muted: Boolean) = InCallBridge.setMuted(muted)
+    /**
+     * Telecom owns mute when it owns the call. On the hands-free path the far end never hears
+     * a microphone we have switched off locally, so muting ours is the whole of it — and it is
+     * the only thing that works on a board where no InCallService is ever bound.
+     */
+    override fun setMuted(muted: Boolean) {
+        if (InCallBridge.service != null) {
+            InCallBridge.setMuted(muted)
+            return
+        }
+        val am = audioManager ?: return
+        runCatching { am.isMicrophoneMute = muted }
+            .onFailure { Log.w(TAG, "microphone mute refused", it) }
+        _micMuted.value = runCatching { am.isMicrophoneMute }.getOrDefault(muted)
+    }
+
+    private fun clearMicMute() {
+        if (!_micMuted.value) return
+        runCatching { audioManager?.isMicrophoneMute = false }
+            .onFailure { Log.w(TAG, "microphone left muted", it) }
+        _micMuted.value = false
+    }
 
     override fun setOnHold(hold: Boolean) {
-        val call = InCallBridge.call.value ?: return
-        runCatching { if (hold) call.hold() else call.unhold() }
-            .onFailure { Log.e(TAG, "hold toggle failed", it) }
+        val call = InCallBridge.call.value
+        if (call != null) {
+            runCatching { if (hold) call.hold() else call.unhold() }
+                .onFailure { Log.e(TAG, "hold toggle failed", it) }
+            return
+        }
+        hfp.setOnHold(hold)
     }
 
     override fun sendDtmf(digit: Char) {
-        val call = InCallBridge.call.value ?: return
-        runCatching {
-            call.playDtmfTone(digit)
-            call.stopDtmfTone()
-        }.onFailure { Log.e(TAG, "dtmf failed", it) }
+        val call = InCallBridge.call.value
+        if (call != null) {
+            runCatching {
+                call.playDtmfTone(digit)
+                call.stopDtmfTone()
+            }.onFailure { Log.e(TAG, "dtmf failed", it) }
+            return
+        }
+        hfp.sendDtmf(digit)
     }
 
     override fun refresh() {
