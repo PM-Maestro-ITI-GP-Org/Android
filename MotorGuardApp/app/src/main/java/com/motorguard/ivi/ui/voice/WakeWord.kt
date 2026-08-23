@@ -77,7 +77,7 @@ class OnnxWakeWordDetector(
         private const val TAG = "MotorGuardVoice"
 
         /** Per-chunk mic level logging. Off: see the call site for why. */
-        private const val VERBOSE_LEVELS = false
+        private const val VERBOSE_LEVELS = true
 
         /** Swap this when the phrase changes (see docs/07-voice-implementation.md). */
         const val WAKE_MODEL_FILE = "hey_vega.onnx"
@@ -97,6 +97,16 @@ class OnnxWakeWordDetector(
         // the public SDK classpath and cannot be referenced by name from a gradle
         // build. The value is stable platform ABI.
         private const val SRC_HOTWORD = 1999
+
+        // The C-Media USB dongle on this board delivers rms ~7-9 out of the int16
+        // range at the *hardware's* maximum: "Mic Capture Volume" maxed, "Mic Capture
+        // Switch" on, "Auto Gain Control" on -- confirmed with tinymix, nothing left to
+        // turn up at the ALSA layer. That is silence to the wake-word model regardless
+        // of what is said, so boost it here instead. 24x brings the idle noise floor
+        // (rms ~22-25 after the AOSP-side unmute/gain fix) to the few-hundred range,
+        // leaving headroom below the int16 ceiling for actual speech to register
+        // clearly above it without clipping on quiet-room noise alone.
+        private const val MIC_GAIN = 24f
 
         /** How long to wait for a candidate config to actually deliver frames. */
         private const val PROBE_MS = 3_000L
@@ -418,8 +428,13 @@ class OnnxWakeWordDetector(
                     acc += frame / frameShorts
                 }
                 // openWakeWord's melspectrogram model takes raw int16 magnitudes
-                // as float (NOT normalised to +/-1).
-                floats[i] = (acc / decim).toFloat()
+                // as float (NOT normalised to +/-1). MIC_GAIN compensates for this
+                // board's mic being near-silent even at the ALSA layer's own maximum
+                // gain (see MIC_GAIN's comment) -- clamp since the model was not
+                // trained on samples outside true int16 range.
+                floats[i] = ((acc / decim) * MIC_GAIN).coerceIn(
+                    Short.MIN_VALUE.toFloat(), Short.MAX_VALUE.toFloat(),
+                )
             }
 
             val score = runCatching { score(floats, CHUNK) }.getOrElse {

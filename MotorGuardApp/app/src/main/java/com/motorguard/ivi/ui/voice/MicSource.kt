@@ -40,6 +40,13 @@ class MicSource(private val targetRate: Int = 16_000) {
     companion object {
         private const val TAG = "MotorGuardVoice"
 
+        // Matches WakeWord.kt's MIC_GAIN: this board's C-Media dongle delivers
+        // rms ~7-9 out of the int16 range even at the ALSA layer's own maximum gain
+        // (Mic Capture Volume maxed, Auto Gain Control on -- confirmed with tinymix,
+        // nothing left to raise at that layer). Silence to Whisper regardless of what
+        // was said, so boost it here too.
+        private const val MIC_GAIN = 24f
+
         /**
          * How long a candidate gets to deliver its first frames. Generous
          * because a real USB device coming up behind a closing stream is much
@@ -175,7 +182,9 @@ class MicSource(private val targetRate: Int = 16_000) {
                 for (c in 0 until capChannels) frame += raw[base + c].toInt()
                 acc += frame / capChannels
             }
-            dst[i] = (acc / decim).toShort()
+            dst[i] = ((acc / decim) * MIC_GAIN).coerceIn(
+                Short.MIN_VALUE.toFloat(), Short.MAX_VALUE.toFloat(),
+            ).toInt().toShort()
         }
         return chunkFrames
     }
