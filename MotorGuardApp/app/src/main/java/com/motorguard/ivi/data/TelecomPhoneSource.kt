@@ -72,6 +72,9 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
      */
     private val hfp = HfpCallSource(app)
 
+    /** Rings only when the phone is not ringing for us over SCO. See [CallRingtone]. */
+    private val ringtone = CallRingtone(app)
+
     private val _link = MutableStateFlow(PhoneLink.DISCONNECTED)
     private val _deviceName = MutableStateFlow<String?>(null)
     private val _call = MutableStateFlow<ActiveCall?>(null)
@@ -164,6 +167,16 @@ class TelecomPhoneSource(private val app: Context) : PhoneRepository {
             _call.value = live
         }.catch {
             Log.e(TAG, "call flow stopped", it)
+        }.launchIn(scope)
+
+        // Ringing is driven from here rather than from the in-call screen, for the reason
+        // the fault tones are driven from the Activity: a composable only collects while it
+        // is composed, and a call has to be audible whichever tab the driver is looking at
+        // — including none, with the screen asleep.
+        combine(_call, hfp.audioRouted) { live, inBandAudio ->
+            ringtone.update(live, inBandAudio)
+        }.catch {
+            Log.w(TAG, "ringtone not updated", it)
         }.launchIn(scope)
 
         refresh()
