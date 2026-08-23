@@ -219,7 +219,7 @@ class OfflineRecognitionService : RecognitionService() {
             mic.close()
             worker = null
             // Hand the mic back so the wake word can listen again.
-            WakeWordService.resume { VoiceOverlayService.requestSession() }
+            WakeWordService.resume()
         }
     }
 

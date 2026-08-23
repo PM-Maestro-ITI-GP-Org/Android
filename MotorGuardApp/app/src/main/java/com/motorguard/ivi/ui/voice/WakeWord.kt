@@ -191,7 +191,12 @@ class OnnxWakeWordDetector(
         thread?.join(500)
         thread = null
         releaseRecorder()
-        closeModels()
+        // NOT closeModels(): stop() (the only caller that wants the models gone) closes
+        // them itself right after this returns. pause() calls this same function to
+        // release the mic without a full teardown, and resume()/startCapture() never
+        // reloads the models -- it assumes they are still open. Closing them here used
+        // to silently break every pause/resume cycle: the wake-word loop kept running
+        // against null ONNX sessions until the next real stop()/start().
         // Drop stale audio so a resumed detector can't re-fire on the last utterance.
         melBuffer.clear()
         embBuffer.clear()

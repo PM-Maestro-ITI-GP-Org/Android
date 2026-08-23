@@ -69,16 +69,22 @@ class WakeWordService : Service() {
          * Released while a session holds the mic, then resumed. Two clients on
          * one USB capture device is not reliable, and the session's recognizer
          * needs it more than the detector does.
+         *
+         * Calls the detector's own pause()/resume() -- NOT stop()/start(). Those tear
+         * down and reload the three ONNX sessions on every hand-off, which cost enough
+         * that the USB device was often still mid-teardown from the just-closed
+         * recognizer mic when this tried to reopen it, so every real pause/resume did:
+         * paused -> mic contention -> "no working mic configuration" -> "did not
+         * resume", permanently killing the detector until the next lucky retry (or a
+         * process restart) actually landed outside the race window. pause()/resume()
+         * keep the models warm, so this is both correct and far faster.
          */
         fun pause() {
-            detector?.stop()
-            Log.i(TAG, "wake word paused — mic released for the session")
+            detector?.pause()
         }
 
-        fun resume(onDetected: () -> Unit) {
-            val d = detector ?: return
-            if (d.isRunning) return
-            if (!d.start(onDetected)) Log.w(TAG, "wake word did not resume")
+        fun resume() {
+            detector?.resume()
         }
 
         /** Last score seen, for the tuning readout. */

@@ -56,13 +56,12 @@ class VoiceOverlayService : VoiceInteractionService() {
 /**
          * Reclaim the mic for wake-word listening after a session closes.
          *
-         * The detection handler is re-supplied here because [WakeWordService.resume] takes one:
-         * it is the same action the service installs when it first starts the detector, which is
-         * to ask this service to show a session.
+         * No detection handler to supply here: [WakeWordService.resume] re-arms the
+         * detector's own pause()/resume() pair, which keeps the callback installed at
+         * [WakeWordService.onStartCommand] across the pause rather than needing it
+         * re-supplied on every hand-off.
          */
-        fun resumeWakeWord() = WakeWordService.resume {
-            if (!requestSession()) Log.w(TAG, "wake word fired but no session could be shown")
-        }
+        fun resumeWakeWord() = WakeWordService.resume()
     }
 
     override fun onReady() {
