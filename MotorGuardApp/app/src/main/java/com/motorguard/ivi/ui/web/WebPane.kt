@@ -45,33 +45,41 @@ fun WebPane(
     blockedMessage: String,
     modifier: Modifier = Modifier,
 ) {
+    // NOT an early "if (blocked) { Blocked(); return }": that shape means Compose sees a
+    // *different* set of composable calls on each recomposition path (remember/DisposableEffect/
+    // AndroidView only some of the time, at the same call site another time), which is exactly
+    // the pattern most often cited for slot-table corruption crashes. blocked can flip mid-
+    // transition -- it defaults to false and is only set to its real value once DrivingState's
+    // flow delivers its first reading, so a tab opened right as that first reading arrives can
+    // hit this composable twice with different values before it settles. An explicit if/else
+    // keeps the group structure for the WebView branch identical regardless of which branch
+    // runs, since Compose still has to reconcile the two against each other either way.
     if (blocked) {
         Blocked(blockedMessage, modifier)
-        return
-    }
+    } else {
+        val context = LocalContext.current
+        val webView = remember(session) { session.acquire(context) }
 
-    val context = LocalContext.current
-    val webView = remember(session) { session.acquire(context) }
+        DisposableEffect(webView) {
+            session.attach(webView)
+            onDispose { session.detach(webView) }
+        }
 
-    DisposableEffect(webView) {
-        session.attach(webView)
-        onDispose { session.detach(webView) }
-    }
-
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.Black),
-    ) {
-        AndroidView(
-            // The same instance is reattached across visits, so any previous parent has to be
-            // let go of first or Android refuses to add it.
-            factory = {
-                (webView.parent as? android.view.ViewGroup)?.removeView(webView)
-                webView
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.Black),
+        ) {
+            AndroidView(
+                // The same instance is reattached across visits, so any previous parent has to be
+                // let go of first or Android refuses to add it.
+                factory = {
+                    (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+                    webView
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 

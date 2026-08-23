@@ -141,6 +141,12 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
 
         Spacer(Modifier.height(14.dp))
 
+        // An explicit if/else, not "if (SPOTIFY) { WebPane(); return@Column }" followed
+        // unconditionally by the Row: that shape means Compose sees a *different* set of
+        // composable calls at this call site depending on which path ran last, rather than one
+        // of two branches at a single, stable call site -- the pattern most often cited for
+        // slot-table corruption crashes ("Vega, play music" reliably crashed this screen with
+        // IntStack.peek2 ArrayIndexOutOfBoundsException on switching into the Spotify tab).
         if (state.activeSource == MediaSourceId.SPOTIFY) {
             // The page brings its own library, search and transport, so it gets the whole row —
             // a queue card beside it would duplicate what is already on screen, and our controls
@@ -153,54 +159,53 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
                     .fillMaxWidth()
                     .weight(1f),
             )
-            return@Column
-        }
-
-        Row(
-            // weight(1f), NOT fillMaxSize(). A Column measures its children with an unbounded
-            // main axis, and fillMaxSize passes that Infinity straight through to its children —
-            // which makes the LazyColumn in the queue pane throw "Vertically scrollable component
-            // was measured with an infinity maximum height". weight() is what actually bounds
-            // this row to the leftover space.
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            // Video replaces the now-playing card rather than sitting beside it: the two are
-            // both "what is playing", and a cover thumbnail next to a running film is noise.
-            if (state.activeSource == MediaSourceId.VIDEO) {
-                VideoPane(
-                    track = state.selectedVideo,
-                    isMoving = state.isMoving,
-                    modifier = Modifier
-                        .weight(1.05f)
-                        .fillMaxHeight(),
-                )
-            } else {
-                NowPlayingPane(
+        } else {
+            Row(
+                // weight(1f), NOT fillMaxSize(). A Column measures its children with an unbounded
+                // main axis, and fillMaxSize passes that Infinity straight through to its children —
+                // which makes the LazyColumn in the queue pane throw "Vertically scrollable component
+                // was measured with an infinity maximum height". weight() is what actually bounds
+                // this row to the leftover space.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                // Video replaces the now-playing card rather than sitting beside it: the two are
+                // both "what is playing", and a cover thumbnail next to a running film is noise.
+                if (state.activeSource == MediaSourceId.VIDEO) {
+                    VideoPane(
+                        track = state.selectedVideo,
+                        isMoving = state.isMoving,
+                        modifier = Modifier
+                            .weight(1.05f)
+                            .fillMaxHeight(),
+                    )
+                } else {
+                    NowPlayingPane(
+                        state = state,
+                        artwork = artwork,
+                        viewModel = viewModel,
+                        modifier = Modifier
+                            .weight(1.05f)
+                            .fillMaxHeight(),
+                    )
+                }
+                QueuePane(
                     state = state,
-                    artwork = artwork,
-                    viewModel = viewModel,
+                    onPlayTrack = {
+                        if (state.activeSource == MediaSourceId.VIDEO) {
+                            viewModel.playVideo(it)
+                        } else {
+                            viewModel.playTrack(it)
+                        }
+                    },
+                    onSearch = viewModel::searchStations,
                     modifier = Modifier
-                        .weight(1.05f)
+                        .weight(1f)
                         .fillMaxHeight(),
                 )
             }
-            QueuePane(
-                state = state,
-                onPlayTrack = {
-                    if (state.activeSource == MediaSourceId.VIDEO) {
-                        viewModel.playVideo(it)
-                    } else {
-                        viewModel.playTrack(it)
-                    }
-                },
-                onSearch = viewModel::searchStations,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-            )
         }
     }
 }
