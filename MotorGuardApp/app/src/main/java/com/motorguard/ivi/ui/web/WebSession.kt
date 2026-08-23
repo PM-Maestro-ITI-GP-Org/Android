@@ -27,15 +27,16 @@ class WebSession(
     private val homeUrl: String,
     /** Which media source this page reports as, for the now-playing card. */
     private val sourceId: com.motorguard.ivi.data.media.MediaSourceId,
-    /** Overrides the WebView's own UA where a site refuses it. See [Spotify]. */
+    /** Overrides the WebView's own UA on a site that refuses the stock one — unused today, kept
+     *  for the next source that needs it. */
     private val userAgent: String? = null,
     /**
      * Whether leaving the tab should stop the page.
      *
-     * True for video, where walking away from a film should stop it. False for music: Spotify is
-     * a media source like any other, and a source that stopped the moment the driver looked at
-     * the map would be useless — it also has to keep playing for the now-playing card to have
-     * anything to show.
+     * True for video, where walking away from a film should stop it. False for music: YouTube
+     * Music is a media source like any other, and a source that stopped the moment the driver
+     * looked at the map would be useless — it also has to keep playing for the now-playing card
+     * to have anything to show.
      */
     private val pauseOnLeave: Boolean = true,
 ) {
@@ -154,11 +155,11 @@ class WebSession(
      * Best-effort remote play/pause, for the Home now-playing card's transport row.
      *
      * The page owns the transport (see the class KDoc on why [canSeek]/[canSkip] are false for
-     * [com.motorguard.ivi.data.media.PlaybackKind.WEB]), but a plain HTML5 `<video>` element is a
-     * standard, stable target to toggle from outside — unlike guessing at a site's own button
-     * markup, which breaks the moment its DOM changes. YouTube's mobile site plays through one;
-     * Spotify's Web Playback SDK does not expose one, so this is a harmless no-op there and its
-     * own page remains the only way to control it, same as before.
+     * [com.motorguard.ivi.data.media.PlaybackKind.WEB]), but a plain HTML5 `<video>`/`<audio>`
+     * element is a standard, stable target to toggle from outside — unlike guessing at a site's
+     * own button markup, which breaks the moment its DOM changes. Both YouTube sites play
+     * through one; a site that does not expose one at all makes this a harmless no-op, and its
+     * own page remains the only way to control it.
      */
     fun togglePlayback() {
         webView?.evaluateJavascript(TOGGLE_PLAYBACK_JS, null)
@@ -220,11 +221,7 @@ class WebSession(
                 try {
                   var ms = navigator.mediaSession;
                   var m = ms && ms.metadata;
-                  // <audio> as well as <video>: Spotify's web player has no video element at
-                  // all, it plays through <audio> (or, where that is blocked, an inaudible one
-                  // it still creates) -- checking video only meant Spotify could never be
-                  // detected as playing even when it genuinely was, because the metadata API
-                  // isn't reliably populated by every site in an embedded WebView.
+                  // <audio> as well as <video>: not every site's player is a <video> element.
                   var media = document.querySelector('video, audio');
                   // Fall back to the media element and the document title: not every site
                   // populates the Media Session API, but there is always an element and a
@@ -233,24 +230,6 @@ class WebSession(
                   var a = (m && m.artist) || '';
                   var al = (m && m.album) || '';
                   var playing = (ms && ms.playbackState === 'playing') || (media ? !media.paused : false);
-                  // Spotify's web player calls neither of the above in this embedded WebView --
-                  // confirmed live: its own now-playing bar shows a real track, playing audibly,
-                  // while navigator.mediaSession stays unset and no <audio>/<video> element ever
-                  // appears (it renders through Web Audio, not a plain media element). Read its
-                  // own now-playing bar directly when nothing else found anything -- these
-                  // data-testid values are what Spotify's web client itself uses to label the
-                  // bar, and have stayed stable across web-client releases.
-                  if (!t) {
-                    var stTitle = document.querySelector('[data-testid="context-item-info-title"]');
-                    if (stTitle) {
-                      t = stTitle.textContent || '';
-                      var stArtist = document.querySelector('[data-testid="context-item-info-subtitles"]');
-                      a = stArtist ? (stArtist.textContent || '') : '';
-                      var stPlayBtn = document.querySelector('[data-testid="control-button-playpause"]');
-                      var stLabel = stPlayBtn ? (stPlayBtn.getAttribute('aria-label') || '') : '';
-                      playing = stLabel.toLowerCase().indexOf('pause') !== -1;
-                    }
-                  }
                   var key = t + '|' + a + '|' + al + '|' + playing;
                   if (key === last) return;
                   last = key;
@@ -262,7 +241,7 @@ class WebSession(
 
         private val TOGGLE_PLAYBACK_JS = """
             (function () {
-              var v = document.getElementsByTagName('video')[0];
+              var v = document.querySelector('video, audio');
               if (v) { if (v.paused) v.play(); else v.pause(); }
             })();
         """
@@ -274,38 +253,18 @@ class WebSession(
         )
 
         /**
-         * Spotify's web player.
-         *
-         * Note this board has no Widevine (`dumpsys media.drm` is empty), so protected playback
-         * may refuse. Browsing, search and the account all work regardless, and the moment DRM
-         * is added to the image this needs no change.
+         * YouTube Music's web player — replaces Spotify and Anghami, both confirmed live to
+         * refuse free on-demand playback in this WebView: Spotify redirects straight to its
+         * Premium subscription upsell, Anghami's "Play for free" redirects to the Play Store to
+         * push its native app. Plain YouTube ([YouTube], same underlying site family) was
+         * confirmed live to play on demand with no account and no redirect; this is that site at
+         * its music-focused address, for a proper now-playing bar and search built for songs.
          */
-        val Spotify = WebSession(
-            "https://open.spotify.com/",
-            sourceId = com.motorguard.ivi.data.media.MediaSourceId.SPOTIFY,
-            // Spotify refuses the stock WebView agent outright — it renders "Unsupported
-            // browser" and nothing else, because the string carries the "; wv" marker that
-            // identifies an embedded view. The engine underneath *is* Chrome 128, so claiming
-            // Chrome is accurate about capability rather than a disguise.
-            userAgent = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/128.0.6613.88 Mobile Safari/537.36",
-            // Music keeps playing when the driver navigates away, like every other audio source.
-            pauseOnLeave = false,
-        )
-
-        /**
-         * Anghami's web player — offered alongside Spotify because Spotify's free tier gates
-         * full playback behind Premium (confirmed live: tapping play redirected the whole page
-         * to its subscription upsell instead of playing anything). Anghami's free tier is
-         * ad-supported and does not carry that wall.
-         */
-        val Anghami = WebSession(
-            "https://play.anghami.com/",
-            sourceId = com.motorguard.ivi.data.media.MediaSourceId.ANGHAMI,
-            // Same reasoning as Spotify's override: claim the real underlying engine rather
-            // than the "; wv" embedded-WebView marker some sites refuse outright.
-            userAgent = "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/128.0.6613.88 Mobile Safari/537.36",
+        val YouTubeMusic = WebSession(
+            "https://music.youtube.com/",
+            sourceId = com.motorguard.ivi.data.media.MediaSourceId.YOUTUBE_MUSIC,
+            // Music keeps playing when the driver navigates away, like every other audio source
+            // — unlike [YouTube] above, which is video and should stop when the screen is left.
             pauseOnLeave = false,
         )
     }

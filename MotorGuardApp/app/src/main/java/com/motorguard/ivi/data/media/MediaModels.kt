@@ -17,7 +17,7 @@ import android.net.Uri
  */
 
 /** Which source a track came from, and which tab owns it. */
-enum class MediaSourceId { LOCAL, USB, BLUETOOTH, RADIO, VIDEO, SPOTIFY, ANGHAMI }
+enum class MediaSourceId { LOCAL, USB, BLUETOOTH, RADIO, VIDEO, YOUTUBE_MUSIC }
 
 /** How audio is actually produced for a source. */
 enum class PlaybackKind {
@@ -53,7 +53,7 @@ enum class PlaybackKind {
     VIDEO,
 
     /**
-     * A web player we host but do not drive — Spotify today.
+     * A web player we host but do not drive — YouTube Music today.
      *
      * The page owns the audio, the queue and the transport. Our controls cannot reach into it,
      * and saying so with a distinct kind is what stops the transport bar advertising buttons

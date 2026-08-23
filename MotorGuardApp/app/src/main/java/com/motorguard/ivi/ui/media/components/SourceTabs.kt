@@ -14,10 +14,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Icon
@@ -148,6 +147,5 @@ internal fun sourceIcon(id: MediaSourceId): ImageVector = when (id) {
     MediaSourceId.BLUETOOTH -> Icons.Filled.Bluetooth
     MediaSourceId.RADIO -> Icons.Filled.Radio
     MediaSourceId.VIDEO -> Icons.Filled.Movie
-    MediaSourceId.SPOTIFY -> Icons.Filled.GraphicEq
-    MediaSourceId.ANGHAMI -> Icons.Filled.Headphones
+    MediaSourceId.YOUTUBE_MUSIC -> Icons.Filled.OndemandVideo
 }

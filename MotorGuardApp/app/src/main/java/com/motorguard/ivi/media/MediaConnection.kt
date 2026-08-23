@@ -144,11 +144,10 @@ class MediaConnection private constructor(context: Context) {
     }
 
     /** Which page a [PlaybackKind.WEB] snapshot came from — see [WebSession.YouTube]/
-     *  [WebSession.Spotify]/[WebSession.Anghami]. */
+     *  [WebSession.YouTubeMusic]. */
     private fun webSessionFor(source: MediaSourceId): com.motorguard.ivi.ui.web.WebSession? = when (source) {
         MediaSourceId.VIDEO -> com.motorguard.ivi.ui.web.WebSession.YouTube
-        MediaSourceId.SPOTIFY -> com.motorguard.ivi.ui.web.WebSession.Spotify
-        MediaSourceId.ANGHAMI -> com.motorguard.ivi.ui.web.WebSession.Anghami
+        MediaSourceId.YOUTUBE_MUSIC -> com.motorguard.ivi.ui.web.WebSession.YouTubeMusic
         else -> null
     }
 

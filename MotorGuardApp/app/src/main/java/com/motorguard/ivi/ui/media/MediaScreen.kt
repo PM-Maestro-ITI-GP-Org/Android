@@ -141,25 +141,20 @@ fun MediaScreen(viewModel: MediaViewModel = viewModel()) {
 
         Spacer(Modifier.height(14.dp))
 
-        // An explicit if/else, not "if (SPOTIFY) { WebPane(); return@Column }" followed
+        // An explicit if/else, not "if (YOUTUBE_MUSIC) { WebPane(); return@Column }" followed
         // unconditionally by the Row: that shape means Compose sees a *different* set of
         // composable calls at this call site depending on which path ran last, rather than one
         // of two branches at a single, stable call site -- the pattern most often cited for
         // slot-table corruption crashes ("Vega, play music" reliably crashed this screen with
-        // IntStack.peek2 ArrayIndexOutOfBoundsException on switching into the Spotify tab).
-        if (state.activeSource == MediaSourceId.SPOTIFY || state.activeSource == MediaSourceId.ANGHAMI) {
+        // IntStack.peek2 ArrayIndexOutOfBoundsException on switching into a web-backed tab).
+        if (state.activeSource == MediaSourceId.YOUTUBE_MUSIC) {
             // The page brings its own library, search and transport, so it gets the whole row —
             // a queue card beside it would duplicate what is already on screen, and our controls
             // cannot reach into it anyway (see PlaybackKind.WEB).
-            val isSpotify = state.activeSource == MediaSourceId.SPOTIFY
             WebPane(
-                session = if (isSpotify) WebSession.Spotify else WebSession.Anghami,
+                session = WebSession.YouTubeMusic,
                 blocked = state.isMoving,
-                blockedMessage = if (isSpotify) {
-                    "Spotify resumes when the car is stopped"
-                } else {
-                    "Anghami resumes when the car is stopped"
-                },
+                blockedMessage = "YouTube Music resumes when the car is stopped",
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -675,10 +670,9 @@ private fun emptyLibraryMessage(source: MediaSourceId): String = when (source) {
     MediaSourceId.BLUETOOTH -> "Bluetooth shows the phone's current track only"
     MediaSourceId.RADIO -> "No stations found — try another search"
     MediaSourceId.VIDEO -> "No videos on this device or drive"
-    // Never reached — the Spotify/Anghami sources replace this pane entirely — but the
+    // Never reached — the YouTube Music source replaces this pane entirely — but the
     // compiler is right to insist, and a new source should not be able to slip through silently.
-    MediaSourceId.SPOTIFY -> "Spotify plays in its own page"
-    MediaSourceId.ANGHAMI -> "Anghami plays in its own page"
+    MediaSourceId.YOUTUBE_MUSIC -> "YouTube Music plays in its own page"
 }
 
 /**

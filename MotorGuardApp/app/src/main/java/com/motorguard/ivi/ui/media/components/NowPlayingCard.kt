@@ -83,8 +83,8 @@ fun NowPlayingCard(
                     Box {
                         AlbumThumbnail(artwork = artwork, sizeDp = 56)
                         // Which source is actually audible right now — local/USB/Bluetooth/radio/
-                        // Spotify all reach this card through the same MediaConnection.state, so
-                        // without this badge there is no way to tell which one is playing.
+                        // YouTube Music all reach this card through the same MediaConnection.state,
+                        // so without this badge there is no way to tell which one is playing.
                         if (playback.hasTrack) {
                             SourceBadge(
                                 source = playback.source,
@@ -216,7 +216,7 @@ private fun MiniControl(
 }
 
 /**
- * Which source is playing — local/USB/Bluetooth/radio/Spotify/video — pinned to the corner of
+ * Which source is playing — local/USB/Bluetooth/radio/YouTube Music/video — pinned to the corner of
  * the cover. [sourceIcon] is the same glyph the Media tab's own source switcher uses ([SourceTabs.kt]),
  * so Home never disagrees with what the driver would see by tapping through.
  */

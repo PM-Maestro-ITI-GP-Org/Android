@@ -15,18 +15,22 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
 /**
- * Anghami, as its web player — offered alongside Spotify for the same reason a driver is asked
- * for a second opinion rather than one: Spotify's web player gates full playback behind a
- * Premium subscription (confirmed live — tapping play on a free account redirects the whole page
- * to its upsell rather than playing anything), where Anghami's free tier is ad-supported and
- * plays without that wall. Same architecture as [SpotifyMediaSource] in every other respect: the
- * page owns the audio, the queue and the transport, so [tracks] is empty and [playbackKind] is
- * [PlaybackKind.WEB].
+ * YouTube Music, as its web player — replaces Spotify and Anghami as the free on-demand music
+ * source. Both of those gate full playback behind an account: Spotify's free web tier redirects
+ * straight to its Premium subscription upsell the moment play is tapped, and Anghami's "Play for
+ * free" redirects to the Play Store to push its native app instead of playing anything, neither
+ * of which this image can act on (no app store, no purchase flow here). YouTube's own player
+ * (the plain video site, [YouTube]) was confirmed live to play on demand with no account and no
+ * redirect — this is the same site, at its music-focused address, for a proper now-playing bar
+ * and search built for songs rather than video results.
+ *
+ * Same architecture as the sources it replaces: the page owns the audio, the queue and the
+ * transport, so [tracks] is empty and [playbackKind] is [PlaybackKind.WEB].
  */
-class AnghamiMediaSource(private val context: Context) : MediaLibrarySource {
+class YouTubeMusicMediaSource(private val context: Context) : MediaLibrarySource {
 
-    override val id = MediaSourceId.ANGHAMI
-    override val label = "Anghami"
+    override val id = MediaSourceId.YOUTUBE_MUSIC
+    override val label = "YouTube Music"
     override val playbackKind = PlaybackKind.WEB
 
     override fun availability(): Flow<SourceAvailability> = callbackFlow {
@@ -35,7 +39,7 @@ class AnghamiMediaSource(private val context: Context) : MediaLibrarySource {
                 SourceAvailability(
                     id = id,
                     available = hasInternet(),
-                    emptyMessage = "Connect to Wi-Fi to use Anghami",
+                    emptyMessage = "Connect to Wi-Fi to use YouTube Music",
                 ),
             )
         }
