@@ -75,6 +75,10 @@ class DiagnosticsViewModel(
      *  the same [source]. */
     val motorTelemetry: StateFlow<SignalState<MotorTelemetry>> = source.motor
 
+    /** For the passive charge readout on the Overview header — the battery hotspot's card
+     *  already shows this, but only once tapped; this is visible without that tap. */
+    val batteryTelemetry: StateFlow<SignalState<BatteryTelemetry>> = source.battery
+
     private val tab = MutableStateFlow(DiagnosticsTab.OVERVIEW)
     val selectedTab: StateFlow<DiagnosticsTab> = tab
 
@@ -82,23 +86,41 @@ class DiagnosticsViewModel(
      *  see [requestCapture]'s `live` parameter for why this does not reset the view each tick. */
     private var liveRefreshJob: Job? = null
 
+    /** Whether the Engineering tab's ticker is running. Off lets a driver hold the current
+     *  capture still to inspect it, without losing the view a fresh tick would overwrite. */
+    private val _liveStreaming = MutableStateFlow(true)
+    val liveStreaming: StateFlow<Boolean> = _liveStreaming
+
     fun onTabSelected(selected: DiagnosticsTab) {
         tab.value = selected
         if (selected == DiagnosticsTab.ENGINEERING) {
             if (capture.value == null) capture.value = CaptureState.Idle
             if (capture.value !is CaptureState.Ready) requestCapture()
-            liveRefreshJob?.cancel()
-            liveRefreshJob = viewModelScope.launch {
-                while (isActive) {
-                    delay(LIVE_REFRESH_INTERVAL_MILLIS)
-                    requestCapture(live = true)
-                }
-            }
+            if (_liveStreaming.value) startLiveRefresh()
         } else {
             liveRefreshJob?.cancel()
             liveRefreshJob = null
         }
         restartIdleTimer()
+    }
+
+    /** The Engineering tab's live/pause switch. Pausing only stops future ticks from arriving —
+     *  the capture already on screen, and every drag/zoom/scrub the driver has done to it, is
+     *  untouched, exactly like a live tick already leaves it (see [requestCapture]'s `live` KDoc). */
+    fun setLiveStreaming(enabled: Boolean) {
+        _liveStreaming.value = enabled
+        if (tab.value != DiagnosticsTab.ENGINEERING) return
+        if (enabled) startLiveRefresh() else { liveRefreshJob?.cancel(); liveRefreshJob = null }
+    }
+
+    private fun startLiveRefresh() {
+        liveRefreshJob?.cancel()
+        liveRefreshJob = viewModelScope.launch {
+            while (isActive) {
+                delay(LIVE_REFRESH_INTERVAL_MILLIS)
+                requestCapture(live = true)
+            }
+        }
     }
 
     /**
@@ -283,6 +305,16 @@ class DiagnosticsViewModel(
                     map[hotspot].let { it != null && it != Severity.OK }
                 }
                 if (kept != dismissed.value) dismissed.value = kept
+            }
+        }
+        // MainActivity's fault reaction: open on the hotspot a new fault named, whether this
+        // ViewModel already existed (driver was already on Diagnostics) or was just created for
+        // it — see VehicleData.focusRequest's KDoc for why a StateFlow is what makes both work.
+        viewModelScope.launch {
+            VehicleData.focusRequest.collect { hotspot ->
+                if (hotspot == null) return@collect
+                focused.value = hotspot
+                VehicleData.focusRequest.value = null
             }
         }
     }

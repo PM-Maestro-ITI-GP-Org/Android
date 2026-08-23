@@ -370,6 +370,13 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             speak(reply)
             return
         }
+        // "Open the USB drive", "switch to Spotify" -- naming a source by name, which is a
+        // different request from MediaVoice's bare "play" (resume whatever is already loaded).
+        MediaSourceVoice.handle(context, utterance)?.let { reply ->
+            model = model.copy(state = VoiceState.SPEAKING, reply = reply)
+            speak(reply)
+            return
+        }
         NavVoice.handle(utterance)?.let { reply ->
             model = model.copy(state = VoiceState.SPEAKING, reply = reply)
             speak(reply)
@@ -408,6 +415,13 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                 return
             }
             intent.route?.let { target ->
+                // "Watch youtube" and "open youtube" both land on VIDEO — the anchors don't
+                // distinguish a film on this device from one on the web, only route() and
+                // VideoScreen's own toggle do that. Presetting it here is what makes the tab
+                // open already on YouTube instead of the library, which is what was asked for.
+                if (target == VoiceRoute.VIDEO && utterance.lowercase(Locale.US).contains("youtube")) {
+                    com.motorguard.ivi.ui.web.WebSession.YouTube.selected = true
+                }
                 val reply = "Opening ${target.label.lowercase()}."
                 model = model.copy(state = VoiceState.SPEAKING, reply = reply)
                 speak(reply)
@@ -480,36 +494,86 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             .onFailure { Log.e(TAG, "could not route to ${target.name}", it) }
         // MEDIA used to be tab-navigation only: it opened the Media tab but never played
         // anything, so "play music" got a TTS reply claiming to be playing music while the
-        // driver stared at a silent, empty tab. Auto-start the same default station list the
-        // tab's own search field falls back to on a blank query (RadioMediaSource.tracks()),
-        // so a driver who has never added local files still gets audio, not a UI tour.
-        if (target == VoiceRoute.MEDIA) startDefaultRadio()
+        // driver stared at a silent, empty tab.
+        if (target == VoiceRoute.MEDIA) playDefaultMedia()
         requestHide()
     }
 
     /**
-     * Starts the top popular station, same source the Media tab's Radio source uses.
+     * "Play music" with nothing else to go on: resume whatever is already loaded, or fall back
+     * Local library -> USB -> Bluetooth -> Radio (radio only if there is a network to stream
+     * from) -- the order a driver would try them in by hand, cheapest and most-likely-to-work
+     * first.
      *
-     * Fetches off the main thread (a suspend network call has no business blocking it), but
-     * MediaConnection.play() goes through a Media3 MediaController, which throws
-     * IllegalStateException if called anywhere else -- confirmed live: the fetch succeeded every
-     * time, play() then silently threw on the background thread and nothing ever played. The
-     * result is handed back to [handler] (main-looper) for that one call.
+     * Fetches off the main thread (a MediaStore query or a network call has no business blocking
+     * it), but MediaConnection's transport calls go through a Media3 MediaController, which
+     * throws IllegalStateException off the main thread -- confirmed live, see the history of this
+     * function. Every call into it is handed back to [handler] (main-looper).
      */
-    private fun startDefaultRadio() {
+    private fun playDefaultMedia() {
         Thread({
             runCatching {
-                val source = MediaSourceManager.get(context).source(MediaSourceId.RADIO)
-                    as? RadioMediaSource ?: return@runCatching
+                val connection = MediaConnection.get(context)
+                if (connection.state.value.hasTrack) {
+                    if (!connection.state.value.isPlaying) handler.post { connection.playPause() }
+                    return@runCatching
+                }
+
+                val manager = MediaSourceManager.get(context)
+                val local = kotlinx.coroutines.runBlocking { manager.tracks(MediaSourceId.LOCAL) }
+                if (local.isNotEmpty()) {
+                    handler.post {
+                        connection.setSource(MediaSourceId.LOCAL)
+                        connection.play(local, 0)
+                    }
+                    return@runCatching
+                }
+
+                val usb = kotlinx.coroutines.runBlocking { manager.tracks(MediaSourceId.USB) }
+                if (usb.isNotEmpty()) {
+                    handler.post {
+                        connection.setSource(MediaSourceId.USB)
+                        connection.play(usb, 0)
+                    }
+                    return@runCatching
+                }
+
+                if (com.motorguard.ivi.data.Conn.bt.connectedName != null) {
+                    handler.post {
+                        connection.setSource(MediaSourceId.BLUETOOTH)
+                        connection.playPause()
+                    }
+                    return@runCatching
+                }
+
+                if (!hasInternet(context)) {
+                    Log.i(TAG, "playDefaultMedia: nothing available (no local/usb/phone/network)")
+                    return@runCatching
+                }
+                val source = manager.source(MediaSourceId.RADIO) as? RadioMediaSource
+                    ?: return@runCatching
                 val stations = kotlinx.coroutines.runBlocking { source.tracks() }
                 if (stations.isNotEmpty()) {
-                    handler.post { MediaConnection.get(context).play(stations, 0) }
+                    handler.post {
+                        connection.setSource(MediaSourceId.RADIO)
+                        connection.play(stations, 0)
+                    }
                 } else {
-                    Log.w(TAG, "startDefaultRadio: no stations returned")
+                    Log.w(TAG, "playDefaultMedia: no stations returned")
                 }
-            }.onFailure { Log.e(TAG, "startDefaultRadio failed", it) }
+            }.onFailure { Log.e(TAG, "playDefaultMedia failed", it) }
         }, "voice-play-music").start()
     }
+
+    /** NET_CAPABILITY_VALIDATED, not merely CONNECTED — see RadioMediaSource.hasInternet(),
+     *  which this mirrors: a joined network with no route out must not read as available. */
+    private fun hasInternet(context: Context): Boolean = runCatching {
+        val manager = context.getSystemService(android.net.ConnectivityManager::class.java)
+            ?: return false
+        val caps = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
+        caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }.getOrDefault(false)
 
     // --- audio focus -------------------------------------------------------
 

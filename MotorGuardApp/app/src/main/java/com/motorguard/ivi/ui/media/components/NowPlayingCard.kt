@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -78,7 +80,18 @@ fun NowPlayingCard(
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    AlbumThumbnail(artwork = artwork, sizeDp = 56)
+                    Box {
+                        AlbumThumbnail(artwork = artwork, sizeDp = 56)
+                        // Which source is actually audible right now — local/USB/Bluetooth/radio/
+                        // Spotify all reach this card through the same MediaConnection.state, so
+                        // without this badge there is no way to tell which one is playing.
+                        if (playback.hasTrack) {
+                            SourceBadge(
+                                source = playback.source,
+                                modifier = Modifier.align(Alignment.BottomEnd),
+                            )
+                        }
+                    }
                     Spacer(Modifier.width(14.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
@@ -198,6 +211,31 @@ private fun MiniControl(
             contentDescription = description,
             tint = if (enabled) MaterialTheme.colorScheme.onSurface else colors.onBaseDim,
             modifier = Modifier.size(26.dp),
+        )
+    }
+}
+
+/**
+ * Which source is playing — local/USB/Bluetooth/radio/Spotify/video — pinned to the corner of
+ * the cover. [sourceIcon] is the same glyph the Media tab's own source switcher uses ([SourceTabs.kt]),
+ * so Home never disagrees with what the driver would see by tapping through.
+ */
+@Composable
+private fun SourceBadge(source: com.motorguard.ivi.data.media.MediaSourceId, modifier: Modifier = Modifier) {
+    val colors = MotorGuard.colors
+    Box(
+        modifier = modifier
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.5.dp, MaterialTheme.colorScheme.background, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = sourceIcon(source),
+            contentDescription = source.name.lowercase().replaceFirstChar { it.uppercase() },
+            tint = colors.accent,
+            modifier = Modifier.size(13.dp),
         )
     }
 }

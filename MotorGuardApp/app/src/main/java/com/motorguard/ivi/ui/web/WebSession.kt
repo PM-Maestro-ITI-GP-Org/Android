@@ -117,6 +117,20 @@ class WebSession(
         }
     }
 
+    /**
+     * Best-effort remote play/pause, for the Home now-playing card's transport row.
+     *
+     * The page owns the transport (see the class KDoc on why [canSeek]/[canSkip] are false for
+     * [com.motorguard.ivi.data.media.PlaybackKind.WEB]), but a plain HTML5 `<video>` element is a
+     * standard, stable target to toggle from outside — unlike guessing at a site's own button
+     * markup, which breaks the moment its DOM changes. YouTube's mobile site plays through one;
+     * Spotify's Web Playback SDK does not expose one, so this is a harmless no-op there and its
+     * own page remains the only way to control it, same as before.
+     */
+    fun togglePlayback() {
+        webView?.evaluateJavascript(TOGGLE_PLAYBACK_JS, null)
+    }
+
     /** Coming into view. */
     fun attach(view: WebView) {
         attachments++
@@ -181,6 +195,13 @@ class WebSession(
                   MotorGuard.nowPlaying(t, a, al, !!playing);
                 } catch (e) { /* a page mid-navigation is not an error worth reporting */ }
               }, 1000);
+            })();
+        """
+
+        private val TOGGLE_PLAYBACK_JS = """
+            (function () {
+              var v = document.getElementsByTagName('video')[0];
+              if (v) { if (v.paused) v.play(); else v.pause(); }
             })();
         """
 

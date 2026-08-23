@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Phone
@@ -86,6 +87,7 @@ enum class VoiceRoute(val label: String, val icon: ImageVector) {
     DIAGNOSTICS("Vehicle status", Icons.Filled.DirectionsCar),
     SETTINGS("Settings", Icons.Filled.Settings),
     PHONE("Call", Icons.Filled.Phone),
+    VIDEO("Video", Icons.Filled.Movie),
 }
 
 // The overlay is always dark — it floats over arbitrary content, so it pins to the

@@ -65,17 +65,20 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.motorguard.ivi.data.vehicle.api.BatteryTelemetry
 import com.motorguard.ivi.data.vehicle.api.CaptureState
 import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.data.vehicle.api.MotorCaptureSummary
 import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
 import com.motorguard.ivi.data.vehicle.api.SignalState
 import com.motorguard.ivi.ui.components.GlassCard
+import com.motorguard.ivi.ui.components.Pill
 import com.motorguard.ivi.ui.diagnostics.component.AlertList
 import com.motorguard.ivi.ui.diagnostics.component.ComponentDetailPanel
 import com.motorguard.ivi.ui.diagnostics.component.HealthRing
 import com.motorguard.ivi.ui.diagnostics.component.healthRingSemantics
 import com.motorguard.ivi.ui.diagnostics.component.HotspotOverlay
+import com.motorguard.ivi.ui.diagnostics.component.TelemetryFormat
 import com.motorguard.ivi.ui.diagnostics.debug.FakeDataControlPanel
 import com.motorguard.ivi.ui.diagnostics.insights.EngineeringInsightsPane
 import com.motorguard.ivi.ui.diagnostics.render.Car3dTuning
@@ -103,8 +106,10 @@ fun DiagnosticsScreen(
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val healthScore by viewModel.healthScore.collectAsStateWithLifecycle()
     val captureState by viewModel.captureState.collectAsStateWithLifecycle()
+    val liveStreaming by viewModel.liveStreaming.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val motorTelemetry by viewModel.motorTelemetry.collectAsStateWithLifecycle()
+    val batteryTelemetry by viewModel.batteryTelemetry.collectAsStateWithLifecycle()
     val captureSummary by viewModel.captureSummary.collectAsStateWithLifecycle()
     DiagnosticsScreenContent(
         ui = ui,
@@ -122,7 +127,10 @@ fun DiagnosticsScreen(
         onTabSelected = viewModel::onTabSelected,
         captureState = captureState,
         onInsightsRefresh = viewModel::requestCapture,
+        liveStreaming = liveStreaming,
+        onLiveStreamingChange = viewModel::setLiveStreaming,
         motorTelemetry = motorTelemetry,
+        batteryTelemetry = batteryTelemetry,
         captureSummary = captureSummary,
         modifier = modifier,
     )
@@ -158,8 +166,12 @@ internal fun DiagnosticsScreenContent(
     /** Null before the Engineering tab has ever been opened this session. */
     captureState: CaptureState? = null,
     onInsightsRefresh: () -> Unit = {},
+    liveStreaming: Boolean = true,
+    onLiveStreamingChange: (Boolean) -> Unit = {},
     /** Null in previews, same as [captureState] — see its KDoc. */
     motorTelemetry: SignalState<MotorTelemetry> = SignalState.Loading,
+    /** Same as [motorTelemetry] — drives the passive charge readout on the Overview header. */
+    batteryTelemetry: SignalState<BatteryTelemetry> = SignalState.Loading,
     captureSummary: MotorCaptureSummary? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -237,6 +249,7 @@ internal fun DiagnosticsScreenContent(
                     CarStage(
                         ui = ui,
                         livery = livery,
+                        batteryTelemetry = batteryTelemetry,
                         onHotspotTap = onHotspotTap,
                         onBackgroundTap = onBackgroundTap,
                         onLongPress = onStageLongPress,
@@ -313,6 +326,8 @@ internal fun DiagnosticsScreenContent(
                         captureSummary = captureSummary,
                         onRefresh = onInsightsRefresh,
                         onBackToOverview = { onTabSelected(DiagnosticsTab.OVERVIEW) },
+                        liveStreaming = liveStreaming,
+                        onLiveStreamingChange = onLiveStreamingChange,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -463,6 +478,7 @@ private fun ReservedPanel(title: String, hint: String, modifier: Modifier = Modi
 private fun CarStage(
     ui: DiagnosticsUiState,
     livery: Car3dTuning.Livery,
+    batteryTelemetry: SignalState<BatteryTelemetry>,
     onHotspotTap: (Hotspot) -> Unit,
     onBackgroundTap: () -> Unit,
     onLongPress: () -> Unit,
@@ -587,6 +603,16 @@ private fun CarStage(
             )
         }
 
+        // Passive charge readout: the battery hotspot's own card says the same number, but only
+        // once tapped. This is what makes it visible without that tap.
+        BatteryHeaderPill(
+            battery = batteryTelemetry,
+            severity = ui.severityOf(Hotspot.BATTERY),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(horizontal = 26.dp, vertical = 20.dp),
+        )
+
         HotspotOverlay(
             renderer = renderer,
             state = ui,
@@ -653,6 +679,43 @@ private fun CarStage(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(horizontal = 18.dp, vertical = 12.dp),
+        )
+    }
+}
+
+/**
+ * "Battery 82%" — a passive readout beside the stage header, colored by severity exactly like
+ * every other severity-bearing value on this screen. Absent (not a dash) while there is no
+ * reading at all, since a placeholder number here would be a claim about the car with nothing
+ * behind it.
+ */
+@Composable
+private fun BatteryHeaderPill(
+    battery: SignalState<BatteryTelemetry>,
+    severity: com.motorguard.ivi.data.vehicle.api.Severity?,
+    modifier: Modifier = Modifier,
+) {
+    val data = when (battery) {
+        is SignalState.Live -> battery.data
+        is SignalState.Stale -> battery.lastData
+        else -> null
+    } ?: return
+
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Filled.BatteryChargingFull,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Pill(
+            text = TelemetryFormat.percent(data.chargePercent),
+            bg = if (severity != null) {
+                SemanticColors.forSeverity(severity)
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
         )
     }
 }

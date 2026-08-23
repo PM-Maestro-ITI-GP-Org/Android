@@ -68,6 +68,7 @@ import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
 import com.motorguard.ivi.data.vehicle.api.SignalState
 import com.motorguard.ivi.data.vehicle.api.latestValueOrNull
 import com.motorguard.ivi.ui.components.GlassCard
+import com.motorguard.ivi.ui.components.MgSwitch
 import com.motorguard.ivi.ui.components.Pill
 import com.motorguard.ivi.ui.diagnostics.component.CaptureBlock
 import com.motorguard.ivi.ui.diagnostics.component.TelemetryFormat
@@ -118,6 +119,10 @@ internal fun EngineeringInsightsPane(
     captureSummary: MotorCaptureSummary?,
     onRefresh: () -> Unit,
     onBackToOverview: () -> Unit,
+    /** The live/pause switch: on keeps pulling a fresh capture every few seconds, off holds
+     *  whatever is on screen still so the driver can inspect it. */
+    liveStreaming: Boolean = true,
+    onLiveStreamingChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -127,7 +132,13 @@ internal fun EngineeringInsightsPane(
             .background(MaterialTheme.colorScheme.surface),
     ) {
         Column(Modifier.fillMaxSize()) {
-            InsightsHeader(state = state, onRefresh = onRefresh, onBackToOverview = onBackToOverview)
+            InsightsHeader(
+                state = state,
+                onRefresh = onRefresh,
+                onBackToOverview = onBackToOverview,
+                liveStreaming = liveStreaming,
+                onLiveStreamingChange = onLiveStreamingChange,
+            )
             when (state) {
                 is CaptureState.Ready -> CaptureBody(state.capture, motor, captureSummary)
                 CaptureState.Requesting -> CenteredStatus(
@@ -152,7 +163,13 @@ internal fun EngineeringInsightsPane(
 }
 
 @Composable
-private fun InsightsHeader(state: CaptureState, onRefresh: () -> Unit, onBackToOverview: () -> Unit) {
+private fun InsightsHeader(
+    state: CaptureState,
+    onRefresh: () -> Unit,
+    onBackToOverview: () -> Unit,
+    liveStreaming: Boolean,
+    onLiveStreamingChange: (Boolean) -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -175,12 +192,21 @@ private fun InsightsHeader(state: CaptureState, onRefresh: () -> Unit, onBackToO
         Text(
             text = when (state) {
                 is CaptureState.Ready ->
-                    "${(state.capture.durationSec).toInt()} s at 20 kHz · live"
+                    "${(state.capture.durationSec).toInt()} s at 20 kHz" +
+                        if (liveStreaming) " · live" else " · paused"
                 else -> ""
             },
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
         )
+        Spacer(Modifier.width(14.dp))
+        Text(
+            text = "Live",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+        )
+        Spacer(Modifier.width(6.dp))
+        MgSwitch(checked = liveStreaming, onCheckedChange = onLiveStreamingChange)
         Spacer(Modifier.width(14.dp))
         TextButton(onClick = onRefresh, enabled = state !is CaptureState.Requesting) {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))

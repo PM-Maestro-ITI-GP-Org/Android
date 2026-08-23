@@ -256,8 +256,12 @@ object IntentMatcher {
             "any faults", "what is that warning light",
         ),
         VoiceRoute.SETTINGS to listOf(
-            "open the settings", "change the display", "connect to wifi", "pair my phone",
-            "turn on bluetooth", "make the screen darker", "change the theme",
+            "open settings", "open the settings", "change the display", "connect to wifi",
+            "pair my phone", "turn on bluetooth", "make the screen darker", "change the theme",
+        ),
+        VoiceRoute.VIDEO to listOf(
+            "watch a video", "watch some video", "open videos", "open the videos",
+            "play a video", "put a video on", "watch youtube", "open youtube", "play youtube",
         ),
     )
 

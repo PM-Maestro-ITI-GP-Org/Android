@@ -26,6 +26,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.motorguard.ivi.data.Conn
+import com.motorguard.ivi.data.vehicle.api.Hotspot
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
 import com.motorguard.ivi.ui.diagnostics.FaultTone
@@ -146,6 +147,7 @@ class MainActivity : AppCompatActivity() {
         followAlbumArtwork()
         announceFaults()
         announceMotorFault()
+        autoOpenDiagnosticsOnFault()
     }
 
     /**
@@ -180,6 +182,36 @@ class MainActivity : AppCompatActivity() {
                         map.filterValues { it != null && it != Severity.OK }
                             .mapValues { (_, severity) -> severity!! },
                     )
+                }
+            }
+        }
+    }
+
+    /**
+     * Bring the Diagnostics tab forward and focus the component the moment a fault first
+     * appears there — whichever tab the driver is on, the same rule [announceFaults] follows
+     * for the beep.
+     *
+     * Edge-triggered per hotspot, not level-triggered: [VehicleSeverityFlow.severities] re-emits
+     * on every tick regardless of whether anything changed, and re-navigating to a tab the driver
+     * has since left Diagnostics for (or re-focusing the same still-faulting hotspot) on every
+     * one of those ticks would make the screen unusable. [alerting] is this function's own
+     * memory of what was already faulting, compared against each new snapshot to find only what
+     * is newly faulting.
+     */
+    private fun autoOpenDiagnosticsOnFault() {
+        val severities = VehicleSeverityFlow(VehicleData.source)
+        var alerting: Set<Hotspot> = emptySet()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                severities.severities.collect { map ->
+                    val now = map.filterValues { it == Severity.CAUTION || it == Severity.CRITICAL }.keys
+                    val newlyFaulting = now - alerting
+                    alerting = now
+                    val target = newlyFaulting.firstOrNull() ?: return@collect
+
+                    VehicleData.focusRequest.value = target
+                    if (selected != Tab.DIAGNOSTICS) show(Tab.DIAGNOSTICS)
                 }
             }
         }

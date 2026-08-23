@@ -95,7 +95,7 @@ object NavConfig {
      * where the simulator parks the car when no route is active. Superseded by the real
      * position the moment one arrives.
      */
-    var defaultOrigin: GeoPoint = GeoPoint(30.0444, 31.2357) // Cairo
+    var defaultOrigin: GeoPoint = GeoPoint(30.071112, 31.0210709) // ITI - Smart Village Branch
 
     /**
      * How much faster than real time the simulator drives. 1f is realistic and unwatchable

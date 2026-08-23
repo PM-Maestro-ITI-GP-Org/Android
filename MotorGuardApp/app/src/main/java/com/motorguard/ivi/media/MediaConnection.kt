@@ -133,7 +133,21 @@ class MediaConnection private constructor(context: Context) {
     fun playPause() {
         if (VideoPlayback.state.value != null) return VideoPlayback.playPause()
         if (isBluetooth) return bluetooth.playPause()
+        // A web source (Spotify/YouTube) owns its own player; our controller has nothing loaded
+        // for it, so routing this to withController() below would silently do nothing while
+        // looking like a working button. See WebSession.togglePlayback for what this can and
+        // cannot reach.
+        if (_state.value.playbackKind == PlaybackKind.WEB) {
+            return webSessionFor(_state.value.source)?.togglePlayback() ?: Unit
+        }
         withController { if (isPlaying) pause() else play() }
+    }
+
+    /** Which page a [PlaybackKind.WEB] snapshot came from — see [WebSession.YouTube]/[WebSession.Spotify]. */
+    private fun webSessionFor(source: MediaSourceId): com.motorguard.ivi.ui.web.WebSession? = when (source) {
+        MediaSourceId.VIDEO -> com.motorguard.ivi.ui.web.WebSession.YouTube
+        MediaSourceId.SPOTIFY -> com.motorguard.ivi.ui.web.WebSession.Spotify
+        else -> null
     }
 
     /**

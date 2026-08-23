@@ -139,7 +139,9 @@ private fun SourceTab(
     }
 }
 
-private fun sourceIcon(id: MediaSourceId): ImageVector = when (id) {
+/** Also used by [com.motorguard.ivi.ui.media.components.NowPlayingCard]'s source badge, so the
+ *  glyph for a given source is never defined twice. */
+internal fun sourceIcon(id: MediaSourceId): ImageVector = when (id) {
     MediaSourceId.LOCAL -> Icons.Filled.LibraryMusic
     MediaSourceId.USB -> Icons.Filled.Usb
     MediaSourceId.BLUETOOTH -> Icons.Filled.Bluetooth
