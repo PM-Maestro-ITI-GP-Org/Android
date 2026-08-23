@@ -1,57 +1,42 @@
 package com.motorguard.ivi.data.vehicle.api
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * Combines all telemetry flows into the per-hotspot severity map the UI renders
- * (dot color, card banner, alert candidates). Severity of an offline/loading
- * signal is not fabricatable, so it maps to null -> UI shows grey + "No data".
+ * The per-hotspot severity map the UI renders (dot color, card banner, alert candidates), and
+ * the health ring's score — both derived from [Hotspot.MOTOR] alone.
+ *
+ * Battery/brakes/doors/tires have no real sensor behind them on this vehicle
+ * (motorservice/README.md, "Only the motor comes off this link"); grading their simulated
+ * drift produced faults — a hotspot dot going amber, an alert-list row, a beep, the screen
+ * jumping to Diagnostics — for a value nobody measured. The motor is the only signal the
+ * diagnostics unit actually publishes over SOME/IP, so it is the only one graded at all.
  */
 class VehicleSeverityFlow(
     source: VehicleDataSource,
     private val resolver: SeverityResolver = SeverityResolver(),
 ) {
-    private data class Snapshot(
-        val battery: SignalState<BatteryTelemetry>,
-        val motor: SignalState<MotorTelemetry>,
-        val brakes: SignalState<BrakeTelemetry>,
-        val tires: List<SignalState<TireTelemetry>>,
-        val doors: SignalState<DoorsTelemetry>,
-    )
+    private val motor: Flow<SignalState<MotorTelemetry>> = source.motor
 
-    private val snapshot = combine(
-        source.battery, source.motor, source.brakes, source.tires, source.doors,
-        ::Snapshot,
-    )
-
-    /** Hotspot -> Severity, or null when the signal isn't live (offline/loading/stale-ignored). */
-    val severities: kotlinx.coroutines.flow.Flow<Map<Hotspot, Severity?>> =
-        kotlinx.coroutines.flow.flow {
-            snapshot.collect { s ->
-                emit(mapOf(
-                    Hotspot.BATTERY to (s.battery.latestValueOrNull?.let {
-                        resolver.severityFor(Hotspot.BATTERY, battery = it)
-                    }),
-                    Hotspot.MOTOR to (s.motor.latestValueOrNull?.let {
-                        resolver.severityFor(Hotspot.MOTOR, motor = it)
-                    }),
-                    Hotspot.BRAKES to (s.brakes.latestValueOrNull?.let {
-                        resolver.severityFor(Hotspot.BRAKES, brakes = it)
-                    }),
-                    Hotspot.DOORS to (s.doors.latestValueOrNull?.let {
-                        resolver.severityFor(Hotspot.DOORS, doorsState = it)
-                    }),
-                    Hotspot.TIRE_FL to tireSeverity(s, Hotspot.TIRE_FL),
-                    Hotspot.TIRE_FR to tireSeverity(s, Hotspot.TIRE_FR),
-                    Hotspot.TIRE_RL to tireSeverity(s, Hotspot.TIRE_RL),
-                    Hotspot.TIRE_RR to tireSeverity(s, Hotspot.TIRE_RR),
-                ))
-            }
-        }
+    /** Hotspot -> Severity. Every hotspot but [Hotspot.MOTOR] is always null; motor is null
+     *  only when its own signal isn't live (offline/loading/stale-ignored). */
+    val severities: Flow<Map<Hotspot, Severity?>> = motor.map { state ->
+        mapOf(
+            Hotspot.BATTERY to null,
+            Hotspot.MOTOR to state.latestValueOrNull?.let { resolver.severityFor(Hotspot.MOTOR, motor = it) },
+            Hotspot.BRAKES to null,
+            Hotspot.DOORS to null,
+            Hotspot.TIRE_FL to null,
+            Hotspot.TIRE_FR to null,
+            Hotspot.TIRE_RL to null,
+            Hotspot.TIRE_RR to null,
+        )
+    }
 
     /**
      * Health score 0..100 for the ring: the motor's remaining useful life as a fraction of a
@@ -59,21 +44,13 @@ class VehicleSeverityFlow(
      * has published a remaining-life estimate at all — no other hotspot has one, so there is
      * nothing else to derive a score from.
      */
-    val healthScore: kotlinx.coroutines.flow.Flow<Int?> =
-        kotlinx.coroutines.flow.flow {
-            snapshot.collect { s ->
-                val life = s.motor.latestValueOrNull?.remainingLife
-                emit(life?.let { ((it.hours / FULL_LIFE_HOURS) * 100f).toInt().coerceIn(0, 100) })
-            }
-        }
+    val healthScore: Flow<Int?> = motor.map { state ->
+        val life = state.latestValueOrNull?.remainingLife
+        life?.let { ((it.hours / FULL_LIFE_HOURS) * 100f).toInt().coerceIn(0, 100) }
+    }
 
     fun stateIn(scope: CoroutineScope): StateFlow<Map<Hotspot, Severity?>> =
         severities.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyMap())
-
-    private fun tireSeverity(s: Snapshot, corner: Hotspot): Severity? =
-        s.tires.getOrNull(Hotspot.tireCorners.indexOf(corner))
-            ?.latestValueOrNull
-            ?.let { resolver.severityFor(corner, tirePsi = it.psi, tireTempC = it.tempC) }
 
     private companion object {
         /** A 4-month full life, in hours, at a flat 30-day month. */
