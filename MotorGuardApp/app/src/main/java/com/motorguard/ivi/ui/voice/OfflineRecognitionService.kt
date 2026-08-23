@@ -60,10 +60,35 @@ class OfflineRecognitionService : RecognitionService() {
         private const val NO_SPEECH_MS = 6_000L
 
         /**
-         * Above this RMS a chunk counts as speech. Tuned on this hardware:
-         * ambient sits near 100-250, speech runs 1000-3400.
+         * A fixed RMS speech gate does not survive a mic swap: this constant was
+         * tuned at 400 for card 2's onboard mic (ambient ~100-250), but the board's
+         * two USB peripherals gave capture-only card 3 (the real standalone mic,
+         * see usb_mic_route.patch) an ambient noise floor of its own -- rms in the
+         * *thousands* just sitting in a normal room, well above that. With the
+         * fixed 400 gate, ambient noise alone kept "hearing speech" continuously,
+         * so the silence gate below never closed: a session ran the full
+         * MAX_SESSION_MS regardless of when the driver actually stopped talking.
+         *
+         * SPEECH_MARGIN and MIN/MAX_SPEECH_RMS replace it with a threshold derived
+         * from *this session's own* measured noise floor (see noiseFloor below),
+         * so it keeps working across mics, rooms, and distances instead of
+         * assuming one fixed ambient level.
          */
-        private const val SPEECH_RMS = 400.0
+        private const val SPEECH_MARGIN = 2.5
+
+        /** Absolute floor on the adaptive threshold: a near-silent room should not
+         *  make the gate so sensitive that its own residual noise crosses it. */
+        private const val MIN_SPEECH_RMS = 250.0
+
+        /** Absolute ceiling: caps a freak loud transient during calibration (a
+         *  door, a cough) from setting the bar so high real speech cannot clear it. */
+        private const val MAX_SPEECH_RMS = 6_000.0
+
+        /** How fast the noise-floor estimate tracks the room. Chosen to settle in
+         *  roughly 4-6 chunks (~350-500 ms at CHUNK=1280/16kHz) -- fast enough to be
+         *  useful within NO_SPEECH_MS's budget, slow enough not to be thrown by one
+         *  loud chunk. */
+        private const val NOISE_FLOOR_EMA_ALPHA = 0.3
 
         /** Floor reported for a silent chunk, rather than log10(0) = -infinity. */
         private const val SILENCE_DB = -60f
@@ -128,6 +153,11 @@ class OfflineRecognitionService : RecognitionService() {
             var lastVoice = 0L
             var heardSpeech = false
 
+            // Seeded at MIN_SPEECH_RMS / SPEECH_MARGIN so the very first chunks -- before
+            // the EMA has had a chance to track anything -- use the same floor the adaptive
+            // threshold would clamp to anyway, rather than an arbitrary unset value.
+            var noiseFloor = MIN_SPEECH_RMS / SPEECH_MARGIN
+
             // Sample offsets of the speech itself, so the silence around it can
             // be trimmed before inference. Whisper's cost scales with what it is
             // handed, and a capture is often more silence than speech.
@@ -177,7 +207,12 @@ class OfflineRecognitionService : RecognitionService() {
                 }
                 safe { listener.rmsChanged(rmsDb) }
 
-                if (rms > SPEECH_RMS) {
+                // The threshold rides SPEECH_MARGIN above the room's own measured noise
+                // floor rather than a fixed constant -- see SPEECH_MARGIN's KDoc for why a
+                // fixed one does not survive a mic swap.
+                val speechThreshold =
+                    (noiseFloor * SPEECH_MARGIN).coerceIn(MIN_SPEECH_RMS, MAX_SPEECH_RMS)
+                if (rms > speechThreshold) {
                     if (!heardSpeech) {
                         heardSpeech = true
                         voiceStart = chunkStart
@@ -185,6 +220,11 @@ class OfflineRecognitionService : RecognitionService() {
                     }
                     lastVoice = now
                     voiceEnd = used
+                } else if (!heardSpeech) {
+                    // Only track the floor before speech starts: once real speech is
+                    // underway, a quiet consonant or a mid-word pause must not drag the
+                    // floor up and make the *next* threshold check harder to clear.
+                    noiseFloor += (rms - noiseFloor) * NOISE_FLOOR_EMA_ALPHA
                 }
             }
 
