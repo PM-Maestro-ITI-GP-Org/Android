@@ -203,6 +203,18 @@ class MediaConnection private constructor(context: Context) {
 
     /** Switch source. Routed through the session so the service can stop the previous one. */
     fun setSource(id: MediaSourceId) {
+        // A WEB source's snapshot only self-clears on tab-detach, and YouTube Music opts out of
+        // that entirely (pauseOnLeave = false) so Home keeps showing it while the driver is just
+        // glancing at the map. But publish() below checks WebPlayback unconditionally first, so
+        // that same stale snapshot then went on claiming the now-playing card forever once the
+        // driver explicitly started something else — Radio genuinely playing, its session
+        // genuinely updated, and the UI still showing YouTube Music's last track, or (after the
+        // tab-scoping fix) showing nothing at all rather than the wrong thing. Explicitly picking
+        // a different source is a stronger signal than a tab detach ever was.
+        com.motorguard.ivi.ui.web.WebPlayback.state.value?.let { web ->
+            if (web.source != id) com.motorguard.ivi.ui.web.WebPlayback.clear(web.source)
+        }
+
         val active = controller ?: run {
             MediaSourceManager.get(appContext).setActive(id)
             return
