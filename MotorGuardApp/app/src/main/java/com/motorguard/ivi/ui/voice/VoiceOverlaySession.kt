@@ -442,9 +442,12 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         }
 
         // The core last, and it always answers — including its own apology when it cannot.
-        val reply = VoiceEngine.handle(utterance)
-            ?: "Sorry, I didn't catch that. You can ask me to explain a warning " +
-            "light, whether it's serious, or where the nearest garage is."
+        //
+        // The apology names nothing it can do. It used to list three, which was already only a
+        // fraction of them and is now a much smaller fraction — and a driver who has just not
+        // been understood is being made to sit through a menu before they can try again. "What
+        // can you do" is a question they can ask when they actually want the list.
+        val reply = VoiceEngine.handle(utterance) ?: "Sorry, I didn't catch that."
         Log.i(TAG, "reply: $reply")
         model = model.copy(state = VoiceState.SPEAKING, reply = reply)
         speak(reply)

@@ -95,9 +95,10 @@ std::string Assistant::handleUtterance(const std::string& text) {
         case Intent::Cancel: { std::string r2 = "Okay."; say(r2, UiSeverity::Info); return r2; }
         case Intent::Unknown:
         default: {
-            std::string resp =
-                "Sorry, I didn't catch that. You can ask me to explain a warning "
-                "light, tell you if it's serious, or find the nearest garage.";
+            // No list. It named three things out of a set that has grown well past them, and
+            // reciting a menu at someone who has just not been understood delays the retry
+            // that is the only thing they want. Intent::Help still gives the full answer.
+            std::string resp = "Sorry, I didn't catch that.";
             say(resp, UiSeverity::Info);
             return resp;
         }
