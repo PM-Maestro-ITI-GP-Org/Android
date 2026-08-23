@@ -90,6 +90,18 @@ class OfflineRecognitionService : RecognitionService() {
          *  loud chunk. */
         private const val NOISE_FLOOR_EMA_ALPHA = 0.3
 
+        /**
+         * The gate is not checked at all for this long at session start -- every chunk in
+         * this window unconditionally feeds the noise-floor EMA instead. A seeded starting
+         * value could not stand in for this: card 3's ambient (rms ~900-2200) is already
+         * above MIN_SPEECH_RMS, so any fixed seed either mis-triggers "speech" on the very
+         * first real chunk (killing the EMA before it tracks anything -- exactly what
+         * happened live: sessions kept running the full 11.9 s regardless of when the
+         * driver actually stopped talking) or, seeded too high, waits for implausibly loud
+         * speech. Measuring for real removes the guess.
+         */
+        private const val CALIBRATION_MS = 400L
+
         /** Floor reported for a silent chunk, rather than log10(0) = -infinity. */
         private const val SILENCE_DB = -60f
 
@@ -153,9 +165,9 @@ class OfflineRecognitionService : RecognitionService() {
             var lastVoice = 0L
             var heardSpeech = false
 
-            // Seeded at MIN_SPEECH_RMS / SPEECH_MARGIN so the very first chunks -- before
-            // the EMA has had a chance to track anything -- use the same floor the adaptive
-            // threshold would clamp to anyway, rather than an arbitrary unset value.
+            // Overwritten by real measurement during the CALIBRATION_MS window below before
+            // it is ever used for gating; this initial value only matters if that window
+            // somehow delivers zero chunks (a near-immediate mic failure).
             var noiseFloor = MIN_SPEECH_RMS / SPEECH_MARGIN
 
             // Sample offsets of the speech itself, so the silence around it can
@@ -207,24 +219,32 @@ class OfflineRecognitionService : RecognitionService() {
                 }
                 safe { listener.rmsChanged(rmsDb) }
 
-                // The threshold rides SPEECH_MARGIN above the room's own measured noise
-                // floor rather than a fixed constant -- see SPEECH_MARGIN's KDoc for why a
-                // fixed one does not survive a mic swap.
-                val speechThreshold =
-                    (noiseFloor * SPEECH_MARGIN).coerceIn(MIN_SPEECH_RMS, MAX_SPEECH_RMS)
-                if (rms > speechThreshold) {
-                    if (!heardSpeech) {
-                        heardSpeech = true
-                        voiceStart = chunkStart
-                        safe { listener.beginningOfSpeech() }
-                    }
-                    lastVoice = now
-                    voiceEnd = used
-                } else if (!heardSpeech) {
-                    // Only track the floor before speech starts: once real speech is
-                    // underway, a quiet consonant or a mid-word pause must not drag the
-                    // floor up and make the *next* threshold check harder to clear.
+                if (now - started < CALIBRATION_MS) {
+                    // No gate check at all yet -- every chunk in this window unconditionally
+                    // feeds the estimate, so it reflects this session's actual room/mic
+                    // instead of a seeded guess (see CALIBRATION_MS's KDoc for why a seed
+                    // does not work on this hardware).
                     noiseFloor += (rms - noiseFloor) * NOISE_FLOOR_EMA_ALPHA
+                } else {
+                    // The threshold rides SPEECH_MARGIN above the room's own measured noise
+                    // floor rather than a fixed constant -- see SPEECH_MARGIN's KDoc for why
+                    // a fixed one does not survive a mic swap.
+                    val speechThreshold =
+                        (noiseFloor * SPEECH_MARGIN).coerceIn(MIN_SPEECH_RMS, MAX_SPEECH_RMS)
+                    if (rms > speechThreshold) {
+                        if (!heardSpeech) {
+                            heardSpeech = true
+                            voiceStart = chunkStart
+                            safe { listener.beginningOfSpeech() }
+                        }
+                        lastVoice = now
+                        voiceEnd = used
+                    } else if (!heardSpeech) {
+                        // Only track the floor before speech starts: once real speech is
+                        // underway, a quiet consonant or a mid-word pause must not drag the
+                        // floor up and make the *next* threshold check harder to clear.
+                        noiseFloor += (rms - noiseFloor) * NOISE_FLOOR_EMA_ALPHA
+                    }
                 }
             }
 
