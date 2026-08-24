@@ -248,8 +248,12 @@ public sealed class BotState(
      * Gaze retuned from the library's own default (yaw 6.92, pitch -21.96, roll 11.6): that
      * pitched down further than even [Sad]'s -18, reading as looking away rather than paying
      * attention, and the yaw skewed the whole face to one side instead of facing forward.
-     * Centred yaw and a mild raised pitch is what "listening to you" actually looks like; the
-     * eyes themselves (their whole point, per the name) are untouched.
+     * Centred yaw and a mild raised pitch is what "listening to you" actually looks like.
+     *
+     * Eye size also retuned: h0/h1 were 0.875, nearly the full face height and far outside
+     * every other state's range (max elsewhere is ~0.5, e.g. Notify's 0.498 "wide round eyes")
+     * -- that's what rendered live as two oversized pill shapes that didn't fit the round face.
+     * 0.30/0.52 reads as wide-open and attentive without dwarfing the silhouette.
      */
     public object Listening : BotState(
         name = "listening",
@@ -259,8 +263,8 @@ public sealed class BotState(
             basePose(
                 gaze = HeadGaze(yaw = 0f, pitch = 10f, roll = -8f),
                 split = 18.43f,
-                w0 = 0.356f, h0 = 0.875f,
-                w1 = 0.356f, h1 = 0.875f
+                w0 = 0.30f, h0 = 0.52f,
+                w1 = 0.30f, h1 = 0.52f
             )
         }
     )
