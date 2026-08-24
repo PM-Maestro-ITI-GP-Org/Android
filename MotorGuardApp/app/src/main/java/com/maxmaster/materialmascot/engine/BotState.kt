@@ -463,7 +463,14 @@ public sealed class BotState(
         name = "sad",
         morphSeconds = 0.35f,
         posePeriodMs = 3200L,
-        blinkIn = false,
+        // Was false. "In the video every shape change is masked by a blink" is this library's
+        // own stated reasoning for blinkIn (see BotEngine.kt) -- Listening and Smile both opt
+        // in for exactly that reason, and Sad is the one live state in this app that entered
+        // unmasked. Caught live: arriving at Sad from Listening (no speech heard, "I didn't
+        // catch that.") without a masking blink showed one eye still mid-interpolation while
+        // the other had settled, an asymmetric frame that only existed because nothing hid the
+        // 0.35s morph.
+        blinkIn = true,
         poseFn = { t ->
             val sigh = sin(t * (TAU / 3.2f)) * 0.006f
             basePose(
