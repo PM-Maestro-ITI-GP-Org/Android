@@ -322,7 +322,11 @@ private fun HealthPill(percent: Int?) {
         Spacer(Modifier.width(10.dp))
         Box(
             modifier = Modifier
-                .width(72.dp)
+                // 72dp overshot "Vehicle Health" below by a few px: a plain-color Box fills its
+                // bounds edge to edge, but the text glyph sits inset from its own box by the
+                // font's right-side bearing, so matching box-to-box (which Column(End) already
+                // does exactly) still reads as visually unaligned. Narrower closes that gap.
+                .width(64.dp)
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp))
                 .background(colors.onBaseDim.copy(alpha = 0.18f)),
