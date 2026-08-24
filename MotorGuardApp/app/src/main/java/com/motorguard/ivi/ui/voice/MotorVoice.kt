@@ -37,8 +37,114 @@ object MotorVoice {
     /**
      * @return the line to speak, or null when this is not a motor question.
      */
-    fun handle(utterance: String): String? =
-        if (claims(utterance)) answerNow(utterance) else null
+    fun handle(utterance: String): String? {
+        clusterQueryOf(utterance)?.let { return explainCluster(it, VehicleData.source.motor.value) }
+        return if (claims(utterance)) answerNow(utterance) else null
+    }
+
+    // --- the cluster's codes -------------------------------------------------
+
+    /**
+     * What the driver is reading off the instrument cluster.
+     *
+     * The cluster is a separate Qt application on its own display (the `qt-cluster` repo), and it
+     * prints a code where this app prints a sentence. Both are derived from the same thing — the
+     * AI board's fault class, which arrives here as [MotorFaultType] and there as
+     * `Vehicle.aiFaultClass` — so the assistant can already answer "what is E-31" without anyone
+     * writing a fault catalogue for it. What it could not do was recognise the question.
+     */
+    internal sealed interface ClusterQuery {
+        /** A code the driver read out. */
+        data class Explicit(val code: String) : ClusterQuery
+
+        /** "What's that code on the cluster" — the code is on the screen, not in the utterance. */
+        data object Current : ClusterQuery
+    }
+
+    /**
+     * The code the cluster shows for a fault type, mirroring `Main.qml`'s `errorFault`.
+     *
+     * The families are the entire meaning of the number: 2x is electrical, 3x is mechanical, and
+     * E-01 is a fault raised but placed in neither. [MotorFaultType.SENSOR] lands on E-01 for the
+     * same reason it does there — its class string matches neither family — which is also the
+     * answer this assistant already gives in words.
+     *
+     * Null for [MotorFaultType.NORMAL]: no fault, no code, and the cluster draws nothing.
+     */
+    internal fun clusterCode(type: MotorFaultType): String? = when (type) {
+        MotorFaultType.NORMAL -> null
+        MotorFaultType.ELECTRICAL -> "E-21"
+        MotorFaultType.MECHANICAL -> "E-31"
+        MotorFaultType.SENSOR -> "E-01"
+    }
+
+    internal fun clusterQueryOf(utterance: String): ClusterQuery? {
+        val text = normalise(utterance)
+        if (text.isEmpty()) return null
+        // A destination or a contact is never a fault code, and "e" is a short enough token to be
+        // worth protecting from the handlers that run after this one.
+        if (NOT_A_CODE.any { text.contains(it) }) return null
+
+        CODE.find(text)?.let { return ClusterQuery.Explicit("E-" + it.groupValues[1]) }
+        if (CURRENT_CODE.any { text.contains(it) }) return ClusterQuery.Current
+        return null
+    }
+
+    /** "e 31" once punctuation is stripped, or "e31" said as one word. */
+    private val CODE = Regex("""\be-?\s?(\d{2})\b""")
+
+    private val CURRENT_CODE = listOf(
+        "code on the cluster", "code on the dash", "code on the display", "code on the screen",
+        "what is that code", "whats that code", "what s that code", "error code", "fault code",
+        "code is showing", "code showing",
+    )
+
+    private val NOT_A_CODE = listOf("take me", "navigate", "drive me", "call ", "dial ")
+
+    /**
+     * Explain a code, and say whether it still matches.
+     *
+     * The cross-check is the part worth having. The cluster and this app read the same
+     * classification over two different links, so a code on the driver's dash and a fault on this
+     * side *should* agree — and the one moment it is worth knowing they do not is exactly when
+     * someone is asking. Where this side's signal is stale or offline it says so rather than
+     * asserting a match it cannot stand behind.
+     */
+    internal fun explainCluster(query: ClusterQuery, state: SignalState<MotorTelemetry>): String {
+        val live = (state as? SignalState.Live)?.data
+        val code = when (query) {
+            is ClusterQuery.Explicit -> query.code
+            ClusterQuery.Current -> {
+                live ?: return "I can't reach the motor diagnostics unit, so I can't tell you " +
+                    "what the cluster is showing."
+                clusterCode(live.faultType)
+                    ?: return "There's no motor fault reported, so the cluster shouldn't be showing a code."
+            }
+        }
+
+        val meaning = when (code) {
+            "E-21" -> "E-21 is an electrical fault on the motor — the twenty-series codes are the " +
+                "electrical family."
+            "E-31" -> "E-31 is a mechanical fault on the motor — the thirty-series codes are the " +
+                "mechanical family: a bearing, the rotor, a shaft, imbalance or vibration."
+            "E-01" -> "E-01 means the cluster has a fault raised but couldn't place it in either " +
+                "family. It's a real fault, just not a named one."
+            // Not invented. Three codes exist; anything else is misheard or newer than this build,
+            // and guessing at the meaning of a fault code is the one answer worth refusing.
+            else -> return "$code isn't a code I know. The cluster shows E-21 for electrical, " +
+                "E-31 for mechanical, and E-01 for a fault it can't place."
+        }
+
+        if (query is ClusterQuery.Current) return meaning
+        val liveCode = live?.let { clusterCode(it.faultType) }
+        val check = when {
+            live == null -> " I can't check it against the motor right now."
+            liveCode == null -> " The motor isn't reporting a fault at the moment, so that code should have cleared."
+            liveCode == code -> " That matches what the motor is reporting now."
+            else -> " The motor is reporting $liveCode now, so the cluster should have moved on."
+        }
+        return meaning + check
+    }
 
     /**
      * The answer regardless of whether [claims] would have taken the utterance — for the

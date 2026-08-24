@@ -7,6 +7,7 @@ import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SignalState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -76,6 +77,104 @@ class MotorVoiceTest {
     fun `warning light questions belong to the core`() {
         assertFalse(MotorVoice.claims("explain the check engine light"))
         assertFalse(MotorVoice.claims("what is that engine warning light"))
+    }
+
+    // --- the cluster's codes -------------------------------------------------
+
+    private fun cluster(u: String) = MotorVoice.clusterQueryOf(u)
+
+    @Test
+    fun `a spoken code is recognised however it is said`() {
+        listOf("what does E-31 mean", "what is e31", "whats e 31", "explain E-21")
+            .forEach { assertTrue(it, cluster(it) is MotorVoice.ClusterQuery.Explicit) }
+    }
+
+    @Test
+    fun `asking about the code on the dash is recognised without one being said`() {
+        listOf("what is that code on the cluster", "what's the error code", "what fault code is showing")
+            .forEach { assertEquals(it, MotorVoice.ClusterQuery.Current, cluster(it)) }
+    }
+
+    /** "e" plus digits is a short pattern, and the handlers after this one own those phrases. */
+    @Test
+    fun `destinations and contacts are never read as codes`() {
+        listOf("take me to route 31", "navigate to gate 21", "call 0100 224 8871", "")
+            .forEach { assertNull(it, cluster(it)) }
+    }
+
+    /** The mapping the cluster's Main.qml does: 2x electrical, 3x mechanical, E-01 unplaced. */
+    @Test
+    fun `codes mirror the cluster's own families`() {
+        assertEquals("E-21", MotorVoice.clusterCode(MotorFaultType.ELECTRICAL))
+        assertEquals("E-31", MotorVoice.clusterCode(MotorFaultType.MECHANICAL))
+        assertEquals("E-01", MotorVoice.clusterCode(MotorFaultType.SENSOR))
+        assertNull(MotorVoice.clusterCode(MotorFaultType.NORMAL))
+    }
+
+    @Test
+    fun `each code is explained by its family`() {
+        val e21 = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Explicit("E-21"), live(motor()))
+        assertTrue(e21, e21.contains("electrical"))
+        val e31 = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Explicit("E-31"), live(motor()))
+        assertTrue(e31, e31.contains("mechanical"))
+        val e01 = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Explicit("E-01"), live(motor()))
+        assertTrue(e01, e01.contains("couldn't place"))
+    }
+
+    /**
+     * Three codes exist. Guessing at the meaning of a fourth is the one answer worth refusing
+     * outright — a confident sentence about an unknown fault code is worse than no sentence.
+     */
+    @Test
+    fun `an unknown code is refused rather than invented`() {
+        val reply = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Explicit("E-77"), live(motor()))
+        assertTrue(reply, reply.contains("isn't a code I know"))
+        assertTrue(reply, reply.contains("E-21") && reply.contains("E-31") && reply.contains("E-01"))
+    }
+
+    /**
+     * The cross-check is the point. The cluster and this app read one classification over two
+     * links, so the moment worth catching is when they disagree.
+     */
+    @Test
+    fun `an explained code is checked against the live motor`() {
+        val agrees = MotorVoice.explainCluster(
+            MotorVoice.ClusterQuery.Explicit("E-31"),
+            live(motor(MotorFaultType.MECHANICAL, Severity.CAUTION)),
+        )
+        assertTrue(agrees, agrees.contains("matches what the motor is reporting"))
+
+        val disagrees = MotorVoice.explainCluster(
+            MotorVoice.ClusterQuery.Explicit("E-31"),
+            live(motor(MotorFaultType.ELECTRICAL, Severity.CAUTION)),
+        )
+        assertTrue(disagrees, disagrees.contains("reporting E-21 now"))
+
+        val cleared = MotorVoice.explainCluster(
+            MotorVoice.ClusterQuery.Explicit("E-31"),
+            live(motor(MotorFaultType.NORMAL, Severity.OK)),
+        )
+        assertTrue(cleared, cleared.contains("should have cleared"))
+    }
+
+    /** No live signal means no claim about whether the code still stands. */
+    @Test
+    fun `no cross-check is asserted when the signal is not live`() {
+        val reply = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Explicit("E-31"), SignalState.Offline)
+        assertTrue(reply, reply.contains("mechanical"))
+        assertTrue(reply, reply.contains("can't check it"))
+    }
+
+    @Test
+    fun `asking what the cluster shows reads it off the live fault`() {
+        val reply = MotorVoice.explainCluster(
+            MotorVoice.ClusterQuery.Current,
+            live(motor(MotorFaultType.MECHANICAL, Severity.CRITICAL)),
+        )
+        assertTrue(reply, reply.startsWith("E-31"))
+
+        val none = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Current, live(motor()))
+        assertTrue(none, none.contains("shouldn't be showing a code"))
     }
 
     // --- the answer ---------------------------------------------------------

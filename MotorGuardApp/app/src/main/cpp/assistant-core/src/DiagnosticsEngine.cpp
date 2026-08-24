@@ -157,59 +157,22 @@ Assessment DiagnosticsEngine::assess(const FaultEvent& event) const {
 // only raise severity, so no phrasing layer can ever downgrade a stop-now.
 // ---------------------------------------------------------------------------
 void installDefaultRules(DiagnosticsEngine& engine) {
-    using Ret = std::optional<std::pair<Severity, std::string>>;
-
-    // Coolant over-temp: escalate to StopNow past a hard limit.
-    engine.addRule({
-        "coolant over-temperature limit", "P0217",
-        [](const FaultEvent& e, const Assessment&) -> Ret {
-            if (e.frame("coolant_temp_c", 0.0) >= 118.0) {
-                return std::make_pair(
-                    Severity::StopNow,
-                    "The engine is critically hot. Pull over safely and switch it "
-                    "off now to avoid permanent damage.");
-            }
-            return std::nullopt;
-        }});
-
-    // Predicted coolant trend becomes more urgent if it is climbing fast.
-    engine.addRule({
-        "coolant trend acceleration", "PRED_COOLANT_TREND",
-        [](const FaultEvent& e, const Assessment&) -> Ret {
-            if (e.frame("trend_c_per_100km", 0.0) >= 3.0) {
-                return std::make_pair(
-                    Severity::Soon,
-                    "The engine temperature is climbing faster than usual. Have the "
-                    "cooling system checked in the next day or two.");
-            }
-            return std::nullopt;
-        }});
-
-    // Low system voltage: if it is very low, the car may stall soon.
-    engine.addRule({
-        "critical system voltage", "P0562",
-        [](const FaultEvent& e, const Assessment&) -> Ret {
-            if (e.hasFrame("voltage") && e.frame("voltage") <= 11.5) {
-                return std::make_pair(
-                    Severity::Urgent,
-                    "The battery is draining and the car could stall. Head to the "
-                    "nearest service point now and avoid switching the engine off.");
-            }
-            return std::nullopt;
-        }});
-
-    // Misfire with a flashing lamp (catalyst-damaging) is always urgent+.
-    engine.addRule({
-        "active misfire severity", "P0300",
-        [](const FaultEvent& e, const Assessment&) -> Ret {
-            if (e.frame("misfire_flashing", 0.0) >= 1.0) {
-                return std::make_pair(
-                    Severity::Urgent,
-                    "The misfire is severe enough to damage the exhaust system. "
-                    "Reduce speed and get it looked at today.");
-            }
-            return std::nullopt;
-        }});
+    // Empty, and the mechanism is kept rather than deleted.
+    //
+    // The four rules that lived here escalated coolant over-temperature, a
+    // coolant trend, low system voltage and a flashing-lamp misfire. Every one
+    // keyed on a code this vehicle cannot produce, and they went when those
+    // codes went: a 48 V BLDC bench rig has no coolant, no cylinders and no
+    // exhaust to protect. A rule keyed on a code that never arrives is not
+    // harmless clutter, it is a safety mechanism that looks installed.
+    //
+    // Nothing replaces them yet, deliberately. A rule can only earn its place
+    // from a freeze-frame value that actually arrives, and the E-code path
+    // carries none today -- the live severity comes from the diagnostics unit
+    // over SOME/IP and is passed through untouched (docs/09 2.3), which is a
+    // different channel from this one. When something does push an E code with
+    // measurements attached, this is where its escalation goes.
+    (void) engine;
 }
 
 }  // namespace assistant
