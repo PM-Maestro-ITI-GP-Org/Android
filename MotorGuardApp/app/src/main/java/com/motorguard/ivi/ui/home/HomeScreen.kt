@@ -22,12 +22,11 @@ import com.motorguard.ivi.ui.media.components.NowPlayingCard
 import com.motorguard.ivi.ui.theme.MotorGuard
 
 /**
- * Home, laid out as the three glass cards from the design: Map · Vehicle · Weather + Media.
+ * Home, two columns: Weather + Map on the left, Vehicle + Media on the right.
  *
  * The map and now-playing cards are live — each reads the same session its own tab drives, so
- * what Home shows is the real trip and the real player rather than a copy. The vehicle card is
- * vehicle card reads the same telemetry the Diagnostics tab does, so Home cannot disagree
- * with it.
+ * what Home shows is the real trip and the real player rather than a copy. The vehicle card
+ * reads the same telemetry the Diagnostics tab does, so Home cannot disagree with it.
  */
 @Composable
 fun HomeScreen(
@@ -41,12 +40,22 @@ fun HomeScreen(
             .padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 22.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        NavCard(
-            onOpenNav = onOpenNav,
+        Column(
             modifier = Modifier
                 .weight(1.35f)
                 .fillMaxHeight(),
-        )
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            // Above the map, not stacked under the music card in the other column -- a
+            // glance at conditions belongs next to the trip, not buried under the player.
+            WeatherCard(modifier = Modifier.fillMaxWidth())
+            NavCard(
+                onOpenNav = onOpenNav,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            )
+        }
 
         Column(
             modifier = Modifier
@@ -54,17 +63,19 @@ fun HomeScreen(
                 .fillMaxHeight(),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            // Weight bumped from an even split now that Weather no longer shares this column
+            // with it -- the diagnostics card was asked to be bigger, and this is the room
+            // freed up to give it.
             VehicleCard(
                 onOpenDiagnostics = onOpenDiagnostics,
                 modifier = Modifier
-                    .weight(1f)
+                    .weight(1.6f)
                     .fillMaxWidth(),
             )
             NowPlayingCard(
                 onOpenMedia = onOpenMedia,
                 modifier = Modifier.fillMaxWidth(),
             )
-            WeatherCard(modifier = Modifier.fillMaxWidth())
 
             // Notifications have nowhere else to go: this app is the launcher and hides the
             // system bars, so CarSystemUI's heads-up and Notification Center are both covered.

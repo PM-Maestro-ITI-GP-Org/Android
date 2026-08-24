@@ -209,14 +209,17 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
-
-                // Doors last, and only as a warning line. Everything shut is the normal case
-                // and does not need a row of green ticks restating it.
-                DoorLine(
-                    anyOpen = doorsData?.anyOpen,
-                    anyUnlocked = doorsData?.anyUnlocked,
-                )
+                // Only a warning line. "Closed and locked" was the normal case restating
+                // itself on every glance at the card, at the cost of the room the car render
+                // now uses instead -- a door left open or unlocked still shows, everything
+                // else stays silent.
+                if (doorsData?.anyOpen == true || doorsData?.anyUnlocked == true) {
+                    Spacer(Modifier.height(12.dp))
+                    DoorLine(
+                        anyOpen = doorsData.anyOpen,
+                        anyUnlocked = doorsData.anyUnlocked,
+                    )
+                }
             }
         }
     }
