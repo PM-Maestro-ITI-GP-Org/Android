@@ -596,9 +596,9 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     /**
      * "Play music" with nothing else to go on: resume whatever is already loaded, or fall back
-     * Local library -> USB -> Bluetooth -> Radio (radio only if there is a network to stream
-     * from) -- the order a driver would try them in by hand, cheapest and most-likely-to-work
-     * first.
+     * Library -> Bluetooth -> Radio -> YouTube Music (radio and YouTube Music only if there is a
+     * network to stream from) -- the order a driver would try them in by hand, cheapest and
+     * most-likely-to-work first.
      *
      * Fetches off the main thread (a MediaStore query or a network call has no business blocking
      * it), but MediaConnection's transport calls go through a Media3 MediaController, which
@@ -624,38 +624,33 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                     return@runCatching
                 }
 
-                val usb = kotlinx.coroutines.runBlocking { manager.tracks(MediaSourceId.USB) }
-                if (usb.isNotEmpty()) {
-                    handler.post {
-                        connection.setSource(MediaSourceId.USB)
-                        connection.play(usb, 0)
-                    }
-                    return@runCatching
-                }
-
                 if (com.motorguard.ivi.data.Conn.bt.connectedName != null) {
                     handler.post {
                         connection.setSource(MediaSourceId.BLUETOOTH)
-                        connection.playPause()
+                        com.motorguard.ivi.media.BluetoothSessionMirror.get(context).play()
                     }
                     return@runCatching
                 }
 
                 if (!hasInternet(context)) {
-                    Log.i(TAG, "playDefaultMedia: nothing available (no local/usb/phone/network)")
+                    Log.i(TAG, "playDefaultMedia: nothing available (no local/phone/network)")
                     return@runCatching
                 }
-                val source = manager.source(MediaSourceId.RADIO) as? RadioMediaSource
-                    ?: return@runCatching
-                val stations = kotlinx.coroutines.runBlocking { source.tracks() }
+                val radio = manager.source(MediaSourceId.RADIO) as? RadioMediaSource
+                val stations = radio?.let { kotlinx.coroutines.runBlocking { it.tracks() } } ?: emptyList()
                 if (stations.isNotEmpty()) {
                     handler.post {
                         connection.setSource(MediaSourceId.RADIO)
                         connection.play(stations, 0)
                     }
-                } else {
-                    Log.w(TAG, "playDefaultMedia: no stations returned")
+                    return@runCatching
                 }
+                Log.w(TAG, "playDefaultMedia: no stations returned, falling back to YouTube Music")
+
+                // The page is its own library and queue (YouTubeMusicMediaSource.tracks() is
+                // always empty) -- switching source is all there is to do, same as Bluetooth's
+                // "Switched to X" branch in MediaVoice.playFrom().
+                handler.post { connection.setSource(MediaSourceId.YOUTUBE_MUSIC) }
             }.onFailure { Log.e(TAG, "playDefaultMedia failed", it) }
         }, "voice-play-music").start()
     }

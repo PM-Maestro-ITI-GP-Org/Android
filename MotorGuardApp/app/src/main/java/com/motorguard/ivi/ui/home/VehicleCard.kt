@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DoorFront
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -78,7 +77,7 @@ import kotlin.math.roundToInt
 fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MotorGuard.colors
 
-    val battery by VehicleData.source.battery.collectAsStateWithLifecycle()
+    val motor by VehicleData.source.motor.collectAsStateWithLifecycle()
     val metrics by VehicleData.source.metrics.collectAsStateWithLifecycle()
     val doors by VehicleData.source.doors.collectAsStateWithLifecycle()
 
@@ -112,7 +111,7 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
     }
     val focused = faults.getOrNull(faultIndex)
 
-    val batteryData = battery.latestValueOrNull
+    val motorData = motor.latestValueOrNull
     val metricsData = metrics.latestValueOrNull
     val doorsData = doors.latestValueOrNull
 
@@ -135,20 +134,16 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    if (batteryData?.charging == true) {
-                        Spacer(Modifier.width(8.dp))
-                        Icon(
-                            Icons.Filled.Bolt,
-                            contentDescription = "Charging",
-                            tint = colors.accent,
-                            modifier = Modifier.size(15.dp),
-                        )
-                    }
                     Spacer(Modifier.weight(1f))
-                    // Charge moved up here from a 46sp figure and a full-width bar below the
+                    // Health moved up here from a 46sp figure and a full-width bar below the
                     // car. It is one number read at a glance, and giving it a sixth of the card
                     // was spending the card's height on the thing that needed it least.
-                    ChargePill(percent = batteryData?.chargePercent)
+                    //
+                    // The motor's remaining-useful-life percentage, not battery charge: charge
+                    // says how full the pack is right now, health says how much of the motor's
+                    // service life is left -- the number worth glancing at on the way out the
+                    // door, not the one that changes every drive.
+                    HealthPill(percent = motorData?.remainingLife?.percent)
                 }
 
                 Spacer(Modifier.height(10.dp))
@@ -300,41 +295,52 @@ private fun FaultPulse(renderer: CarRenderer, hotspot: Hotspot, base: Color) {
     SideEffect { renderer.setComponentColor(hotspot, tint) }
 }
 
-/** Charge as a number and a short bar, sized to sit in the card's header. */
+/**
+ * Motor health (remaining useful life, as a percentage) as a number and a short bar, sized to
+ * sit in the card's header. A dash when the diagnostics unit hasn't given an estimate, same as
+ * every other SignalState-backed figure on this card.
+ */
 @Composable
-private fun ChargePill(percent: Float?) {
+private fun HealthPill(percent: Float?) {
     val colors = MotorGuard.colors
     val fraction = ((percent ?: 0f) / 100f).coerceIn(0f, 1f)
     val low = percent != null && fraction <= 0.15f
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(horizontalAlignment = Alignment.End) {
         Text(
-            text = percent?.roundToInt()?.toString() ?: "—",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = "%",
-            fontSize = 12.sp,
+            text = "Health",
+            fontSize = 11.sp,
             color = colors.onBaseDim,
-            modifier = Modifier.padding(start = 1.dp, bottom = 2.dp),
         )
-        Spacer(Modifier.width(8.dp))
-        Box(
-            modifier = Modifier
-                .width(56.dp)
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(colors.onBaseDim.copy(alpha = 0.18f)),
-        ) {
-            if (percent != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(fraction)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(if (low) MaterialTheme.colorScheme.error else colors.accent),
-                )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = percent?.roundToInt()?.toString() ?: "—",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "%",
+                fontSize = 12.sp,
+                color = colors.onBaseDim,
+                modifier = Modifier.padding(start = 1.dp, bottom = 2.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .width(56.dp)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(colors.onBaseDim.copy(alpha = 0.18f)),
+            ) {
+                if (percent != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction)
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(if (low) MaterialTheme.colorScheme.error else colors.accent),
+                    )
+                }
             }
         }
     }
