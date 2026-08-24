@@ -246,11 +246,21 @@ class MediaConnection private constructor(context: Context) {
 
         // A web page playing is just as audible as anything else, and until this was folded in
         // the now-playing card sat blank while Spotify played through the WebView.
-        com.motorguard.ivi.ui.web.WebPlayback.state.value?.let { web ->
-            _state.value = web
-            positionTicker?.cancel()
-            return
-        }
+        //
+        // Gated on the snapshot's own source matching the *active* one, not just existing: the
+        // page reports on its own schedule and can auto-resume its last session in the
+        // background (confirmed live for YouTube Music) well after setSource() cleared it for
+        // switching away — a clear at the moment of switching cannot win a race against a report
+        // that arrives afterwards. Reading it unconditionally meant Radio (or any other source)
+        // could start, play correctly at the session level, and still lose its own now-playing
+        // card to a background YouTube Music resume it never asked for.
+        com.motorguard.ivi.ui.web.WebPlayback.state.value
+            ?.takeIf { it.source == sourceId }
+            ?.let { web ->
+                _state.value = web
+                positionTicker?.cancel()
+                return
+            }
 
         // Our player holds nothing while the phone is the source, so publishing from it here
         // would blank the card between the mirror's own emissions. [isBluetooth] also covers the
