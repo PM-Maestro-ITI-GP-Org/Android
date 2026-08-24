@@ -3,6 +3,7 @@ package com.motorguard.ivi.ui.voice
 import android.content.Context
 import android.util.Log
 import com.motorguard.ivi.data.nav.NavFormat
+import com.motorguard.ivi.data.nav.PlaceCategory
 import com.motorguard.ivi.ui.nav.NavPhase
 import com.motorguard.ivi.ui.nav.NavSession
 import com.motorguard.ivi.ui.nav.SpokenNavResult
@@ -38,6 +39,75 @@ object NavVoice {
             return "Route cancelled."
         }
         return compose(ask, state)
+    }
+
+    /**
+     * "Where's the nearest ..." — a query for the geocoder and, where the data supports one, a
+     * category to filter on.
+     */
+    internal data class Nearest(val query: String, val category: PlaceCategory?, val noun: String)
+
+    /**
+     * Which kind of nearby thing was asked for, or null.
+     *
+     * Checked ahead of [destinationOf], because "take me to the nearest petrol station" is both
+     * a destination phrase and a nearest phrase, and only one of them sorts by distance.
+     */
+    internal fun nearestOf(utterance: String): Nearest? {
+        val text = normalise(utterance)
+        if (text.isEmpty()) return null
+        if (!NEARBY.any { text.contains(it) }) return null
+
+        // Fuel and charging are separated deliberately. This vehicle is electric, so "charger"
+        // must not be answered with a petrol station, and a driver saying "petrol" on a hire car
+        // must not be sent to a charge point.
+        if (CHARGER.any { text.contains(it) }) {
+            return Nearest("charging station", PlaceCategory.CHARGER, "charge point")
+        }
+        if (FUEL.any { text.contains(it) }) {
+            return Nearest("petrol station", PlaceCategory.FUEL, "petrol station")
+        }
+        if (GARAGE.any { text.contains(it) }) {
+            // No category filter: OSM files car repair under shop=car_repair, which Photon maps
+            // into SHOP along with every other shop. Filtering on that would be worse than not
+            // filtering, so the name is spoken back and the driver judges it.
+            return Nearest("car repair", null, "car centre")
+        }
+        return null
+    }
+
+    /** Something has to mark it as a proximity question; "a petrol station" alone does not. */
+    private val NEARBY = listOf("nearest", "closest", "near me", "nearby", "around here", "where is a", "wheres a", "where can i")
+
+    private val CHARGER = listOf("charger", "charging", "charge point", "ev point")
+    private val FUEL = listOf("petrol", "gas station", "gas ", "fuel", "filling station", "benzine")
+    private val GARAGE = listOf(
+        "car centre", "car center", "service centre", "service center", "garage", "mechanic",
+        "car repair", "repair shop", "workshop", "service station",
+    )
+
+    /**
+     * Find the closest one and drive there — see [NavSession.navigateToNearest] for why this is
+     * not just [navigateTo] with a noun.
+     *
+     * [SpokenNavResult.NoFix] is answered rather than smoothed over. "Nearest" is a claim about
+     * where the car is, and without a fix the only accurate answer is that there isn't one.
+     */
+    internal suspend fun navigateToNearest(context: Context, ask: Nearest): String {
+        NavSession.ensureStarted(context.applicationContext)
+        return when (val result = NavSession.navigateToNearest(ask.query, ask.category)) {
+            is SpokenNavResult.Started ->
+                "Nearest ${ask.noun} is ${result.destination.name}, " +
+                    "${NavFormat.distance(result.route.distanceMeters)} away. " +
+                    "About ${NavFormat.duration(result.route.durationSeconds)} — heading there now."
+            is SpokenNavResult.NoResults -> "I couldn't find a ${ask.noun} near here."
+            is SpokenNavResult.NoRoute ->
+                "The closest ${ask.noun} I found is ${result.destination.name}, but I can't build a route to it."
+            is SpokenNavResult.Failed -> result.message
+            SpokenNavResult.NoFix ->
+                "I don't have a position fix yet, so I can't tell what's nearest."
+            SpokenNavResult.NotReady -> "Navigation isn't ready yet."
+        }
     }
 
     /**
@@ -100,6 +170,9 @@ object NavVoice {
             is SpokenNavResult.NoRoute -> "I found ${result.destination.name}, but I can't build a route there."
             is SpokenNavResult.Failed -> result.message
             SpokenNavResult.NotReady -> "Navigation isn't ready yet."
+            // Unreachable: navigateTo falls back to NavConfig.defaultOrigin rather than
+            // demanding a fix, because a named place is where it is regardless of the car.
+            SpokenNavResult.NoFix -> "I don't have a position fix yet."
         }
     }
 

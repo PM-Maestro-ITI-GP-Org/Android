@@ -391,6 +391,13 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
             answerAsync { MediaVoice.playFrom(context, source) }
             return
         }
+        // Before destinationOf: "take me to the nearest petrol station" satisfies both, and only
+        // this one sorts by distance rather than handing the geocoder's top relevance hit to the
+        // router.
+        NavVoice.nearestOf(utterance)?.let { ask ->
+            answerAsync { NavVoice.navigateToNearest(context, ask) }
+            return
+        }
         NavVoice.destinationOf(utterance)?.let { place ->
             answerAsync { NavVoice.navigateTo(context, place) }
             return

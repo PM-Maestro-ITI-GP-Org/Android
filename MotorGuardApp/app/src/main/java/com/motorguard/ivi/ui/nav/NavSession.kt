@@ -5,7 +5,9 @@ import com.motorguard.ivi.data.nav.NavConfig
 import com.motorguard.ivi.data.nav.NavProviders
 import com.motorguard.ivi.data.nav.NavRepository
 import com.motorguard.ivi.data.nav.Place
+import com.motorguard.ivi.data.nav.PlaceCategory
 import com.motorguard.ivi.data.nav.Route
+import com.motorguard.ivi.data.nav.RouteMath
 import com.motorguard.ivi.data.nav.VehiclePosition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -52,6 +54,16 @@ sealed interface SpokenNavResult {
     data class NoRoute(val destination: Place) : SpokenNavResult
     data class Failed(val message: String) : SpokenNavResult
     data object NotReady : SpokenNavResult
+
+    /**
+     * No position fix, so "nearest" has no meaning.
+     *
+     * Distinct from every other failure because it is the one where an answer *could* be
+     * produced and must not be: [NavConfig.defaultOrigin] is a real coordinate and searching
+     * around it would return real, confidently-named places near a building in Smart Village
+     * that the car may be nowhere near. Wrong and plausible is the worst pair.
+     */
+    data object NoFix : SpokenNavResult
 }
 
 object NavSession {
@@ -397,6 +409,72 @@ object NavSession {
         startGuidance()
         return SpokenNavResult.Started(destination, routes.first())
     }
+
+    /**
+     * Find the closest thing matching [query] and drive there.
+     *
+     * Three things separate this from [navigateTo], and each is a way the naive version is
+     * wrong:
+     *
+     * **It insists on a real fix.** [navigateTo] falls back to [NavConfig.defaultOrigin] when
+     * the car's position is unknown, which is fine for "take me to Cairo Airport" — the airport
+     * is where it is regardless. "Nearest" is a claim *about where the car is*, so answering it
+     * from a default coordinate would name a genuine petrol station near Smart Village and be
+     * confidently, invisibly wrong. [SpokenNavResult.NoFix] instead.
+     *
+     * **It sorts by distance.** Photon biases toward `near` but orders by relevance, not
+     * proximity — it is a geocoder, not a POI ranker. Taking `first()` for a "nearest" question
+     * is the bug this method exists to avoid, and it would be invisible: every result really is
+     * a petrol station, just not the closest one.
+     *
+     * **It filters by category where the data supports it.** `osm_value=fuel` and
+     * `charging_station` are parsed into [PlaceCategory] already, so a fuel query can drop the
+     * street named "Petrol" that a text search happily returns. Where no category fits — a
+     * garage is `shop=car_repair`, which lands in SHOP with every other shop — the filter is
+     * skipped rather than faked, and the driver hears the name before being taken there.
+     *
+     * The straight-line sort is honest but not perfect: the closest as the crow flies can be
+     * further by road, across a river or the wrong side of a motorway. Candidates are therefore
+     * routed in order and the first that *can* be routed wins, so an unreachable nearest falls
+     * through to the next rather than failing the request.
+     */
+    suspend fun navigateToNearest(query: String, category: PlaceCategory?): SpokenNavResult {
+        if (!started) return SpokenNavResult.NotReady
+        val here = _state.value.position?.point ?: return SpokenNavResult.NoFix
+
+        searchJob?.cancel()
+        routeJob?.cancel()
+
+        val found = runCatching { repository.search(query, here) }.getOrElse {
+            return SpokenNavResult.Failed(it.userMessage("Search unavailable"))
+        }
+        // Category first, but never to the point of returning nothing: a filter that empties the
+        // list has told us less than the unfiltered list did.
+        val matching = category?.let { c -> found.filter { it.category == c } }?.takeIf { it.isNotEmpty() }
+            ?: found
+        val byDistance = matching.sortedBy { RouteMath.distanceMeters(here, it.point) }
+        if (byDistance.isEmpty()) return SpokenNavResult.NoResults(query)
+
+        _state.update { it.copy(routing = true, error = null) }
+        for (candidate in byDistance.take(MAX_NEAREST_CANDIDATES)) {
+            val routes = runCatching { repository.routes(here, candidate) }.getOrNull().orEmpty()
+            if (routes.isEmpty()) continue
+            _state.update {
+                it.copy(
+                    phase = NavPhase.Preview(origin = null, destination = candidate, routes = routes),
+                    routing = false,
+                    error = null,
+                )
+            }
+            startGuidance()
+            return SpokenNavResult.Started(candidate, routes.first())
+        }
+        _state.update { it.copy(routing = false) }
+        return SpokenNavResult.NoRoute(byDistance.first())
+    }
+
+    /** Enough to survive one unreachable result without turning a question into four requests. */
+    private const val MAX_NEAREST_CANDIDATES = 3
 
     // ---------------------------------------------------------------- guidance
 
