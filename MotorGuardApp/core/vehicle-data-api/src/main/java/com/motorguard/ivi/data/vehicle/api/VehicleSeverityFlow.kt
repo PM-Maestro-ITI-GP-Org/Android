@@ -39,21 +39,32 @@ class VehicleSeverityFlow(
     }
 
     /**
-     * Health score 0..100 for the ring: the motor's remaining useful life as a fraction of a
-     * 4-month full-life assumption. Null (the ring reads "waiting") until the diagnostics unit
-     * has published a remaining-life estimate at all — no other hotspot has one, so there is
-     * nothing else to derive a score from.
+     * Health score 0..100 for the ring, driven by [Severity] (docs/09 §2.3: "Severity drives the
+     * hotspot dot colour, the health-ring score, the alert list and the card simultaneously").
+     * Null (the ring reads "waiting") until the diagnostics unit has published a severity at all.
+     *
+     * Was `remainingLife.hours / a 4-month assumption` — docs/09 §2 is explicit that `percent`
+     * "is never derived from hours against an assumed design life: the bar it draws would be a
+     * claim nobody made", and the ring is exactly that kind of claim. It also silently broke on a
+     * unit's own hours estimate arriving small (e.g. a months figure never converted to hours
+     * upstream): a live case showed `remainingLife.percent` correctly at 81 while this formula's
+     * `hours` was 3.25, giving `(3.25 / 2880) * 100 -> 0` -- the ring read zero while the unit was
+     * reporting 81% healthy.
      */
     val healthScore: Flow<Int?> = motor.map { state ->
-        val life = state.latestValueOrNull?.remainingLife
-        life?.let { ((it.hours / FULL_LIFE_HOURS) * 100f).toInt().coerceIn(0, 100) }
+        state.latestValueOrNull?.faultSeverity?.let(::scoreFor)
     }
 
     fun stateIn(scope: CoroutineScope): StateFlow<Map<Hotspot, Severity?>> =
         severities.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private companion object {
-        /** A 4-month full life, in hours, at a flat 30-day month. */
-        const val FULL_LIFE_HOURS = 4 * 30 * 24f
+        /** Round numbers, not a measurement: there is no unit-reported "how healthy" figure at
+         *  the OK/CAUTION/CRITICAL granularity, only which of the three it is. */
+        fun scoreFor(severity: Severity): Int = when (severity) {
+            Severity.OK -> 100
+            Severity.CAUTION -> 60
+            Severity.CRITICAL -> 20
+        }
     }
 }
