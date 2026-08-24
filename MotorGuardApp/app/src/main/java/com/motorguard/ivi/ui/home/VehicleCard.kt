@@ -128,10 +128,13 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                 .clickable(onClick = onOpenDiagnostics),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Health above the title rather than squeezed beside it in the same row --
-                // its own line is what "only printed above the vehicle" asked for, and it
-                // reads as the header's own figure rather than a corner decoration.
-                HealthPill(percent = healthScore)
+                // Health above the title rather than squeezed beside it in the same row, and
+                // pinned to the right edge of that line rather than left -- its own line is
+                // what "only printed above the vehicle" asked for, and the right edge is where
+                // the number is expected to sit at a glance.
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    HealthPill(percent = healthScore)
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "Vehicle Health",
