@@ -59,7 +59,6 @@ import com.motorguard.ivi.ui.diagnostics.render.CarRenderer
 import com.motorguard.ivi.ui.diagnostics.render.rememberCar3dRenderer
 import com.motorguard.ivi.ui.theme.MotorGuard
 import com.motorguard.ivi.ui.theme.SemanticColors
-import kotlin.math.roundToInt
 
 /**
  * The car, at a glance — charge, what it is doing, and anything left open.
@@ -77,7 +76,6 @@ import kotlin.math.roundToInt
 fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MotorGuard.colors
 
-    val motor by VehicleData.source.motor.collectAsStateWithLifecycle()
     val metrics by VehicleData.source.metrics.collectAsStateWithLifecycle()
     val doors by VehicleData.source.doors.collectAsStateWithLifecycle()
 
@@ -87,6 +85,10 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
     val severityFlow = remember { VehicleSeverityFlow(VehicleData.source) }
     val severities by remember(severityFlow) { severityFlow.severities }
         .collectAsStateWithLifecycle(initialValue = emptyMap())
+    // Same flow the Diagnostics ring collects (VehicleSeverityFlow.healthScore), not a second
+    // formula -- the two screens read one number and cannot disagree about it.
+    val healthScore by remember(severityFlow) { severityFlow.healthScore }
+        .collectAsStateWithLifecycle(initialValue = null)
 
     // Worst first, so a critical fault is the one seen if the driver only glances once.
     val faults = remember(severities) {
@@ -111,7 +113,6 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
     }
     val focused = faults.getOrNull(faultIndex)
 
-    val motorData = motor.latestValueOrNull
     val metricsData = metrics.latestValueOrNull
     val doorsData = doors.latestValueOrNull
 
@@ -127,24 +128,17 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                 .clickable(onClick = onOpenDiagnostics),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Vehicle",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    // Health moved up here from a 46sp figure and a full-width bar below the
-                    // car. It is one number read at a glance, and giving it a sixth of the card
-                    // was spending the card's height on the thing that needed it least.
-                    //
-                    // The motor's remaining-useful-life percentage, not battery charge: charge
-                    // says how full the pack is right now, health says how much of the motor's
-                    // service life is left -- the number worth glancing at on the way out the
-                    // door, not the one that changes every drive.
-                    HealthPill(percent = motorData?.remainingLife?.percent)
-                }
+                // Health above the title rather than squeezed beside it in the same row --
+                // its own line is what "only printed above the vehicle" asked for, and it
+                // reads as the header's own figure rather than a corner decoration.
+                HealthPill(percent = healthScore)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Vehicle Health",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
 
                 Spacer(Modifier.height(10.dp))
 
@@ -299,51 +293,45 @@ private fun FaultPulse(renderer: CarRenderer, hotspot: Hotspot, base: Color) {
 }
 
 /**
- * Motor health (remaining useful life, as a percentage) as a number and a short bar, sized to
- * sit in the card's header. A dash when the diagnostics unit hasn't given an estimate, same as
- * every other SignalState-backed figure on this card.
+ * Vehicle health (remaining useful life over a 4-month full-life assumption, [VehicleSeverityFlow.healthScore])
+ * as a number and a short bar, on its own line above the "Vehicle Health" title. A dash when the
+ * diagnostics unit hasn't given an estimate, same as every other SignalState-backed figure on
+ * this card.
  */
 @Composable
-private fun HealthPill(percent: Float?) {
+private fun HealthPill(percent: Int?) {
     val colors = MotorGuard.colors
-    val fraction = ((percent ?: 0f) / 100f).coerceIn(0f, 1f)
+    val fraction = ((percent ?: 0) / 100f).coerceIn(0f, 1f)
     val low = percent != null && fraction <= 0.15f
-    Column(horizontalAlignment = Alignment.End) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
-            text = "Health",
-            fontSize = 11.sp,
-            color = colors.onBaseDim,
+            text = percent?.toString() ?: "—",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = percent?.roundToInt()?.toString() ?: "—",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = "%",
-                fontSize = 12.sp,
-                color = colors.onBaseDim,
-                modifier = Modifier.padding(start = 1.dp, bottom = 2.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .width(56.dp)
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(colors.onBaseDim.copy(alpha = 0.18f)),
-            ) {
-                if (percent != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(fraction)
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(if (low) MaterialTheme.colorScheme.error else colors.accent),
-                    )
-                }
+        Text(
+            text = "%",
+            fontSize = 14.sp,
+            color = colors.onBaseDim,
+            modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier
+                .width(72.dp)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(colors.onBaseDim.copy(alpha = 0.18f)),
+        ) {
+            if (percent != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(if (low) MaterialTheme.colorScheme.error else colors.accent),
+                )
             }
         }
     }

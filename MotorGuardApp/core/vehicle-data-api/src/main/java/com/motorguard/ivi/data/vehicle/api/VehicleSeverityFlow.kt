@@ -39,32 +39,29 @@ class VehicleSeverityFlow(
     }
 
     /**
-     * Health score 0..100 for the ring, driven by [Severity] (docs/09 §2.3: "Severity drives the
-     * hotspot dot colour, the health-ring score, the alert list and the card simultaneously").
-     * Null (the ring reads "waiting") until the diagnostics unit has published a severity at all.
+     * Health score 0..100, shared by every "Vehicle health" figure in the app (the Home card and
+     * the Diagnostics ring both collect this exact flow rather than each computing their own, so
+     * the two screens cannot disagree about the number): the motor's remaining useful life as a
+     * fraction of a 4-month full-life assumption. Null ("waiting for telemetry") until the
+     * diagnostics unit has published a remaining-life estimate at all.
      *
-     * Was `remainingLife.hours / a 4-month assumption` — docs/09 §2 is explicit that `percent`
-     * "is never derived from hours against an assumed design life: the bar it draws would be a
-     * claim nobody made", and the ring is exactly that kind of claim. It also silently broke on a
-     * unit's own hours estimate arriving small (e.g. a months figure never converted to hours
-     * upstream): a live case showed `remainingLife.percent` correctly at 81 while this formula's
-     * `hours` was 3.25, giving `(3.25 / 2880) * 100 -> 0` -- the ring read zero while the unit was
-     * reporting 81% healthy.
+     * Briefly replaced with a Severity-derived score (docs/09 §2.3) after a live case showed this
+     * formula reading 0 while the unit reported 81% healthy -- root cause was upstream, on the
+     * diagnostics unit: its RUL parser grabbed the first number in the model's sentence (the
+     * health score, "1.00") instead of the actual RUL figure ("RUL 4.00 months"), so `hours`
+     * arrived as 1 instead of ~2922 (motor_diag_service commit 81756d4 fixes the parser). With
+     * that fixed at the source, this is back to the RUL/4-month figure by request.
      */
     val healthScore: Flow<Int?> = motor.map { state ->
-        state.latestValueOrNull?.faultSeverity?.let(::scoreFor)
+        val life = state.latestValueOrNull?.remainingLife
+        life?.let { ((it.hours / FULL_LIFE_HOURS) * 100f).toInt().coerceIn(0, 100) }
     }
 
     fun stateIn(scope: CoroutineScope): StateFlow<Map<Hotspot, Severity?>> =
         severities.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private companion object {
-        /** Round numbers, not a measurement: there is no unit-reported "how healthy" figure at
-         *  the OK/CAUTION/CRITICAL granularity, only which of the three it is. */
-        fun scoreFor(severity: Severity): Int = when (severity) {
-            Severity.OK -> 100
-            Severity.CAUTION -> 60
-            Severity.CRITICAL -> 20
-        }
+        /** A 4-month full life, in hours, at a flat 30-day month. */
+        const val FULL_LIFE_HOURS = 4 * 30 * 24f
     }
 }
