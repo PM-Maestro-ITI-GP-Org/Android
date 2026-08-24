@@ -502,7 +502,13 @@ private fun VoiceOrb(state: VoiceState, level: Float, understood: Boolean, reply
  * [VoiceState] is what the overlay tracks; [BotState] is what the mascot morphs to. The reply
  * gets the face named for how it went.
  *
- * [understood] alone is not enough to tell: it is only set false by
+ * [BotState.Happy] is not used for a good reply despite the name — it is specifically a *wink*:
+ * one eye stays a capsule, the other collapses to a dash, which reads as a rendering glitch
+ * rather than an expression when it is not expected. [BotState.Smile] is the library's other
+ * positive state and is genuinely symmetric (mirrored eye tilts, matching size on both sides;
+ * confirmed by reading its pose in BotState.kt) — a warm two-eyed smile rather than a wink.
+ *
+ * [understood] alone is not enough to tell success from failure: it is only set false by
  * [VoiceOverlaySession.fail], which covers speech-recognition failures, but
  * [VoiceOverlaySession.answer]'s own KDoc is explicit that "the core last... always answers —
  * including its own apology when it cannot", and that apology never runs through `fail()`. Both
@@ -514,7 +520,7 @@ private fun toBotState(state: VoiceState, understood: Boolean, reply: String): B
     VoiceState.IDLE -> BotState.Idle
     VoiceState.LISTENING -> BotState.Listening
     VoiceState.THINKING -> BotState.Thinking
-    VoiceState.SPEAKING -> if (understood && reply != NOT_UNDERSTOOD_REPLY) BotState.Happy else BotState.Sad
+    VoiceState.SPEAKING -> if (understood && reply != NOT_UNDERSTOOD_REPLY) BotState.Smile else BotState.Sad
 }
 
 /** The one unified "did not understand" reply — see [VoiceOverlaySession.fail] and
