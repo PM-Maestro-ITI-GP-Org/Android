@@ -19,10 +19,10 @@ import kotlinx.coroutines.flow.callbackFlow
  * Radio, as internet streams.
  *
  * The board has no tuner and is not going to get one, so the honest implementation of "Radio" on
- * this hardware is streaming. Stations come from [RadioBrowser]; each one becomes an ordinary
- * [Track] whose URI is the stream, which means the existing ExoPlayer path plays it with no
- * special handling — the source tab, the queue and the transport bar all keep working as they do
- * for files.
+ * this hardware is streaming. Stations come from [SomaFm]; each one becomes an ordinary [Track]
+ * whose URI is the stream, which means the existing ExoPlayer path plays it with no special
+ * handling — the source tab, the queue and the transport bar all keep working as they do for
+ * files.
  *
  * [RadioTuner] is still there, unimplemented, as the contract for a board that does have a
  * tuner. Nothing here uses it; the two would sit side by side, with the band picker choosing
@@ -69,12 +69,12 @@ class RadioMediaSource(private val context: Context) : MediaLibrarySource {
 
     /** The default listing. [search] is what the tab's search field calls. */
     override suspend fun tracks(): List<Track> =
-        runCatching { RadioBrowser.popular().map { it.toTrack() } }.getOrDefault(emptyList())
+        runCatching { SomaFm.popular().map { it.toTrack() } }.getOrDefault(emptyList())
 
     /** Stations matching [query]; blank falls back to the default listing. */
     suspend fun search(query: String): List<Track> {
         if (query.isBlank()) return tracks()
-        return runCatching { RadioBrowser.search(query).map { it.toTrack() } }
+        return runCatching { SomaFm.search(query).map { it.toTrack() } }
             .getOrDefault(emptyList())
     }
 
