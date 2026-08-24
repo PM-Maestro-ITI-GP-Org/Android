@@ -191,7 +191,7 @@ private fun BrandMark() {
         val view = LocalView.current
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(DOCKED_MASCOT_SIZE)
                 .graphicsLayer { alpha = dockAlpha }
                 .onGloballyPositioned { coords ->
                     val screenOrigin = IntArray(2).also { view.getLocationOnScreen(it) }
@@ -210,7 +210,7 @@ private fun BrandMark() {
                         else -> BotState.Idle
                     },
                     color = MotorGuard.colors.accent,
-                    size = 32.dp,
+                    size = DOCKED_MASCOT_SIZE,
                 ),
                 contentDescription = "Motor Guard",
             )
@@ -230,3 +230,7 @@ private fun BrandMark() {
 
 /** How long nothing on screen has to go untouched before the docked mascot dozes off. */
 private const val SLEEP_AFTER_MS = 20_000L
+
+/** MaterialBot's ball is drawn at roughly 1.27x this box, uncropped by design — sized up from
+ *  the rail's other 30 dp glyphs so the mascot actually reads as the rail's focal point. */
+private val DOCKED_MASCOT_SIZE = 46.dp

@@ -162,6 +162,11 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         // reported position — see VoiceOverlayState's KDoc for why this can't be one shared
         // element across the two windows.
         VoiceOverlayState.isOpen.value = true
+        // Talking to VEGA is every bit as much "using the car" as touching the screen —
+        // without this, a driver a few sentences into a conversation could watch the docked
+        // mascot nod off mid-exchange, in the one window it was most obviously awake and
+        // paying attention.
+        com.motorguard.ivi.data.UserActivity.poke()
         startListening()
     }
 
@@ -260,6 +265,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                 override fun onReadyForSpeech(params: Bundle?) {
                     // A fresh listen: whatever the last turn's outcome was, it is not this one's.
                     model = model.copy(state = VoiceState.LISTENING, understood = true)
+                    com.motorguard.ivi.data.UserActivity.poke()
                 }
 
                 override fun onRmsChanged(rmsdB: Float) {
@@ -283,6 +289,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
                 override fun onEndOfSpeech() {
                     model = model.copy(state = VoiceState.THINKING, level = 0f)
+                    com.motorguard.ivi.data.UserActivity.poke()
                 }
 
                 override fun onResults(results: Bundle?) {
