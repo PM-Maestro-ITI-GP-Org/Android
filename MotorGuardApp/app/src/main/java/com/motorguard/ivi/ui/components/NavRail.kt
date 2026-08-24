@@ -1,5 +1,6 @@
 package com.motorguard.ivi.ui.components
 
+import android.os.SystemClock
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,8 +32,11 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,10 +52,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import com.maxmaster.materialmascot.config.MascotConfig
 import com.maxmaster.materialmascot.engine.BotState
 import com.maxmaster.materialmascot.ui.MaterialBot
 import com.motorguard.ivi.MainActivity.Tab
+import com.motorguard.ivi.data.UserActivity
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
 import com.motorguard.ivi.ui.diagnostics.VehicleData
@@ -170,6 +176,18 @@ private fun BrandMark() {
         val overlayOpen by VoiceOverlayState.isOpen.collectAsStateWithLifecycle()
         val dockAlpha by animateFloatAsState(targetValue = if (overlayOpen) 0f else 1f, label = "mascot-dock-fade")
 
+        // Ticks once a second purely so this recomposes and re-checks the clock — nothing else
+        // would ever tell it time has passed while the driver simply isn't touching anything.
+        val lastInteraction by UserActivity.lastInteractionMs.collectAsStateWithLifecycle()
+        var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                delay(1_000L)
+                now = SystemClock.elapsedRealtime()
+            }
+        }
+        val isDozing = now - lastInteraction >= SLEEP_AFTER_MS
+
         val view = LocalView.current
         Box(
             modifier = Modifier
@@ -184,7 +202,13 @@ private fun BrandMark() {
         ) {
             MaterialBot(
                 config = MascotConfig(
-                    state = if (hasFault) BotState.Alert else BotState.Idle,
+                    // A fault always wins over dozing off — that is the one time the car most
+                    // needs the driver's attention, not less of it.
+                    state = when {
+                        hasFault -> BotState.Alert
+                        isDozing -> BotState.Sleepy
+                        else -> BotState.Idle
+                    },
                     color = MotorGuard.colors.accent,
                     size = 32.dp,
                 ),
@@ -203,3 +227,6 @@ private fun BrandMark() {
         )
     }
 }
+
+/** How long nothing on screen has to go untouched before the docked mascot dozes off. */
+private const val SLEEP_AFTER_MS = 20_000L

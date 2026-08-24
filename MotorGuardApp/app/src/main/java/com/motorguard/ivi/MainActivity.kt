@@ -172,6 +172,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Every touch, anywhere, before any fragment or `ComposeView` gets a chance to consume it —
+     * the one dispatch point that does not care which tab is showing. Feeds the docked mascot's
+     * idle timer; see [com.motorguard.ivi.data.UserActivity].
+     */
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.action == android.view.MotionEvent.ACTION_DOWN) {
+            com.motorguard.ivi.data.UserActivity.poke()
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    /**
      * Beep when a fault appears, whichever tab is showing.
      *
      * Driven from the Activity rather than the Vehicle card, because a card only collects

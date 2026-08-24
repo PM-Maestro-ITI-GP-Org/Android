@@ -93,6 +93,11 @@ data class VoiceUiModel(
     val reply: String = "",
     /** 0f..1f mic level, drives the waveform while listening. */
     val level: Float = 0f,
+    /** False when the current SPEAKING turn came from [VoiceOverlaySession.fail] rather than a
+     *  command actually being carried out — drives the mascot's Happy/Sad face. Meaningless
+     *  outside SPEAKING; resets to true on every fresh listen so a past failure cannot bleed
+     *  into the next command's result. */
+    val understood: Boolean = true,
 )
 
 /** Quick-action chips → which tab the intent routes to. */
@@ -210,7 +215,7 @@ fun VoiceOverlay(
                 Header(model.state)
 
                 Spacer(Modifier.height(22.dp))
-                VoiceOrb(model.state, model.level)
+                VoiceOrb(model.state, model.level, model.understood)
 
                 if (model.state == VoiceState.LISTENING) {
                     Spacer(Modifier.height(20.dp))
@@ -382,7 +387,7 @@ private fun Header(state: VoiceState) {
 
 /** Pulsing orb with a soft static glow behind it; scale/alpha animation only. */
 @Composable
-private fun VoiceOrb(state: VoiceState, level: Float) {
+private fun VoiceOrb(state: VoiceState, level: Float, understood: Boolean) {
     val transition = rememberInfiniteTransition(label = "orb")
     val pulse by transition.animateFloat(
         initialValue = 0.92f,
@@ -456,7 +461,7 @@ private fun VoiceOrb(state: VoiceState, level: Float) {
         ) {
             MaterialBot(
                 config = MascotConfig(
-                    state = state.toBotState(),
+                    state = toBotState(state, understood),
                     color = Accent,
                     size = PANEL_SIZE,
                     finish = MascotFinish.CHROME,
@@ -467,12 +472,20 @@ private fun VoiceOrb(state: VoiceState, level: Float) {
     }
 }
 
-/** [VoiceState] is what the overlay tracks; [BotState] is what the mascot morphs to. */
-private fun VoiceState.toBotState(): BotState = when (this) {
+/**
+ * [VoiceState] is what the overlay tracks; [BotState] is what the mascot morphs to.
+ *
+ * [BotState.Listening] is not used here despite the name — its own gaze pitches down (-22°,
+ * further than even [BotState.Sad]'s -18°), which reads as looking away rather than paying
+ * attention. [BotState.Responding]'s "raised gaze" (+14°) is what an attentive, listening face
+ * actually looks like; nothing on screen ever shows the word "Responding", so reusing its
+ * geometry here costs nothing. The reply itself gets the state named for how it went.
+ */
+private fun toBotState(state: VoiceState, understood: Boolean): BotState = when (state) {
     VoiceState.IDLE -> BotState.Idle
-    VoiceState.LISTENING -> BotState.Listening
+    VoiceState.LISTENING -> BotState.Responding
     VoiceState.THINKING -> BotState.Thinking
-    VoiceState.SPEAKING -> BotState.Responding
+    VoiceState.SPEAKING -> if (understood) BotState.Happy else BotState.Sad
 }
 
 /** One expanding, fading ring — call twice with a staggered delay for a sonar-ping pair. */

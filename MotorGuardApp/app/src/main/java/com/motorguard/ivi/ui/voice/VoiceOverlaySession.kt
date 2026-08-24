@@ -258,7 +258,8 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
             setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
-                    model = model.copy(state = VoiceState.LISTENING)
+                    // A fresh listen: whatever the last turn's outcome was, it is not this one's.
+                    model = model.copy(state = VoiceState.LISTENING, understood = true)
                 }
 
                 override fun onRmsChanged(rmsdB: Float) {
@@ -490,7 +491,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     private fun fail(message: String) {
         stopListening()
-        model = model.copy(state = VoiceState.SPEAKING, reply = message, level = 0f)
+        model = model.copy(state = VoiceState.SPEAKING, reply = message, level = 0f, understood = false)
         speak(message)
     }
 
