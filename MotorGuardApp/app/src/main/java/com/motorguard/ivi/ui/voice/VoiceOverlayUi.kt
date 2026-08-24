@@ -8,6 +8,7 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.StartOffsetType
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.animateContentSize
@@ -60,6 +61,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -133,6 +135,9 @@ fun VoiceOverlay(
     onDismiss: () -> Unit,
 ) {
     val visible = model.state != VoiceState.IDLE
+    // Starts true so the real orb never gets a frame to itself before the flight ghost has had
+    // its say — see MascotFlight's onFlyingChanged for where this actually flips.
+    var orbHidden by remember { mutableStateOf(true) }
 
     Box(Modifier.fillMaxSize()) {
 
@@ -215,7 +220,7 @@ fun VoiceOverlay(
                 Header(model.state)
 
                 Spacer(Modifier.height(22.dp))
-                VoiceOrb(model.state, model.level, model.understood)
+                VoiceOrb(model.state, model.level, model.understood, model.reply, hidden = orbHidden)
 
                 if (model.state == VoiceState.LISTENING) {
                     Spacer(Modifier.height(20.dp))
@@ -273,7 +278,7 @@ fun VoiceOverlay(
             }
         }
 
-        MascotFlight(visible)
+        MascotFlight(visible, onFlyingChanged = { orbHidden = it })
     }
 }
 
@@ -286,9 +291,14 @@ fun VoiceOverlay(
  * a short-lived ghost starting at the docked mascot's last reported screen position, growing and
  * moving to roughly where the panel's own orb sits, timed to finish as that panel's own
  * scale/fade entrance (already in [VoiceOverlay]) settles in behind it.
+ *
+ * [onFlyingChanged] tells the real orb (rendered separately, inside the panel) to stay invisible
+ * for exactly the ghost's lifetime — without it the panel's own entrance animation and this one
+ * run concurrently and both faces are on screen together, which is what a real face and its own
+ * ghost double-exposed over each other looks like.
  */
 @Composable
-private fun MascotFlight(visible: Boolean) {
+private fun MascotFlight(visible: Boolean, onFlyingChanged: (Boolean) -> Unit) {
     val view = LocalView.current
     val density = LocalDensity.current
     val progress = remember { Animatable(0f) }
@@ -301,10 +311,17 @@ private fun MascotFlight(visible: Boolean) {
             flying = false
             return@LaunchedEffect
         }
+        // Hidden the instant a new wake starts, regardless of how it resolves below — the real
+        // orb only ever gets to reveal once, at the one place this function decides "arrived".
+        onFlyingChanged(true)
+
         val docked = VoiceOverlayState.dockedScreenPosition
         // Zero only before the very first layout pass anywhere in the app; skip the flight
         // rather than divide by a window that has not been measured yet.
-        if (docked == null || view.width == 0 || view.height == 0) return@LaunchedEffect
+        if (docked == null || view.width == 0 || view.height == 0) {
+            onFlyingChanged(false)
+            return@LaunchedEffect
+        }
 
         val screenOrigin = IntArray(2).also { view.getLocationOnScreen(it) }
         start = docked - Offset(screenOrigin[0].toFloat(), screenOrigin[1].toFloat())
@@ -317,6 +334,7 @@ private fun MascotFlight(visible: Boolean) {
         progress.snapTo(0f)
         progress.animateTo(1f, animationSpec = tween(FLIGHT_MS, easing = FastOutSlowInEasing))
         flying = false
+        onFlyingChanged(false)
     }
 
     val origin = start
@@ -387,7 +405,7 @@ private fun Header(state: VoiceState) {
 
 /** Pulsing orb with a soft static glow behind it; scale/alpha animation only. */
 @Composable
-private fun VoiceOrb(state: VoiceState, level: Float, understood: Boolean) {
+private fun VoiceOrb(state: VoiceState, level: Float, understood: Boolean, reply: String, hidden: Boolean) {
     val transition = rememberInfiniteTransition(label = "orb")
     val pulse by transition.animateFloat(
         initialValue = 0.92f,
@@ -455,13 +473,21 @@ private fun VoiceOrb(state: VoiceState, level: Float, understood: Boolean) {
             }
         }
 
+        val revealAlpha by animateFloatAsState(
+            targetValue = if (hidden) 0f else 1f,
+            animationSpec = tween(150),
+            label = "orb-reveal",
+        )
         Box(
-            modifier = Modifier.size(112.dp).scale(scale),
+            modifier = Modifier
+                .size(112.dp)
+                .scale(scale)
+                .graphicsLayer { alpha = revealAlpha },
             contentAlignment = Alignment.Center,
         ) {
             MaterialBot(
                 config = MascotConfig(
-                    state = toBotState(state, understood),
+                    state = toBotState(state, understood, reply),
                     color = Accent,
                     size = PANEL_SIZE,
                     finish = MascotFinish.CHROME,
@@ -473,20 +499,28 @@ private fun VoiceOrb(state: VoiceState, level: Float, understood: Boolean) {
 }
 
 /**
- * [VoiceState] is what the overlay tracks; [BotState] is what the mascot morphs to.
+ * [VoiceState] is what the overlay tracks; [BotState] is what the mascot morphs to. The reply
+ * gets the face named for how it went.
  *
- * [BotState.Listening] is not used here despite the name — its own gaze pitches down (-22°,
- * further than even [BotState.Sad]'s -18°), which reads as looking away rather than paying
- * attention. [BotState.Responding]'s "raised gaze" (+14°) is what an attentive, listening face
- * actually looks like; nothing on screen ever shows the word "Responding", so reusing its
- * geometry here costs nothing. The reply itself gets the state named for how it went.
+ * [understood] alone is not enough to tell: it is only set false by
+ * [VoiceOverlaySession.fail], which covers speech-recognition failures, but
+ * [VoiceOverlaySession.answer]'s own KDoc is explicit that "the core last... always answers —
+ * including its own apology when it cannot", and that apology never runs through `fail()`. Both
+ * paths converge on the exact same unified string (see the session's "make the response... i
+ * didn't catch that only" wording), so checking the reply text is what actually catches a
+ * request the assistant heard fine but had nothing for.
  */
-private fun toBotState(state: VoiceState, understood: Boolean): BotState = when (state) {
+private fun toBotState(state: VoiceState, understood: Boolean, reply: String): BotState = when (state) {
     VoiceState.IDLE -> BotState.Idle
-    VoiceState.LISTENING -> BotState.Responding
+    VoiceState.LISTENING -> BotState.Listening
     VoiceState.THINKING -> BotState.Thinking
-    VoiceState.SPEAKING -> if (understood) BotState.Happy else BotState.Sad
+    VoiceState.SPEAKING -> if (understood && reply != NOT_UNDERSTOOD_REPLY) BotState.Happy else BotState.Sad
 }
+
+/** The one unified "did not understand" reply — see [VoiceOverlaySession.fail] and
+ *  [VoiceOverlaySession.answer]'s fallback. Kept as a single constant so the two can never drift
+ *  apart from what this compares against. */
+private const val NOT_UNDERSTOOD_REPLY = "I didn't catch that."
 
 /** One expanding, fading ring — call twice with a staggered delay for a sonar-ping pair. */
 @Composable

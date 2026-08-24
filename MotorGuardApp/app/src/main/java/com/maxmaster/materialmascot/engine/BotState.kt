@@ -244,6 +244,12 @@ public sealed class BotState(
     /**
      * Wide surprised eyes ("wide" state) — attentive listening pose.
      * Entry masked by a blink.
+     *
+     * Gaze retuned from the library's own default (yaw 6.92, pitch -21.96, roll 11.6): that
+     * pitched down further than even [Sad]'s -18, reading as looking away rather than paying
+     * attention, and the yaw skewed the whole face to one side instead of facing forward.
+     * Centred yaw and a mild raised pitch is what "listening to you" actually looks like; the
+     * eyes themselves (their whole point, per the name) are untouched.
      */
     public object Listening : BotState(
         name = "listening",
@@ -251,7 +257,7 @@ public sealed class BotState(
         blinkIn = true,
         poseFn = { _ ->
             basePose(
-                gaze = HeadGaze(yaw = 6.92f, pitch = -21.96f, roll = 11.6f),
+                gaze = HeadGaze(yaw = 0f, pitch = 10f, roll = -8f),
                 split = 18.43f,
                 w0 = 0.356f, h0 = 0.875f,
                 w1 = 0.356f, h1 = 0.875f
