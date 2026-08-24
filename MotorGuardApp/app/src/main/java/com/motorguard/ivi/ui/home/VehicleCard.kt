@@ -128,20 +128,20 @@ fun VehicleCard(onOpenDiagnostics: () -> Unit, modifier: Modifier = Modifier) {
                 .clickable(onClick = onOpenDiagnostics),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Health above the title rather than squeezed beside it in the same row, and
-                // pinned to the right edge of that line rather than left -- its own line is
-                // what "only printed above the vehicle" asked for, and the right edge is where
-                // the number is expected to sit at a glance.
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                // Health above the title rather than squeezed beside it in the same row, both
+                // pinned to the right edge -- the title on its own left edge and the number on
+                // the right read as two unrelated lines; sharing an edge is what makes them
+                // read as one header block.
+                Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
                     HealthPill(percent = healthScore)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Vehicle Health",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Vehicle Health",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
 
                 Spacer(Modifier.height(10.dp))
 
