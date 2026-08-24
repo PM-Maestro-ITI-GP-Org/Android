@@ -1,5 +1,6 @@
 package com.motorguard.ivi.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -20,7 +21,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Movie
@@ -31,18 +31,33 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.maxmaster.materialmascot.config.MascotConfig
+import com.maxmaster.materialmascot.engine.BotState
+import com.maxmaster.materialmascot.ui.MaterialBot
 import com.motorguard.ivi.MainActivity.Tab
+import com.motorguard.ivi.data.vehicle.api.Severity
+import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
+import com.motorguard.ivi.ui.diagnostics.VehicleData
 import com.motorguard.ivi.ui.theme.MotorGuard
 import com.motorguard.ivi.ui.theme.Tokens
+import com.motorguard.ivi.ui.voice.VoiceOverlayState
 
 // The rail reads dark even in light mode, like the reference. Its background now comes from the
 // theme so it picks up the album hue with the rest of the app; the dim foreground stays pinned.
@@ -135,15 +150,47 @@ private fun RailButton(
     }
 }
 
+/**
+ * VEGA's docked home: calm when the car is, alert the moment a fault is — the same
+ * CAUTION/CRITICAL check [com.motorguard.ivi.MainActivity.autoOpenDiagnosticsOnFault] uses, so
+ * the mascot never disagrees with what actually opens Diagnostics.
+ *
+ * Fades out while the voice overlay is open and reports its own screen position on every
+ * layout pass, so [com.motorguard.ivi.ui.voice.VoiceOverlayUi]'s flight — a separate window,
+ * not a child of this composition — knows where to start from. See [VoiceOverlayState].
+ */
 @Composable
 private fun BrandMark() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(
-            imageVector = Icons.Filled.Shield,
-            contentDescription = "Motor Guard",
-            tint = MotorGuard.colors.accent,
-            modifier = Modifier.size(26.dp),
-        )
+        val severityFlow = remember { VehicleSeverityFlow(VehicleData.source) }
+        val severities by remember(severityFlow) { severityFlow.severities }
+            .collectAsStateWithLifecycle(initialValue = emptyMap())
+        val hasFault = severities.values.any { it == Severity.CAUTION || it == Severity.CRITICAL }
+
+        val overlayOpen by VoiceOverlayState.isOpen.collectAsStateWithLifecycle()
+        val dockAlpha by animateFloatAsState(targetValue = if (overlayOpen) 0f else 1f, label = "mascot-dock-fade")
+
+        val view = LocalView.current
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .graphicsLayer { alpha = dockAlpha }
+                .onGloballyPositioned { coords ->
+                    val screenOrigin = IntArray(2).also { view.getLocationOnScreen(it) }
+                    val local = coords.positionInRoot()
+                    VoiceOverlayState.dockedScreenPosition =
+                        Offset(screenOrigin[0] + local.x, screenOrigin[1] + local.y)
+                },
+        ) {
+            MaterialBot(
+                config = MascotConfig(
+                    state = if (hasFault) BotState.Alert else BotState.Idle,
+                    color = MotorGuard.colors.accent,
+                    size = 32.dp,
+                ),
+                contentDescription = "Motor Guard",
+            )
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             text = "MOTOR\nGUARD",

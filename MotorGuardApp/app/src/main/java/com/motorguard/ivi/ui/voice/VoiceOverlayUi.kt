@@ -1,6 +1,8 @@
 package com.motorguard.ivi.ui.voice
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -37,7 +40,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Navigation
@@ -46,24 +48,37 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import com.maxmaster.materialmascot.config.MascotConfig
+import com.maxmaster.materialmascot.config.MascotFinish
+import com.maxmaster.materialmascot.engine.BotState
+import com.maxmaster.materialmascot.ui.MaterialBot
 import com.motorguard.ivi.ui.theme.Tokens
+import kotlin.math.roundToInt
 
 /** The four states from docs/07-voice.md. */
 enum class VoiceState { IDLE, LISTENING, THINKING, SPEAKING }
@@ -252,8 +267,76 @@ fun VoiceOverlay(
                 }
             }
         }
+
+        MascotFlight(visible)
     }
 }
+
+/**
+ * VEGA's docked corner mascot, arriving.
+ *
+ * Not a shared element — the docked mascot in [com.motorguard.ivi.ui.components.NavRail] lives
+ * in a different Android window, and Compose has no API that animates one across two independent
+ * windows (see [VoiceOverlayState]'s KDoc). This plays entirely inside the overlay's own window:
+ * a short-lived ghost starting at the docked mascot's last reported screen position, growing and
+ * moving to roughly where the panel's own orb sits, timed to finish as that panel's own
+ * scale/fade entrance (already in [VoiceOverlay]) settles in behind it.
+ */
+@Composable
+private fun MascotFlight(visible: Boolean) {
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val progress = remember { Animatable(0f) }
+    var start by remember { mutableStateOf<Offset?>(null) }
+    var target by remember { mutableStateOf(Offset.Zero) }
+    var flying by remember { mutableStateOf(false) }
+
+    LaunchedEffect(visible) {
+        if (!visible) {
+            flying = false
+            return@LaunchedEffect
+        }
+        val docked = VoiceOverlayState.dockedScreenPosition
+        // Zero only before the very first layout pass anywhere in the app; skip the flight
+        // rather than divide by a window that has not been measured yet.
+        if (docked == null || view.width == 0 || view.height == 0) return@LaunchedEffect
+
+        val screenOrigin = IntArray(2).also { view.getLocationOnScreen(it) }
+        start = docked - Offset(screenOrigin[0].toFloat(), screenOrigin[1].toFloat())
+        // The panel is vertically centered but the orb sits above its own midpoint — the
+        // header row and the transcript/reply space below pull the panel's visual center
+        // down from the orb's actual position.
+        target = Offset(view.width / 2f, view.height * 0.42f)
+
+        flying = true
+        progress.snapTo(0f)
+        progress.animateTo(1f, animationSpec = tween(FLIGHT_MS, easing = FastOutSlowInEasing))
+        flying = false
+    }
+
+    val origin = start
+    if (flying && origin != null) {
+        val t = progress.value
+        val sizeDp = lerp(DOCKED_SIZE, PANEL_SIZE, t)
+        val sizePx = with(density) { sizeDp.toPx() }
+        val cx = origin.x + (target.x - origin.x) * t
+        val cy = origin.y + (target.y - origin.y) * t
+
+        Box(
+            modifier = Modifier
+                .offset { IntOffset((cx - sizePx / 2f).roundToInt(), (cy - sizePx / 2f).roundToInt()) }
+                .size(sizeDp),
+        ) {
+            MaterialBot(
+                config = MascotConfig(state = BotState.Idle, color = Accent, size = sizeDp, finish = MascotFinish.CHROME),
+            )
+        }
+    }
+}
+
+private const val FLIGHT_MS = 340
+private val DOCKED_SIZE = 32.dp
+private val PANEL_SIZE = 112.dp
 
 /**
  * Name on the left, what it is doing on the right.
@@ -368,28 +451,28 @@ private fun VoiceOrb(state: VoiceState, level: Float) {
         }
 
         Box(
-            modifier = Modifier
-                .size(112.dp)
-                .scale(scale)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Accent2.copy(alpha = if (state == VoiceState.IDLE) 0.25f else 0.95f),
-                            Accent.copy(alpha = if (state == VoiceState.IDLE) 0.25f else 0.95f),
-                        ),
-                    ),
-                ),
+            modifier = Modifier.size(112.dp).scale(scale),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = Icons.Filled.Mic,
+            MaterialBot(
+                config = MascotConfig(
+                    state = state.toBotState(),
+                    color = Accent,
+                    size = PANEL_SIZE,
+                    finish = MascotFinish.CHROME,
+                ),
                 contentDescription = "Voice assistant",
-                tint = Tokens.Night.base,
-                modifier = Modifier.size(52.dp),
             )
         }
     }
+}
+
+/** [VoiceState] is what the overlay tracks; [BotState] is what the mascot morphs to. */
+private fun VoiceState.toBotState(): BotState = when (this) {
+    VoiceState.IDLE -> BotState.Idle
+    VoiceState.LISTENING -> BotState.Listening
+    VoiceState.THINKING -> BotState.Thinking
+    VoiceState.SPEAKING -> BotState.Responding
 }
 
 /** One expanding, fading ring — call twice with a staggered delay for a sonar-ping pair. */

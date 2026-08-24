@@ -158,6 +158,10 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
         requestFocus()
         ensureTts()
         model = VoiceUiModel(state = VoiceState.LISTENING)
+        // Docked mascot fades out and the overlay's own window plays the flight from its last
+        // reported position — see VoiceOverlayState's KDoc for why this can't be one shared
+        // element across the two windows.
+        VoiceOverlayState.isOpen.value = true
         startListening()
     }
 
@@ -214,6 +218,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onHide() {
         isVisible = false
+        VoiceOverlayState.isOpen.value = false
         commandJob?.cancel()
         handler.removeCallbacksAndMessages(null)
         stopListening()
