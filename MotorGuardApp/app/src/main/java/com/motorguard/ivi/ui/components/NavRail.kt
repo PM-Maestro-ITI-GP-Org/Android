@@ -1,7 +1,9 @@
 package com.motorguard.ivi.ui.components
 
 import android.os.SystemClock
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -169,10 +171,13 @@ private fun RailButton(
  * the driver's attention is already on the overlay they just opened — but a fault is the one
  * time VEGA has bad news to deliver *from its own corner*: staying anchored where the driver's
  * eye already knows to check reads as "look here" in a way relocating to the middle of the
- * screen would undercut. [BotState.Exclaim] (the same state a fault sets even with the overlay
- * closed) already gives it the shape/reaction for this — a literal "!", not just a face pose — so
- * only the fly-away is what changes here; size stays the same as always, so this isn't read as
- * "got bigger because a voice command happened" on top of "there's a fault".
+ * screen would undercut. [BotState.Exclaim] gives it the shape/reaction for this — a literal
+ * "!", not just a face pose — and it holds that state (small, in its usual spot) for as long as
+ * the fault is live, voice or not: a fault is not something to stop pointing out just because the
+ * driver isn't currently talking to VEGA. Opening the overlay on top of that fault grows it, the
+ * one deliberate size change here, for exactly the window VEGA has the driver's attention on the
+ * subject — closing the overlay shrinks it back to its normal size without touching the "!",
+ * which only clears once the motor genuinely is normal again.
  */
 @Composable
 private fun BrandMark() {
@@ -186,6 +191,11 @@ private fun BrandMark() {
         val dockAlpha by animateFloatAsState(
             targetValue = if (overlayOpen && !hasFault) 0f else 1f,
             label = "mascot-dock-fade",
+        )
+        val dockSize by animateDpAsState(
+            targetValue = if (overlayOpen && hasFault) DOCKED_MASCOT_ALERT_SIZE else DOCKED_MASCOT_SIZE,
+            animationSpec = spring(dampingRatio = 0.6f),
+            label = "mascot-dock-size",
         )
 
         // Ticks once a second purely so this recomposes and re-checks the clock — nothing else
@@ -203,7 +213,7 @@ private fun BrandMark() {
         val view = LocalView.current
         Box(
             modifier = Modifier
-                .size(DOCKED_MASCOT_SIZE)
+                .size(dockSize)
                 .graphicsLayer { alpha = dockAlpha }
                 .onGloballyPositioned { coords ->
                     val screenOrigin = IntArray(2).also { view.getLocationOnScreen(it) }
@@ -229,7 +239,7 @@ private fun BrandMark() {
                         else -> BotState.Idle
                     },
                     color = MotorGuard.colors.accent,
-                    size = DOCKED_MASCOT_SIZE,
+                    size = dockSize,
                 ),
                 contentDescription = "Motor Guard",
             )
@@ -253,3 +263,8 @@ private const val SLEEP_AFTER_MS = 20_000L
 /** MaterialBot's ball is drawn at roughly 1.27x this box, uncropped by design — sized up from
  *  the rail's other 30 dp glyphs so the mascot actually reads as the rail's focal point. */
 private val DOCKED_MASCOT_SIZE = 46.dp
+
+/** What it grows to for the duration the voice overlay is open on top of an active fault (see
+ *  [BrandMark]'s KDoc). 92.dp is the rail's own width — this stays comfortably inside it
+ *  (~8.dp clear on each side) rather than crowding or clipping against the rail edge. */
+private val DOCKED_MASCOT_ALERT_SIZE = 76.dp
