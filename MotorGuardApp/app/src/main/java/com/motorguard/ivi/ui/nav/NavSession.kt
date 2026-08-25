@@ -430,11 +430,13 @@ object NavSession {
      * is the bug this method exists to avoid, and it would be invisible: every result really is
      * a petrol station, just not the closest one.
      *
-     * **It filters by category where the data supports it.** `osm_value=fuel` and
-     * `charging_station` are parsed into [PlaceCategory] already, so a fuel query can drop the
-     * street named "Petrol" that a text search happily returns. Where no category fits — a
-     * garage is `shop=car_repair`, which lands in SHOP with every other shop — the filter is
-     * skipped rather than faked, and the driver hears the name before being taken there.
+     * **It asks the map, not the text index.** This was the bug that made the feature useless:
+     * [NavRepository.search] is a geocoder, and `near` only biases the ranking of a global name
+     * match. Asked for "petrol station" it returned places *called* that, hours away, and ranked
+     * them above the one down the road — because the road one is not called "Petrol Station", it
+     * is called Wataniya and tagged `amenity=fuel`. [NavRepository.nearby] queries by position
+     * and OSM tag with a hard radius, so every result is genuinely near, and nothing in range is
+     * an answer rather than a reason to reach further out.
      *
      * **It ranks by road distance, not by the crow.** Straight-line proximity is only the
      * shortlist: the nearest station as the crow flies can be across a river, the wrong side of a
@@ -451,21 +453,28 @@ object NavSession {
      * Candidates that cannot be routed at all simply drop out, so an unreachable nearest falls
      * through to the next rather than failing the request.
      */
-    suspend fun navigateToNearest(query: String, category: PlaceCategory?): SpokenNavResult {
+    suspend fun navigateToNearest(query: String, osmTags: List<String>): SpokenNavResult {
         if (!started) return SpokenNavResult.NotReady
         val here = _state.value.position?.point ?: return SpokenNavResult.NoFix
 
         searchJob?.cancel()
         routeJob?.cancel()
 
-        val found = runCatching { repository.search(query, here) }.getOrElse {
-            return SpokenNavResult.Failed(it.userMessage("Search unavailable"))
+        // Widening rings rather than one big one. The first radius that finds anything wins, so a
+        // driver in a city is answered from a few kilometres and never sent to something forty
+        // away that merely ranked well; a driver with genuinely nothing close still gets an
+        // answer rather than a refusal.
+        var found = emptyList<Place>()
+        for (radiusKm in NEARBY_RADII_KM) {
+            found = runCatching { repository.nearby(osmTags, here, radiusKm) }.getOrElse {
+                return SpokenNavResult.Failed(it.userMessage("Search unavailable"))
+            }
+            if (found.isNotEmpty()) break
         }
-        // Category first, but never to the point of returning nothing: a filter that empties the
-        // list has told us less than the unfiltered list did.
-        val matching = category?.let { c -> found.filter { it.category == c } }?.takeIf { it.isNotEmpty() }
-            ?: found
-        val byDistance = matching.sortedBy { RouteMath.distanceMeters(here, it.point) }
+        // Nothing in range is a real answer, and it is left as one. Falling back to a text search
+        // here is exactly what produced results hours away: it always has something to offer and
+        // no notion of far.
+        val byDistance = found.sortedBy { RouteMath.distanceMeters(here, it.point) }
         if (byDistance.isEmpty()) return SpokenNavResult.NoResults(query)
 
         _state.update { it.copy(routing = true, error = null) }
@@ -509,6 +518,15 @@ object NavSession {
         startGuidance()
         return SpokenNavResult.Started(destination, shortest)
     }
+
+    /**
+     * Radii tried in order, in km, stopping at the first that finds anything.
+     *
+     * Five covers a city, twenty a town and its outskirts, sixty is the last honest attempt
+     * before "there isn't one near you" is simply true. Past that the answer stops being useful
+     * to someone deciding whether they can get there.
+     */
+    private val NEARBY_RADII_KM = listOf(5, 20, 60)
 
     /**
      * How many of the crow-flies nearest get routed for real.
