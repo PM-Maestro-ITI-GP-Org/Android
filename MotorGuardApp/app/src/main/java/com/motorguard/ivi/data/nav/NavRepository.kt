@@ -29,6 +29,9 @@ class NavRepository(context: Context) {
     /** Positions from whichever [LocationSource] [NavConfig] selected. Cold. */
     fun positions(): Flow<VehiclePosition> = providers.location.positions()
 
+    suspend fun nearby(osmTags: List<String>, near: GeoPoint, radiusKm: Int): List<Place> =
+        providers.geocoding.nearby(osmTags, near, radiusKm)
+
     suspend fun search(query: String, near: GeoPoint?): List<Place> =
         providers.geocoding.search(query, near)
 

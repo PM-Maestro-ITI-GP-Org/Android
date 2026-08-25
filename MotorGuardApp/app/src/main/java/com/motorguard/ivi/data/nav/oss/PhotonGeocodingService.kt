@@ -47,6 +47,40 @@ class PhotonGeocodingService : GeocodingService {
         return places
     }
 
+    /**
+     * Photon's `/reverse`, which is the endpoint that actually answers "what fuel is near me".
+     *
+     * `/api` is a text index: `lat`/`lon` bias the ranking of a global name match, which is why
+     * asking it for "petrol station" returned places called that hours away and ranked them above
+     * the one down the road — the road one is not called "Petrol Station", it is called Wataniya
+     * and tagged `amenity=fuel`. `/reverse` queries by position with an `osm_tag` filter and
+     * returns nearest first, which is the question that was being asked all along.
+     *
+     * `radius` is a hard limit rather than a preference, which is the point: nothing in range is
+     * a real and useful answer, where a text search always has something to offer and no way to
+     * say how far away it is.
+     */
+    override suspend fun nearby(osmTags: List<String>, near: GeoPoint, radiusKm: Int): List<Place> {
+        if (osmTags.isEmpty()) return emptyList()
+        val url = buildString {
+            append(NavConfig.photonBaseUrl)
+            append("/reverse?lat=").append(near.lat)
+            append("&lon=").append(near.lon)
+            append("&radius=").append(radiusKm)
+            append("&limit=").append(NEARBY_LIMIT)
+            append("&lang=en")
+            // Repeated osm_tag is OR in Photon, which is what a "car centre" needs: repair shops,
+            // dealers and tyre places are three tags and one errand.
+            osmTags.forEach { append("&osm_tag=").append(URLEncoder.encode(it, "UTF-8")) }
+        }
+        val features = JSONObject(NavHttp.getString(url)).optJSONArray("features") ?: return emptyList()
+        val places = ArrayList<Place>(features.length())
+        for (i in 0 until features.length()) {
+            places.add(features.optJSONObject(i)?.toPlace() ?: continue)
+        }
+        return places
+    }
+
     private fun JSONObject.toPlace(): Place? {
         val coordinates = optJSONObject("geometry")?.optJSONArray("coordinates") ?: return null
         if (coordinates.length() < 2) return null
@@ -99,5 +133,9 @@ class PhotonGeocodingService : GeocodingService {
     private companion object {
         const val MIN_QUERY = 2
         const val RESULT_LIMIT = 8
+
+        /** Enough that the road-distance ranking has real choice without asking much of a
+         *  public instance. */
+        const val NEARBY_LIMIT = 12
     }
 }

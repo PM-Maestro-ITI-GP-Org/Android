@@ -102,6 +102,72 @@ class MotorVoiceTest {
             .forEach { assertNull(it, cluster(it)) }
     }
 
+    /**
+     * The phrasing that started this: "what's this error on my cluster" required the literal word
+     * "code" next to "cluster", matched nothing, and fell through to a general status report that
+     * said there was no fault while a code was on screen.
+     */
+    /**
+     * The wording that failed on the target. People read a code out a digit at a time — "E three
+     * one" — and what the recogniser writes down varies. Only the run-together transcription used
+     * to match, which made the working phrasing something a driver had to discover.
+     */
+    @Test
+    fun `a code read out digit by digit is understood`() {
+        listOf(
+            "what does e three one mean",   // words
+            "what does e 3 1 mean",         // separated figures
+            "what does e three 1 mean",     // mixed
+            "what does e31 mean",           // run together
+            "what does e 31 mean",          // the one that already worked
+            "what does e thirty one mean",  // as a number
+        ).forEach {
+            assertEquals(it, MotorVoice.ClusterQuery.Explicit("E-31"), cluster(it))
+        }
+
+        listOf("what is e two one", "what is e 2 1", "what is e twenty one", "what is e21")
+            .forEach { assertEquals(it, MotorVoice.ClusterQuery.Explicit("E-21"), cluster(it)) }
+    }
+
+    /** "E one" can only be E-01, and if it could not, the unknown-code reply lists the real ones. */
+    @Test
+    fun `a single spoken digit is zero padded`() {
+        assertEquals(MotorVoice.ClusterQuery.Explicit("E-01"), cluster("what does e one mean"))
+        assertEquals(MotorVoice.ClusterQuery.Explicit("E-01"), cluster("what does e oh one mean"))
+    }
+
+    @Test
+    fun `asking about an error on the cluster is a cluster question`() {
+        listOf(
+            "what is this error on my cluster",
+            "whats this error on the cluster",
+            "what is that warning on the dash",
+            "what is this light on my dashboard",
+            "what is the fault on the display",
+            "whats this error",
+        ).forEach { assertEquals(it, MotorVoice.ClusterQuery.Current, cluster(it)) }
+    }
+
+    /**
+     * The cluster is a separate app reading the AI board over its own link, and it is the
+     * authority on what it is showing. This side seeing nothing is at least as likely to mean the
+     * link is down as it is to mean the fault cleared — so it must not tell a driver looking at a
+     * code that there is no code.
+     */
+    @Test
+    fun `no fault on this side never contradicts the cluster`() {
+        val current = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Current, live(motor()))
+        assertFalse(current, current.contains("shouldn't be showing"))
+        assertTrue(current, current.contains("not seeing a fault on my side"))
+        // Still answers the question it was asked, rather than only reporting a problem.
+        assertTrue(current, current.contains("E-31") && current.contains("E-21"))
+
+        val explicit = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Explicit("E-31"), live(motor()))
+        assertTrue(explicit, explicit.contains("mechanical"))
+        assertTrue(explicit, explicit.contains("link to the diagnostics unit isn't up"))
+        assertFalse(explicit, explicit.contains("should have cleared"))
+    }
+
     /** The mapping the cluster's Main.qml does: 2x electrical, 3x mechanical, E-01 unplaced. */
     @Test
     fun `codes mirror the cluster's own families`() {
@@ -150,11 +216,11 @@ class MotorVoiceTest {
         )
         assertTrue(disagrees, disagrees.contains("reporting E-21 now"))
 
-        val cleared = MotorVoice.explainCluster(
+        val nothingHere = MotorVoice.explainCluster(
             MotorVoice.ClusterQuery.Explicit("E-31"),
             live(motor(MotorFaultType.NORMAL, Severity.OK)),
         )
-        assertTrue(cleared, cleared.contains("should have cleared"))
+        assertTrue(nothingHere, nothingHere.contains("either it's cleared, or my link"))
     }
 
     /** No live signal means no claim about whether the code still stands. */
@@ -173,8 +239,52 @@ class MotorVoiceTest {
         )
         assertTrue(reply, reply.startsWith("E-31"))
 
+        // No fault here is not a statement about the cluster — see the contradiction test above.
         val none = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Current, live(motor()))
-        assertTrue(none, none.contains("shouldn't be showing a code"))
+        assertTrue(none, none.contains("not seeing a fault on my side"))
+    }
+
+    // --- "any faults?" -------------------------------------------------------
+
+    /**
+     * The bug this exists for: left to fall through, this question reached the C++ core's
+     * ListFaults intent and got "I'm not seeing any faults at the moment, everything looks fine"
+     * out of a list nothing has ever filled — while the diagnostics screen showed the fault.
+     */
+    @Test
+    fun `general fault questions are claimed before the core can deny them`() {
+        listOf(
+            "any faults", "are there any errors", "any problems", "is anything wrong",
+            "is everything ok", "what faults do i have",
+        ).forEach { assertTrue(it, MotorVoice.asksForAnyFault(it)) }
+    }
+
+    @Test
+    fun `unrelated questions are not general fault questions`() {
+        listOf("play some music", "take me to the airport", "what is playing", "")
+            .forEach { assertFalse(it, MotorVoice.asksForAnyFault(it)) }
+    }
+
+    @Test
+    fun `any faults reports the live fault and names its cluster code`() {
+        val reply = MotorVoice.anyFault(live(motor(MotorFaultType.MECHANICAL, Severity.CRITICAL)))
+        assertTrue(reply, reply.contains("mechanical fault"))
+        assertTrue(reply, reply.contains("E-31"))
+    }
+
+    /** "Everything looks fine" must never be said on behalf of a signal that is not arriving. */
+    @Test
+    fun `any faults does not claim everything is fine when the link is down`() {
+        val reply = MotorVoice.anyFault(SignalState.Offline)
+        assertTrue(reply, reply.contains("can't reach"))
+        assertFalse(reply, reply.contains("E-"))
+    }
+
+    @Test
+    fun `any faults with no fault says so without inventing a code`() {
+        val reply = MotorVoice.anyFault(live(motor()))
+        assertTrue(reply, reply.contains("no fault"))
+        assertFalse(reply, reply.contains("E-"))
     }
 
     // --- the answer ---------------------------------------------------------

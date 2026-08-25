@@ -4,7 +4,6 @@ import com.motorguard.ivi.data.nav.GeoPoint
 import com.motorguard.ivi.data.nav.Maneuver
 import com.motorguard.ivi.data.nav.NavProgress
 import com.motorguard.ivi.data.nav.Place
-import com.motorguard.ivi.data.nav.PlaceCategory
 import com.motorguard.ivi.data.nav.Route
 import com.motorguard.ivi.data.nav.RouteStep
 import com.motorguard.ivi.ui.nav.NavPhase
@@ -77,21 +76,21 @@ class NavVoiceTest {
 
     @Test
     fun `nearest fuel and charging are kept apart`() {
-        assertEquals(PlaceCategory.FUEL, nearest("where is the nearest petrol station")?.category)
-        assertEquals(PlaceCategory.FUEL, nearest("nearest gas station")?.category)
+        assertEquals(listOf("amenity:fuel"), nearest("where is the nearest petrol station")?.osmTags)
+        assertEquals(listOf("amenity:fuel"), nearest("nearest gas station")?.osmTags)
         // This vehicle is electric. Answering "charger" with a petrol station, or the reverse,
         // is a wrong answer that looks entirely right until the driver arrives.
-        assertEquals(PlaceCategory.CHARGER, nearest("closest charging station")?.category)
-        assertEquals(PlaceCategory.CHARGER, nearest("where can i find a charger")?.category)
+        assertEquals(listOf("amenity:charging_station"), nearest("closest charging station")?.osmTags)
+        assertEquals(listOf("amenity:charging_station"), nearest("where can i find a charger")?.osmTags)
     }
 
-    /** Car repair is shop=car_repair in OSM, which lands in SHOP with every other shop — so no
-     *  category filter, rather than a filter that would drop the right answer. */
+    /** A driver saying "car centre" wants somewhere that will look at the car, and OSM splits
+     *  that across repair shops, dealers and tyre places. */
     @Test
-    fun `nearest car centre asks for no category`() {
+    fun `nearest car centre asks for every tag that means one`() {
         val ask = nearest("where is the nearest car centre")
         assertNotNull(ask)
-        assertNull(ask!!.category)
+        assertTrue(ask!!.osmTags.contains("shop:car_repair"))
         assertEquals("car centre", ask.noun)
         listOf("nearest garage", "closest mechanic", "nearest service centre", "a repair shop near me")
             .forEach { assertNotNull(it, nearest(it)) }
@@ -113,7 +112,7 @@ class NavVoiceTest {
     @Test
     fun `a nearest request that is also a destination phrase is recognised as nearest`() {
         assertNotNull(nearest("take me to the nearest petrol station"))
-        assertEquals(PlaceCategory.FUEL, nearest("take me to the nearest petrol station")?.category)
+        assertEquals(listOf("amenity:fuel"), nearest("take me to the nearest petrol station")?.osmTags)
     }
 
     // --- setting a destination ----------------------------------------------

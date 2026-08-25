@@ -3,7 +3,6 @@ package com.motorguard.ivi.ui.voice
 import android.content.Context
 import android.util.Log
 import com.motorguard.ivi.data.nav.NavFormat
-import com.motorguard.ivi.data.nav.PlaceCategory
 import com.motorguard.ivi.ui.nav.NavPhase
 import com.motorguard.ivi.ui.nav.NavSession
 import com.motorguard.ivi.ui.nav.SpokenNavResult
@@ -45,7 +44,11 @@ object NavVoice {
      * "Where's the nearest ..." — a query for the geocoder and, where the data supports one, a
      * category to filter on.
      */
-    internal data class Nearest(val query: String, val category: PlaceCategory?, val noun: String)
+    /**
+     * [osmTags] are `key:value` filters for [NavSession.navigateToNearest], OR-ed together.
+     * [query] survives only as the wording of the "found nothing" reply.
+     */
+    internal data class Nearest(val query: String, val osmTags: List<String>, val noun: String)
 
     /**
      * Which kind of nearby thing was asked for, or null.
@@ -62,16 +65,19 @@ object NavVoice {
         // must not be answered with a petrol station, and a driver saying "petrol" on a hire car
         // must not be sent to a charge point.
         if (CHARGER.any { text.contains(it) }) {
-            return Nearest("charging station", PlaceCategory.CHARGER, "charge point")
+            return Nearest("charging station", listOf("amenity:charging_station"), "charge point")
         }
         if (FUEL.any { text.contains(it) }) {
-            return Nearest("petrol station", PlaceCategory.FUEL, "petrol station")
+            return Nearest("petrol station", listOf("amenity:fuel"), "petrol station")
         }
         if (GARAGE.any { text.contains(it) }) {
-            // No category filter: OSM files car repair under shop=car_repair, which Photon maps
-            // into SHOP along with every other shop. Filtering on that would be worse than not
-            // filtering, so the name is spoken back and the driver judges it.
-            return Nearest("car repair", null, "car centre")
+            // Three tags, one errand. A driver saying "car centre" wants somewhere that will look
+            // at the car, and OSM splits that across repair shops, dealers and tyre places.
+            return Nearest(
+                "car centre",
+                listOf("shop:car_repair", "shop:car", "shop:tyres"),
+                "car centre",
+            )
         }
         return null
     }
@@ -95,7 +101,7 @@ object NavVoice {
      */
     internal suspend fun navigateToNearest(context: Context, ask: Nearest): String {
         NavSession.ensureStarted(context.applicationContext)
-        return when (val result = NavSession.navigateToNearest(ask.query, ask.category)) {
+        return when (val result = NavSession.navigateToNearest(ask.query, ask.osmTags)) {
             is SpokenNavResult.Started ->
                 "Nearest ${ask.noun} is ${result.destination.name}, " +
                     "${NavFormat.distance(result.route.distanceMeters)} away. " +

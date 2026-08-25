@@ -39,7 +39,44 @@ object MotorVoice {
      */
     fun handle(utterance: String): String? {
         clusterQueryOf(utterance)?.let { return explainCluster(it, VehicleData.source.motor.value) }
-        return if (claims(utterance)) answerNow(utterance) else null
+        if (claims(utterance)) return answerNow(utterance)
+        if (asksForAnyFault(utterance)) return anyFault(VehicleData.source.motor.value)
+        return null
+    }
+
+    /**
+     * "Any faults?" — the question with no subject in it.
+     *
+     * It has to be answered here because the alternative answers it wrongly. Left to fall
+     * through, it reaches the C++ core's ListFaults intent, which replies "I'm not seeing any
+     * faults at the moment, everything looks fine" out of a vector that only
+     * [VoiceEngine.pushFault] can fill — and nothing has ever called it. The core is therefore
+     * incapable of reporting a fault, and says so with total confidence, while the diagnostics
+     * screen two feet away shows the fault it is denying.
+     *
+     * A wrong "everything looks fine" is the worst answer this assistant can give, so the
+     * question is taken before it can be asked of something that cannot know.
+     */
+    internal fun asksForAnyFault(utterance: String): Boolean {
+        val text = normalise(utterance)
+        if (text.isEmpty()) return false
+        return ANY_FAULT.any { text.contains(it) }
+    }
+
+    private val ANY_FAULT = listOf(
+        "any faults", "any fault", "any errors", "any error", "any problems", "any problem",
+        "any issues", "what faults", "what errors", "anything wrong", "something wrong",
+        "is everything ok", "is everything okay", "everything alright", "all good",
+    )
+
+    /**
+     * The same reading the card shows, plus the code the cluster prints for it — because someone
+     * asking whether anything is wrong is often looking at a dashboard while they ask.
+     */
+    internal fun anyFault(state: SignalState<MotorTelemetry>): String {
+        val body = compose("is there a fault in the motor", state, System.currentTimeMillis())
+        val code = (state as? SignalState.Live)?.data?.faultType?.let { clusterCode(it) }
+        return if (code == null) body else "$body The cluster shows that as $code."
     }
 
     // --- the cluster's codes -------------------------------------------------
@@ -85,19 +122,114 @@ object MotorVoice {
         // worth protecting from the handlers that run after this one.
         if (NOT_A_CODE.any { text.contains(it) }) return null
 
-        CODE.find(text)?.let { return ClusterQuery.Explicit("E-" + it.groupValues[1]) }
+        parseCode(text)?.let { return ClusterQuery.Explicit(it) }
         if (CURRENT_CODE.any { text.contains(it) }) return ClusterQuery.Current
         return null
     }
 
-    /** "e 31" once punctuation is stripped, or "e31" said as one word. */
-    private val CODE = Regex("""\be-?\s?(\d{2})\b""")
+    /**
+     * What to say when the driver is looking at a code and this side has nothing.
+     *
+     * Emphatically not "the cluster shouldn't be showing a code". The cluster is a separate
+     * application reading the AI board over its own link; it is the authority on what the cluster
+     * is showing, and this app is not entitled to overrule the driver's own dashboard from a
+     * signal that may simply not have arrived. The two disagreeing is a fact worth stating and a
+     * reason to ask, not a reason to contradict.
+     */
+    private const val NOTHING_HERE =
+        "I'm not seeing a fault on my side — my link to the diagnostics unit may not be up. " +
+            "If the cluster is showing a code, read it out and I'll tell you what it means: " +
+            "E-21 is electrical, E-31 mechanical, E-01 a fault it couldn't place."
 
-    private val CURRENT_CODE = listOf(
-        "code on the cluster", "code on the dash", "code on the display", "code on the screen",
-        "what is that code", "whats that code", "what s that code", "error code", "fault code",
-        "code is showing", "code showing",
+    /**
+     * A spoken code, however the recogniser wrote it down.
+     *
+     * This was a regex wanting two adjacent digits, which is only one of the several things
+     * "E-31" comes back as. People read codes out a digit at a time — "E three one" — and the
+     * transcription then depends on the recogniser's mood: "e 3 1", "e three one", "e three 1".
+     * All of those missed, and the code only worked when the whole number happened to be
+     * transcribed as one token. A driver who has to discover the one wording that works has been
+     * given a password, not an assistant.
+     *
+     * So the digits are collected token by token from whatever follows the "e", accepting figures
+     * and words interchangeably. A single digit is zero-padded, because "E one" can only be
+     * E-01 — and if it were not, the unknown-code reply names the three that exist anyway.
+     */
+    internal fun parseCode(text: String): String? {
+        val tokens = text.split(' ').filter { it.isNotEmpty() }
+        for (i in tokens.indices) {
+            // "e31" or "e-31" — the hyphen is already a space by the time this runs, but some
+            // recognisers emit it closed up.
+            JOINED.matchEntire(tokens[i])?.let { return format(it.groupValues[1]) }
+            if (tokens[i] != "e") continue
+
+            val digits = StringBuilder()
+            var j = i + 1
+            while (j < tokens.size && digits.length < 2) {
+                digits.append(digitsOf(tokens[j]) ?: break)
+                j++
+            }
+            if (digits.isNotEmpty()) return format(digits.toString())
+        }
+        return null
+    }
+
+    private val JOINED = Regex("e(\\d{1,2})")
+
+    /** One spoken token as the digits it stands for, or null if it is not a number at all. */
+    private fun digitsOf(token: String): String? = when {
+        token.all { it.isDigit() } -> token
+        else -> NUMBER_WORDS[token]
+    }
+
+    /**
+     * "Thirty" is 3 rather than 30 on purpose: it is only ever seen here as the first half of
+     * "thirty one", and the digits are being collected one place at a time.
+     */
+    private val NUMBER_WORDS = mapOf(
+        "zero" to "0", "oh" to "0", "o" to "0", "nought" to "0",
+        "one" to "1", "two" to "2", "three" to "3", "four" to "4", "five" to "5",
+        "six" to "6", "seven" to "7", "eight" to "8", "nine" to "9",
+        "ten" to "10", "eleven" to "11", "twelve" to "12", "thirteen" to "13",
+        "fourteen" to "14", "fifteen" to "15", "sixteen" to "16", "seventeen" to "17",
+        "eighteen" to "18", "nineteen" to "19",
+        "twenty" to "2", "thirty" to "3", "forty" to "4", "fifty" to "5",
+        // Whole numbers, for a recogniser that writes the words out rather than the figures.
+        "twentyone" to "21", "thirtyone" to "31",
     )
+
+    private fun format(digits: String): String =
+        if (digits.length == 1) "E-0$digits" else "E-" + digits.take(2)
+
+    /**
+     * Asking about what is on the dashboard, without naming a code.
+     *
+     * The first version required the word "code" next to the word "cluster", so "what's this
+     * error on my cluster" — which is how the question actually gets asked — matched nothing
+     * here, fell through to the embedding matcher, and came back as a general motor status
+     * report. Built as a surface crossed with a noun instead: the driver may call it a code, an
+     * error, a warning or a light, and the thing showing it may be the cluster, the dash, the
+     * display or the screen.
+     */
+    private val CURRENT_CODE: List<String> = buildList {
+        val surfaces = listOf("cluster", "dash", "dashboard", "display", "screen")
+        val nouns = listOf("code", "error", "warning", "fault", "light")
+        for (n in nouns) for (sf in surfaces) {
+            add("$n on the $sf")
+            add("$n on my $sf")
+            add("$n on $sf")
+        }
+        // Said while pointing at it, with the surface left implicit.
+        addAll(
+            listOf(
+                "what is that code", "whats that code", "what s that code",
+                "what is this code", "whats this code", "what s this code",
+                "error code", "fault code", "code is showing", "code showing",
+                "what is that error", "whats that error", "what s that error",
+                "what is this error", "whats this error", "what s this error",
+            ),
+        )
+    }
 
     private val NOT_A_CODE = listOf("take me", "navigate", "drive me", "call ", "dial ")
 
@@ -117,8 +249,7 @@ object MotorVoice {
             ClusterQuery.Current -> {
                 live ?: return "I can't reach the motor diagnostics unit, so I can't tell you " +
                     "what the cluster is showing."
-                clusterCode(live.faultType)
-                    ?: return "There's no motor fault reported, so the cluster shouldn't be showing a code."
+                clusterCode(live.faultType) ?: return NOTHING_HERE
             }
         }
 
@@ -139,7 +270,11 @@ object MotorVoice {
         val liveCode = live?.let { clusterCode(it.faultType) }
         val check = when {
             live == null -> " I can't check it against the motor right now."
-            liveCode == null -> " The motor isn't reporting a fault at the moment, so that code should have cleared."
+            // Not "so it should have cleared". The driver is looking at the code; this side not
+            // seeing the fault is at least as likely to mean the link is down as it is to mean
+            // the fault has gone, and only one of those two readings is checkable from here.
+            liveCode == null -> " I'm not seeing that fault on my side though — either it's " +
+                "cleared, or my link to the diagnostics unit isn't up."
             liveCode == code -> " That matches what the motor is reporting now."
             else -> " The motor is reporting $liveCode now, so the cluster should have moved on."
         }
