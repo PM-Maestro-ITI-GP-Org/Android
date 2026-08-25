@@ -171,10 +171,11 @@ private fun RailButton(
  * the driver's attention is already on the overlay they just opened — but a fault is the one
  * time VEGA has bad news to deliver *from its own corner*: staying anchored where the driver's
  * eye already knows to check reads as "look here" in a way relocating to the middle of the
- * screen would undercut. [BotState.Exclaim] gives it the shape/reaction for this — a literal
- * "!", not just a face pose — and it holds that state (small, in its usual spot) for as long as
- * the fault is live, voice or not: a fault is not something to stop pointing out just because the
- * driver isn't currently talking to VEGA. Opening the overlay on top of that fault grows it, the
+ * screen would undercut. [BotState.Confused] gives it the reaction for this — a genuinely
+ * uneasy-looking face, not a status icon standing in for one — and it holds that state (small,
+ * in its usual spot) for as long as the fault is live, voice or not: a fault is not something to
+ * stop pointing out just because the driver isn't currently talking to VEGA. Opening the overlay
+ * on top of that fault grows it, the
  * one deliberate size change here, for exactly the window VEGA has the driver's attention on the
  * subject — closing the overlay shrinks it back to its normal size without touching the "!",
  * which only clears once the motor genuinely is normal again.
@@ -227,14 +228,15 @@ private fun BrandMark() {
                     // A fault always wins over dozing off — that is the one time the car most
                     // needs the driver's attention, not less of it.
                     //
-                    // Exclaim, not Alert: Alert keeps the same face and only makes the eyes a
-                    // little rounder plus a barely-visible 2.5 Hz jitter -- at the rail's 46 dp
-                    // size that reads as "no change" at a glance, which is exactly what was
-                    // reported. Exclaim swaps the whole silhouette for a literal "!" (no face at
-                    // all), so a fault is unmistakable rather than a subtle difference in eye
-                    // roundness someone has to be looking for.
+                    // Confused, not Alert or Exclaim: Alert keeps Idle's face and only makes the
+                    // eyes a little rounder plus a barely-visible 2.5 Hz jitter, which reads as
+                    // "no change" at the rail's small size. Exclaim reads unambiguously but
+                    // replaces the face outright with a literal "!" glyph, which isn't a
+                    // reaction, it's a sign. Confused keeps a face -- mismatched tilted eyes and
+                    // a tilted head, no symbol -- so it reads as VEGA looking uneasy about
+                    // something rather than displaying an icon.
                     state = when {
-                        hasFault -> BotState.Exclaim
+                        hasFault -> BotState.Confused
                         isDozing -> BotState.Sleepy
                         else -> BotState.Idle
                     },
