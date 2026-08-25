@@ -178,14 +178,15 @@ private fun RailButton(
  * Two independent signals, not one: [BotState.Hexagon] — a static hexagonal silhouette, distinct
  * from Idle's circle by shape rather than a face someone has to look closely at to read (this
  * composable's own state-selection comment has the history of what was tried and rejected before
- * it) — tracks the fault itself, and holds for as long as it's live, voice or not. Size pops up
- * only for the moment VEGA is actually *speaking* about it ([VoiceOverlayState.voiceState] `==
- * SPEAKING`, not merely the overlay being open, which also covers listening/thinking where
- * nothing has been said yet) and springs back down the instant that ends — a punchy
+ * it) — tracks the fault itself, and holds for as long as it's live, voice or not.
+ * [BotState.Swirl]'s two rings, diverging outward and fading over ~1s, play once for the moment
+ * VEGA is actually *speaking* about it ([VoiceOverlayState.voiceState] `== SPEAKING`, not merely
+ * the overlay being open, which also covers listening/thinking where nothing has been said yet).
+ * Size pops up for that same window and springs back down the instant it ends — a punchy
  * `Spring.DampingRatioMediumBouncy`, not the smoother curve elsewhere, is what makes it read as a
- * "pop" rather than a resize, and is the only motion Hexagon (which has none of its own) gets.
- * The shape itself never stops signalling the fault until the motor genuinely is normal again —
- * only the pop is tied to speech.
+ * "pop" rather than a resize. Hexagon resumes once speaking stops; it never stops signalling the
+ * fault until the motor genuinely is normal again — only the swirl and the pop are tied to
+ * speech.
  */
 @Composable
 private fun BrandMark() {
@@ -240,13 +241,22 @@ private fun BrandMark() {
                     // A fault always wins over dozing off — that is the one time the car most
                     // needs the driver's attention, not less of it.
                     //
-                    // Hexagon: a static hexagonal silhouette, geometrically unmistakable from
-                    // Idle's circle rather than a face variant someone has to be looking closely
-                    // at to catch (Alert, Confused and Exclaim were all tried and rejected on
-                    // exactly that ground, or on Comet's near-invisible collapse -- see git log
-                    // on this file for that history). Hexagon has no animation of its own; the
-                    // "moves when talking" motion is the dockSize pop below, not a change here.
+                    // Hexagon at rest: a static hexagonal silhouette, geometrically unmistakable
+                    // from Idle's circle rather than a face variant someone has to be looking
+                    // closely at to catch (Alert, Confused and Exclaim were all tried and
+                    // rejected on exactly that ground, or on Comet's near-invisible collapse --
+                    // see git log on this file for that history).
+                    //
+                    // Swirl while speaking: two rings bloom outward and fade over ~1s
+                    // (BotState.Swirl's own envelope, not something built here) -- the requested
+                    // "diverge while the message is being said". BotEngine.setState() is a no-op
+                    // when asked to re-enter the state it is already in, so this only replays
+                    // once per LISTENING/THINKING -> SPEAKING transition, same as the dockSize
+                    // pop below is only one motion per speaking turn, not a loop for its
+                    // duration. Falls back to plain Idle geometry (Swirl's own default) once the
+                    // rings finish fading if a reply runs longer than that.
                     state = when {
+                        hasFault && isSpeaking -> BotState.Swirl
                         hasFault -> BotState.Hexagon
                         isDozing -> BotState.Sleepy
                         else -> BotState.Idle
