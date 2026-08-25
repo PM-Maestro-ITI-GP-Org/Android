@@ -181,7 +181,7 @@ private fun RailButton(
  * long as the fault is live, tumbling triangle and rings on a permanent loop rather than a
  * one-shot flourish (this composable's own git history has what was tried and rejected before
  * it: Alert, Confused, Exclaim, Comet, a Hexagon/Swirl split). Size tracks
- * [MotorFaultAnnouncer.isSpeaking] specifically, not any voice reply: that flow is only ever true
+ * [MotorFaultAnnouncer.isAnnouncing] specifically, not any voice reply: that flow is only ever true
  * for the span of the proactive "a fault just showed up" sentence
  * ([com.motorguard.ivi.MainActivity.announceMotorFault]'s own TTS instance, entirely separate from
  * [VoiceOverlaySession][com.motorguard.ivi.ui.voice.VoiceOverlaySession]), so asking VEGA something
@@ -200,7 +200,7 @@ private fun BrandMark() {
         val hasFault = severities.values.any { it == Severity.CAUTION || it == Severity.CRITICAL }
 
         val overlayOpen by VoiceOverlayState.isOpen.collectAsStateWithLifecycle()
-        val announcingFault by MotorFaultAnnouncer.isSpeaking.collectAsStateWithLifecycle()
+        val announcingFault by MotorFaultAnnouncer.isAnnouncing.collectAsStateWithLifecycle()
         val dockAlpha by animateFloatAsState(
             targetValue = if (overlayOpen && !hasFault) 0f else 1f,
             label = "mascot-dock-fade",

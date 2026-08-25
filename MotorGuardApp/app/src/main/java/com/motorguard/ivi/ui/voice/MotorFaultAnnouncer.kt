@@ -135,8 +135,12 @@ object MotorFaultAnnouncer {
      *  happens to be about the motor is answered through [VoiceOverlaySession]'s own TTS, which
      *  never touches this flag, so [com.motorguard.ivi.ui.components.NavRail]'s docked mascot can
      *  key its "big while VEGA is actively volunteering the fault" pop off this alone rather than
-     *  off speech in general. */
-    val isSpeaking = MutableStateFlow(false)
+     *  off speech in general.
+     *
+     *  Named `isAnnouncing`, not `isSpeaking`: the latter shadows [TextToSpeech]'s own
+     *  `isSpeaking()` method wherever this is referenced from inside a `tts?.apply { ... }`
+     *  block below, which fails to compile ("unresolved reference: value") rather than warn. */
+    val isAnnouncing = MutableStateFlow(false)
 
     /** The cluster code last handed to the C++ core, so the same one is not pushed every second. */
     private var pushedCode: String? = null
@@ -195,7 +199,7 @@ object MotorFaultAnnouncer {
     /** Release the engine. The process normally keeps it for its lifetime; this is for teardown. */
     fun shutdown() {
         pushedCode = null
-        isSpeaking.value = false
+        isAnnouncing.value = false
         abandonFocus()
         runCatching { tts?.shutdown() }
         tts = null
@@ -223,14 +227,14 @@ object MotorFaultAnnouncer {
                 language = Locale.US
                 setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
-                        isSpeaking.value = true
+                        isAnnouncing.value = true
                     }
                     override fun onDone(utteranceId: String?) {
-                        isSpeaking.value = false
+                        isAnnouncing.value = false
                         abandonFocus()
                     }
                     override fun onError(utteranceId: String?) {
-                        isSpeaking.value = false
+                        isAnnouncing.value = false
                         abandonFocus()
                     }
                 })
