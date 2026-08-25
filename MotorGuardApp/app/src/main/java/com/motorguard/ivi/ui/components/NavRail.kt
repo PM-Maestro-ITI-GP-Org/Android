@@ -161,9 +161,18 @@ private fun RailButton(
  * CAUTION/CRITICAL check [com.motorguard.ivi.MainActivity.autoOpenDiagnosticsOnFault] uses, so
  * the mascot never disagrees with what actually opens Diagnostics.
  *
- * Fades out while the voice overlay is open and reports its own screen position on every
- * layout pass, so [com.motorguard.ivi.ui.voice.VoiceOverlayUi]'s flight — a separate window,
- * not a child of this composition — knows where to start from. See [VoiceOverlayState].
+ * Normally fades out while the voice overlay is open and reports its own screen position on
+ * every layout pass, so [com.motorguard.ivi.ui.voice.VoiceOverlayUi]'s flight — a separate
+ * window, not a child of this composition — knows where to start from. See [VoiceOverlayState].
+ *
+ * A fault overrides that flight. Flying to centre screen is right for an ordinary "hey VEGA" —
+ * the driver's attention is already on the overlay they just opened — but a fault is the one
+ * time VEGA has bad news to deliver *from its own corner*: staying anchored where the driver's
+ * eye already knows to check reads as "look here" in a way relocating to the middle of the
+ * screen would undercut. [BotState.Alert] (the same state a fault sets even with the overlay
+ * closed) already gives it the shape/reaction for this — a tilted "!" — so only the fly-away is
+ * what changes here; size stays the same as always, so this isn't read as "got bigger because a
+ * voice command happened" on top of "there's a fault".
  */
 @Composable
 private fun BrandMark() {
@@ -174,7 +183,10 @@ private fun BrandMark() {
         val hasFault = severities.values.any { it == Severity.CAUTION || it == Severity.CRITICAL }
 
         val overlayOpen by VoiceOverlayState.isOpen.collectAsStateWithLifecycle()
-        val dockAlpha by animateFloatAsState(targetValue = if (overlayOpen) 0f else 1f, label = "mascot-dock-fade")
+        val dockAlpha by animateFloatAsState(
+            targetValue = if (overlayOpen && !hasFault) 0f else 1f,
+            label = "mascot-dock-fade",
+        )
 
         // Ticks once a second purely so this recomposes and re-checks the clock — nothing else
         // would ever tell it time has passed while the driver simply isn't touching anything.

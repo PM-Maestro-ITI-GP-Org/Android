@@ -8,6 +8,15 @@ set(CORE        ${CMAKE_SOURCE_DIR}/assistant-core)
 set(WHISPER_DIR ${CMAKE_SOURCE_DIR}/whisper.cpp)
 set(ESPEAK_DIR  ${CMAKE_SOURCE_DIR}/espeak-ng)
 
+# Both subprojects declare their own libraries with a plain
+# `option(BUILD_SHARED_LIBS ...)`, which only sets the cache entry if it is not
+# already defined -- setting this AFTER add_subdirectory() (as this file used
+# to) is too late, since by then whisper/ggml/espeak-ng have already read their
+# own default (shared, on this cross-compile) and declared their targets that
+# way. Forcing it here, before either add_subdirectory() call, is what actually
+# makes their own `option()` calls see it pre-set and keep it OFF.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
 # SQLite is compiled straight into the library (the NDK does not expose the
 # platform's libsqlite to apps). Drop the official amalgamation next to this
 # file — see cpp/README-native.md for the one-line copy command.
@@ -76,11 +85,6 @@ if(EXISTS ${ESPEAK_DIR}/CMakeLists.txt)
 else()
     message(WARNING "espeak-ng not found at ${ESPEAK_DIR} — building without TTS.")
 endif()
-
-# Both subprojects default to shared libraries, which would ship three .so files
-# instead of one. Force static AFTER add_subdirectory so the setting cannot leak
-# into how this library itself is declared.
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 # ---------------------------------------------------------------------------
 # The library
