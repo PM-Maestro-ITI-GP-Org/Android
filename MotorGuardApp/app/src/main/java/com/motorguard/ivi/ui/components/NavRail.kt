@@ -1,6 +1,7 @@
 package com.motorguard.ivi.ui.components
 
 import android.os.SystemClock
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -66,6 +67,7 @@ import com.motorguard.ivi.ui.diagnostics.VehicleData
 import com.motorguard.ivi.ui.theme.MotorGuard
 import com.motorguard.ivi.ui.theme.Tokens
 import com.motorguard.ivi.ui.voice.VoiceOverlayState
+import com.motorguard.ivi.ui.voice.VoiceState
 
 // The rail reads dark even in light mode, like the reference. Its background now comes from the
 // theme so it picks up the album hue with the rest of the app; the dim foreground stays pinned.
@@ -171,16 +173,17 @@ private fun RailButton(
  * the driver's attention is already on the overlay they just opened — but a fault is the one
  * time VEGA has bad news to deliver *from its own corner*: staying anchored where the driver's
  * eye already knows to check reads as "look here" in a way relocating to the middle of the
- * screen would undercut. [BotState.Confused] gives it the reaction for this — a genuinely
- * uneasy-looking face, always full size and visible (unlike [BotState.Comet], tried and rejected:
- * see this composable's own state-selection comment) — and it holds that state (small, in its
- * usual spot) for as long as the fault is live, voice or not: a fault is not something to stop
- * pointing out just because the driver isn't
- * currently talking to VEGA. Opening the overlay
- * on top of that fault grows it, the
- * one deliberate size change here, for exactly the window VEGA has the driver's attention on the
- * subject — closing the overlay shrinks it back to its normal size without touching the "!",
- * which only clears once the motor genuinely is normal again.
+ * screen would undercut.
+ *
+ * Two independent signals, not one: [BotState.Confused] — a genuinely uneasy-looking face, always
+ * full size and visible (unlike [BotState.Comet], tried and rejected: see this composable's own
+ * state-selection comment) — tracks the fault itself, and holds for as long as it's live, voice
+ * or not. Size pops up only for the moment VEGA is actually *speaking* about it
+ * ([VoiceOverlayState.voiceState] `== SPEAKING`, not merely the overlay being open, which also
+ * covers listening/thinking where nothing has been said yet) and springs back down the instant
+ * that ends — a punchy `Spring.DampingRatioMediumBouncy`, not the smoother curve elsewhere, is
+ * what makes it read as a "pop" rather than a resize. The face itself never stops being uneasy
+ * until the motor genuinely is normal again — only the pop is tied to speech.
  */
 @Composable
 private fun BrandMark() {
@@ -191,13 +194,18 @@ private fun BrandMark() {
         val hasFault = severities.values.any { it == Severity.CAUTION || it == Severity.CRITICAL }
 
         val overlayOpen by VoiceOverlayState.isOpen.collectAsStateWithLifecycle()
+        val voiceState by VoiceOverlayState.voiceState.collectAsStateWithLifecycle()
+        val isSpeaking = overlayOpen && voiceState == VoiceState.SPEAKING
         val dockAlpha by animateFloatAsState(
             targetValue = if (overlayOpen && !hasFault) 0f else 1f,
             label = "mascot-dock-fade",
         )
         val dockSize by animateDpAsState(
-            targetValue = if (overlayOpen && hasFault) DOCKED_MASCOT_ALERT_SIZE else DOCKED_MASCOT_SIZE,
-            animationSpec = spring(dampingRatio = 0.6f),
+            targetValue = if (isSpeaking && hasFault) DOCKED_MASCOT_ALERT_SIZE else DOCKED_MASCOT_SIZE,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            ),
             label = "mascot-dock-size",
         )
 

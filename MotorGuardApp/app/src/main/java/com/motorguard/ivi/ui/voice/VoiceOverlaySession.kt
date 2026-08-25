@@ -17,6 +17,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.view.View
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -127,6 +128,7 @@ class VoiceOverlaySession(context: Context) : VoiceInteractionSession(context) {
                 // No background: the window is transparent so the tab underneath shows
                 // through, and the theme's own opaque fill would defeat that entirely.
                 MotorGuardTheme(forceDark = true, paintBackground = false) {
+                    LaunchedEffect(model.state) { VoiceOverlayState.voiceState.value = model.state }
                     VoiceOverlay(
                         model = model,
                         onChip = ::route,
