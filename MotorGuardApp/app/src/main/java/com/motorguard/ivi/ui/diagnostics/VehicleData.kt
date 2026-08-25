@@ -9,7 +9,6 @@ import com.motorguard.ivi.data.vehicle.api.VehicleDataSource
 import com.motorguard.ivi.data.vehicle.api.latestValueOrNull
 import com.motorguard.ivi.data.vehicle.fake.FakeMotorCaptureSource
 import com.motorguard.ivi.data.vehicle.fake.FakeVehicleDataSource
-import com.motorguard.ivi.data.vehicle.someip.SomeIpVehicleData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -81,26 +80,22 @@ object VehicleData {
     )
 
     /**
-     * The real motor signal, over SOME/IP to the diagnostics unit — see
-     * `vendor/motorguard/MotorGuard/MotorGuard_Application/motorservice/README.md`.
+     * Everything else in the UI sees only this type.
      *
-     * Null on any build without `libmotorguardsomeip.so`, which is every Gradle build: this whole
-     * branch of the wiring is added by the AOSP drop-in and does not exist on the app branch. It
-     * is also null if the link could not open its sockets at all. Either way the fake stays, which
-     * is why the emulator and the image behave identically apart from where the motor's numbers
-     * come from.
+     * The fake, on this branch, always. The SOME/IP link is added by the AOSP drop-in — its
+     * `motorservice/vehicledata-someip.patch` rewrites exactly these two properties at deploy
+     * time, which is the only place the Kotlin for it and `libmotorguardsomeip.so` both exist.
+     * Writing that wiring here instead means Gradle compiling a reference to a package that is
+     * not in this tree, which is what it did.
      */
-    private val someip = SomeIpVehicleData.create(scope, fake)
-
-    /** Everything else in the UI sees only this type. */
-    val source: VehicleDataSource = someip?.first ?: fake
+    val source: VehicleDataSource = fake
 
     /** The debug panel's only window into [fake]. Still the fake even when the link is up: it
      *  drives the five signals the diagnostics unit does not publish, and forcing the motor from
      *  here would be overriding a real reading with a made-up one. */
     val debugControls: VehicleDebugControls = FakeDebugControls(fake, scope)
 
-    val captureSource: MotorCaptureSource = someip?.second ?: fakeCapture
+    val captureSource: MotorCaptureSource = fakeCapture
 
     /**
      * "Open Diagnostics and focus the battery" from outside the fragment — [MainActivity]'s

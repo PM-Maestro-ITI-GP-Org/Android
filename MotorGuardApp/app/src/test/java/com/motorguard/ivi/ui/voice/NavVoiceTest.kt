@@ -4,11 +4,13 @@ import com.motorguard.ivi.data.nav.GeoPoint
 import com.motorguard.ivi.data.nav.Maneuver
 import com.motorguard.ivi.data.nav.NavProgress
 import com.motorguard.ivi.data.nav.Place
+import com.motorguard.ivi.data.nav.PlaceCategory
 import com.motorguard.ivi.data.nav.Route
 import com.motorguard.ivi.data.nav.RouteStep
 import com.motorguard.ivi.ui.nav.NavPhase
 import com.motorguard.ivi.ui.nav.NavUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,6 +69,51 @@ class NavVoiceTest {
     fun `leaves everything else alone`() {
         listOf("play some music", "take me home", "is the motor okay", "", "call the office")
             .forEach { assertNull(it, ask(it)) }
+    }
+
+    // --- nearest ------------------------------------------------------------
+
+    private fun nearest(u: String) = NavVoice.nearestOf(u)
+
+    @Test
+    fun `nearest fuel and charging are kept apart`() {
+        assertEquals(PlaceCategory.FUEL, nearest("where is the nearest petrol station")?.category)
+        assertEquals(PlaceCategory.FUEL, nearest("nearest gas station")?.category)
+        // This vehicle is electric. Answering "charger" with a petrol station, or the reverse,
+        // is a wrong answer that looks entirely right until the driver arrives.
+        assertEquals(PlaceCategory.CHARGER, nearest("closest charging station")?.category)
+        assertEquals(PlaceCategory.CHARGER, nearest("where can i find a charger")?.category)
+    }
+
+    /** Car repair is shop=car_repair in OSM, which lands in SHOP with every other shop — so no
+     *  category filter, rather than a filter that would drop the right answer. */
+    @Test
+    fun `nearest car centre asks for no category`() {
+        val ask = nearest("where is the nearest car centre")
+        assertNotNull(ask)
+        assertNull(ask!!.category)
+        assertEquals("car centre", ask.noun)
+        listOf("nearest garage", "closest mechanic", "nearest service centre", "a repair shop near me")
+            .forEach { assertNotNull(it, nearest(it)) }
+    }
+
+    /** Something has to mark it as a proximity question, or every mention becomes a trip. */
+    @Test
+    fun `a petrol station merely mentioned is not a nearest request`() {
+        assertNull(nearest("take me to shell on the corniche"))
+        assertNull(nearest("play some music"))
+        assertNull(nearest("is there a fault in the motor"))
+        assertNull(nearest(""))
+    }
+
+    /**
+     * "Take me to the nearest petrol station" satisfies both handlers, and only one of them
+     * sorts by distance — so nearest has to win, and the session checks it first.
+     */
+    @Test
+    fun `a nearest request that is also a destination phrase is recognised as nearest`() {
+        assertNotNull(nearest("take me to the nearest petrol station"))
+        assertEquals(PlaceCategory.FUEL, nearest("take me to the nearest petrol station")?.category)
     }
 
     // --- setting a destination ----------------------------------------------

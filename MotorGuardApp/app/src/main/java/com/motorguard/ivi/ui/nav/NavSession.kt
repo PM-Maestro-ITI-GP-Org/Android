@@ -5,9 +5,14 @@ import com.motorguard.ivi.data.nav.NavConfig
 import com.motorguard.ivi.data.nav.NavProviders
 import com.motorguard.ivi.data.nav.NavRepository
 import com.motorguard.ivi.data.nav.Place
+import com.motorguard.ivi.data.nav.PlaceCategory
 import com.motorguard.ivi.data.nav.Route
+import com.motorguard.ivi.data.nav.RouteMath
 import com.motorguard.ivi.data.nav.VehiclePosition
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -52,6 +57,16 @@ sealed interface SpokenNavResult {
     data class NoRoute(val destination: Place) : SpokenNavResult
     data class Failed(val message: String) : SpokenNavResult
     data object NotReady : SpokenNavResult
+
+    /**
+     * No position fix, so "nearest" has no meaning.
+     *
+     * Distinct from every other failure because it is the one where an answer *could* be
+     * produced and must not be: [NavConfig.defaultOrigin] is a real coordinate and searching
+     * around it would return real, confidently-named places near a building in Smart Village
+     * that the car may be nowhere near. Wrong and plausible is the worst pair.
+     */
+    data object NoFix : SpokenNavResult
 }
 
 object NavSession {
@@ -397,6 +412,113 @@ object NavSession {
         startGuidance()
         return SpokenNavResult.Started(destination, routes.first())
     }
+
+    /**
+     * Find the closest thing matching [query] and drive there.
+     *
+     * Three things separate this from [navigateTo], and each is a way the naive version is
+     * wrong:
+     *
+     * **It insists on a real fix.** [navigateTo] falls back to [NavConfig.defaultOrigin] when
+     * the car's position is unknown, which is fine for "take me to Cairo Airport" — the airport
+     * is where it is regardless. "Nearest" is a claim *about where the car is*, so answering it
+     * from a default coordinate would name a genuine petrol station near Smart Village and be
+     * confidently, invisibly wrong. [SpokenNavResult.NoFix] instead.
+     *
+     * **It sorts by distance.** Photon biases toward `near` but orders by relevance, not
+     * proximity — it is a geocoder, not a POI ranker. Taking `first()` for a "nearest" question
+     * is the bug this method exists to avoid, and it would be invisible: every result really is
+     * a petrol station, just not the closest one.
+     *
+     * **It filters by category where the data supports it.** `osm_value=fuel` and
+     * `charging_station` are parsed into [PlaceCategory] already, so a fuel query can drop the
+     * street named "Petrol" that a text search happily returns. Where no category fits — a
+     * garage is `shop=car_repair`, which lands in SHOP with every other shop — the filter is
+     * skipped rather than faked, and the driver hears the name before being taken there.
+     *
+     * **It ranks by road distance, not by the crow.** Straight-line proximity is only the
+     * shortlist: the nearest station as the crow flies can be across a river, the wrong side of a
+     * motorway, or behind a one-way system, and a driver told "nearest" and then routed 6 km
+     * around has been given a true number that answered the wrong question. So every shortlisted
+     * candidate is actually routed and the shortest **route** wins.
+     *
+     * The routes are fetched concurrently, which is what makes that affordable: the cost is one
+     * round trip in wall-clock time rather than [MAX_NEAREST_CANDIDATES] of them, on a request a
+     * driver is waiting through with a spinner up. The shortlist stays small anyway — the routing
+     * service is a public fair-use instance, and four parallel requests is the most this should
+     * ask of it for one spoken question.
+     *
+     * Candidates that cannot be routed at all simply drop out, so an unreachable nearest falls
+     * through to the next rather than failing the request.
+     */
+    suspend fun navigateToNearest(query: String, category: PlaceCategory?): SpokenNavResult {
+        if (!started) return SpokenNavResult.NotReady
+        val here = _state.value.position?.point ?: return SpokenNavResult.NoFix
+
+        searchJob?.cancel()
+        routeJob?.cancel()
+
+        val found = runCatching { repository.search(query, here) }.getOrElse {
+            return SpokenNavResult.Failed(it.userMessage("Search unavailable"))
+        }
+        // Category first, but never to the point of returning nothing: a filter that empties the
+        // list has told us less than the unfiltered list did.
+        val matching = category?.let { c -> found.filter { it.category == c } }?.takeIf { it.isNotEmpty() }
+            ?: found
+        val byDistance = matching.sortedBy { RouteMath.distanceMeters(here, it.point) }
+        if (byDistance.isEmpty()) return SpokenNavResult.NoResults(query)
+
+        _state.update { it.copy(routing = true, error = null) }
+        val shortlist = byDistance.take(MAX_NEAREST_CANDIDATES)
+        val routed = coroutineScope {
+            shortlist.map { place ->
+                async { place to runCatching { repository.routes(here, place) }.getOrNull().orEmpty() }
+            }.awaitAll()
+        }
+
+        // Per place, its own best route; across places, the shortest of those. Comparing a
+        // provider's first alternative against another's would rank the services' preferences
+        // rather than the roads.
+        val best = routed
+            .mapNotNull { (place, routes) ->
+                val shortest = routes.minByOrNull { it.distanceMeters } ?: return@mapNotNull null
+                Triple(place, routes, shortest)
+            }
+            .minByOrNull { (_, _, shortest) -> shortest.distanceMeters }
+
+        if (best == null) {
+            _state.update { it.copy(routing = false) }
+            return SpokenNavResult.NoRoute(byDistance.first())
+        }
+
+        val (destination, routes, shortest) = best
+        _state.update {
+            it.copy(
+                phase = NavPhase.Preview(
+                    origin = null,
+                    destination = destination,
+                    routes = routes,
+                    // Point at the route that won, so startGuidance()'s `selected` drives the one
+                    // this method measured rather than the provider's default.
+                    selectedIndex = routes.indexOf(shortest).coerceAtLeast(0),
+                ),
+                routing = false,
+                error = null,
+            )
+        }
+        startGuidance()
+        return SpokenNavResult.Started(destination, shortest)
+    }
+
+    /**
+     * How many of the crow-flies nearest get routed for real.
+     *
+     * Four is a compromise with a public routing instance, not a tuned number: enough that the
+     * genuinely-closest-by-road is very likely inside it even when the geometry is awkward, few
+     * enough that one spoken question is not a burst of traffic. They go out in parallel, so the
+     * driver waits for one round trip regardless.
+     */
+    private const val MAX_NEAREST_CANDIDATES = 4
 
     // ---------------------------------------------------------------- guidance
 

@@ -147,7 +147,8 @@ Java_com_motorguard_ivi_ui_voice_VoiceEngine_nativeHandle(
 /**
  * Push a fault in from the vehicle layer.
  *
- * @param code        e.g. "P0217" or a predictive code like "PRED_BRAKE_WEAR"
+ * @param code        a cluster code: "E-21" electrical, "E-31" mechanical,
+ *                    "E-01" raised but unclassified
  * @param predicted   true for a predictive-maintenance forecast, false for a live DTC
  * @param sensorKey   freeze-frame key, e.g. "coolant_temp_c" ("" for none)
  * @param sensorValue value for that key
