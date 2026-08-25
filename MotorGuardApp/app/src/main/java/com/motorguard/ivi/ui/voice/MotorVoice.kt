@@ -90,14 +90,52 @@ object MotorVoice {
         return null
     }
 
+    /**
+     * What to say when the driver is looking at a code and this side has nothing.
+     *
+     * Emphatically not "the cluster shouldn't be showing a code". The cluster is a separate
+     * application reading the AI board over its own link; it is the authority on what the cluster
+     * is showing, and this app is not entitled to overrule the driver's own dashboard from a
+     * signal that may simply not have arrived. The two disagreeing is a fact worth stating and a
+     * reason to ask, not a reason to contradict.
+     */
+    private const val NOTHING_HERE =
+        "I'm not seeing a fault on my side — my link to the diagnostics unit may not be up. " +
+            "If the cluster is showing a code, read it out and I'll tell you what it means: " +
+            "E-21 is electrical, E-31 mechanical, E-01 a fault it couldn't place."
+
     /** "e 31" once punctuation is stripped, or "e31" said as one word. */
     private val CODE = Regex("""\be-?\s?(\d{2})\b""")
 
-    private val CURRENT_CODE = listOf(
-        "code on the cluster", "code on the dash", "code on the display", "code on the screen",
-        "what is that code", "whats that code", "what s that code", "error code", "fault code",
-        "code is showing", "code showing",
-    )
+    /**
+     * Asking about what is on the dashboard, without naming a code.
+     *
+     * The first version required the word "code" next to the word "cluster", so "what's this
+     * error on my cluster" — which is how the question actually gets asked — matched nothing
+     * here, fell through to the embedding matcher, and came back as a general motor status
+     * report. Built as a surface crossed with a noun instead: the driver may call it a code, an
+     * error, a warning or a light, and the thing showing it may be the cluster, the dash, the
+     * display or the screen.
+     */
+    private val CURRENT_CODE: List<String> = buildList {
+        val surfaces = listOf("cluster", "dash", "dashboard", "display", "screen")
+        val nouns = listOf("code", "error", "warning", "fault", "light")
+        for (n in nouns) for (sf in surfaces) {
+            add("$n on the $sf")
+            add("$n on my $sf")
+            add("$n on $sf")
+        }
+        // Said while pointing at it, with the surface left implicit.
+        addAll(
+            listOf(
+                "what is that code", "whats that code", "what s that code",
+                "what is this code", "whats this code", "what s this code",
+                "error code", "fault code", "code is showing", "code showing",
+                "what is that error", "whats that error", "what s that error",
+                "what is this error", "whats this error", "what s this error",
+            ),
+        )
+    }
 
     private val NOT_A_CODE = listOf("take me", "navigate", "drive me", "call ", "dial ")
 
@@ -117,8 +155,7 @@ object MotorVoice {
             ClusterQuery.Current -> {
                 live ?: return "I can't reach the motor diagnostics unit, so I can't tell you " +
                     "what the cluster is showing."
-                clusterCode(live.faultType)
-                    ?: return "There's no motor fault reported, so the cluster shouldn't be showing a code."
+                clusterCode(live.faultType) ?: return NOTHING_HERE
             }
         }
 
@@ -139,7 +176,11 @@ object MotorVoice {
         val liveCode = live?.let { clusterCode(it.faultType) }
         val check = when {
             live == null -> " I can't check it against the motor right now."
-            liveCode == null -> " The motor isn't reporting a fault at the moment, so that code should have cleared."
+            // Not "so it should have cleared". The driver is looking at the code; this side not
+            // seeing the fault is at least as likely to mean the link is down as it is to mean
+            // the fault has gone, and only one of those two readings is checkable from here.
+            liveCode == null -> " I'm not seeing that fault on my side though — either it's " +
+                "cleared, or my link to the diagnostics unit isn't up."
             liveCode == code -> " That matches what the motor is reporting now."
             else -> " The motor is reporting $liveCode now, so the cluster should have moved on."
         }

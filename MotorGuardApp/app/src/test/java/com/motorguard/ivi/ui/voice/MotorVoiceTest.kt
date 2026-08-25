@@ -102,6 +102,43 @@ class MotorVoiceTest {
             .forEach { assertNull(it, cluster(it)) }
     }
 
+    /**
+     * The phrasing that started this: "what's this error on my cluster" required the literal word
+     * "code" next to "cluster", matched nothing, and fell through to a general status report that
+     * said there was no fault while a code was on screen.
+     */
+    @Test
+    fun `asking about an error on the cluster is a cluster question`() {
+        listOf(
+            "what is this error on my cluster",
+            "whats this error on the cluster",
+            "what is that warning on the dash",
+            "what is this light on my dashboard",
+            "what is the fault on the display",
+            "whats this error",
+        ).forEach { assertEquals(it, MotorVoice.ClusterQuery.Current, cluster(it)) }
+    }
+
+    /**
+     * The cluster is a separate app reading the AI board over its own link, and it is the
+     * authority on what it is showing. This side seeing nothing is at least as likely to mean the
+     * link is down as it is to mean the fault cleared — so it must not tell a driver looking at a
+     * code that there is no code.
+     */
+    @Test
+    fun `no fault on this side never contradicts the cluster`() {
+        val current = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Current, live(motor()))
+        assertFalse(current, current.contains("shouldn't be showing"))
+        assertTrue(current, current.contains("not seeing a fault on my side"))
+        // Still answers the question it was asked, rather than only reporting a problem.
+        assertTrue(current, current.contains("E-31") && current.contains("E-21"))
+
+        val explicit = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Explicit("E-31"), live(motor()))
+        assertTrue(explicit, explicit.contains("mechanical"))
+        assertTrue(explicit, explicit.contains("link to the diagnostics unit isn't up"))
+        assertFalse(explicit, explicit.contains("should have cleared"))
+    }
+
     /** The mapping the cluster's Main.qml does: 2x electrical, 3x mechanical, E-01 unplaced. */
     @Test
     fun `codes mirror the cluster's own families`() {
@@ -150,11 +187,11 @@ class MotorVoiceTest {
         )
         assertTrue(disagrees, disagrees.contains("reporting E-21 now"))
 
-        val cleared = MotorVoice.explainCluster(
+        val nothingHere = MotorVoice.explainCluster(
             MotorVoice.ClusterQuery.Explicit("E-31"),
             live(motor(MotorFaultType.NORMAL, Severity.OK)),
         )
-        assertTrue(cleared, cleared.contains("should have cleared"))
+        assertTrue(nothingHere, nothingHere.contains("either it's cleared, or my link"))
     }
 
     /** No live signal means no claim about whether the code still stands. */
@@ -173,8 +210,9 @@ class MotorVoiceTest {
         )
         assertTrue(reply, reply.startsWith("E-31"))
 
+        // No fault here is not a statement about the cluster — see the contradiction test above.
         val none = MotorVoice.explainCluster(MotorVoice.ClusterQuery.Current, live(motor()))
-        assertTrue(none, none.contains("shouldn't be showing a code"))
+        assertTrue(none, none.contains("not seeing a fault on my side"))
     }
 
     // --- the answer ---------------------------------------------------------
