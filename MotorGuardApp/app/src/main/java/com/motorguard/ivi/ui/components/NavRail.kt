@@ -171,10 +171,11 @@ private fun RailButton(
  * the driver's attention is already on the overlay they just opened — but a fault is the one
  * time VEGA has bad news to deliver *from its own corner*: staying anchored where the driver's
  * eye already knows to check reads as "look here" in a way relocating to the middle of the
- * screen would undercut. [BotState.Confused] gives it the reaction for this — a genuinely
- * uneasy-looking face, not a status icon standing in for one — and it holds that state (small,
- * in its usual spot) for as long as the fault is live, voice or not: a fault is not something to
- * stop pointing out just because the driver isn't currently talking to VEGA. Opening the overlay
+ * screen would undercut. [BotState.Comet] gives it the reaction for this — a shrunken, wobbling,
+ * trailing-off silhouette, distinct enough from calm Idle to read as "something is wrong" at a
+ * glance — and it holds that state (small, in its usual spot) for as long as the fault is live,
+ * voice or not: a fault is not something to stop pointing out just because the driver isn't
+ * currently talking to VEGA. Opening the overlay
  * on top of that fault grows it, the
  * one deliberate size change here, for exactly the window VEGA has the driver's attention on the
  * subject — closing the overlay shrinks it back to its normal size without touching the "!",
@@ -228,15 +229,16 @@ private fun BrandMark() {
                     // A fault always wins over dozing off — that is the one time the car most
                     // needs the driver's attention, not less of it.
                     //
-                    // Confused, not Alert or Exclaim: Alert keeps Idle's face and only makes the
-                    // eyes a little rounder plus a barely-visible 2.5 Hz jitter, which reads as
-                    // "no change" at the rail's small size. Exclaim reads unambiguously but
-                    // replaces the face outright with a literal "!" glyph, which isn't a
-                    // reaction, it's a sign. Confused keeps a face -- mismatched tilted eyes and
-                    // a tilted head, no symbol -- so it reads as VEGA looking uneasy about
-                    // something rather than displaying an icon.
+                    // Comet, picked over the rest of the vocabulary: Alert and Confused are both
+                    // still a face, close enough to Idle's that a glance doesn't catch the
+                    // difference; Exclaim reads unmistakably but as a status icon, not a
+                    // reaction. Comet shrinks the body to a small wobbling dot trailing a fading
+                    // tail, looping forever (posePeriodMs, not a one-shot like Orbit/Swirl, which
+                    // play once and settle back to looking like Idle) -- diminished and
+                    // struggling reads as "something is wrong" the way none of the face-only
+                    // states did.
                     state = when {
-                        hasFault -> BotState.Confused
+                        hasFault -> BotState.Comet
                         isDozing -> BotState.Sleepy
                         else -> BotState.Idle
                     },
