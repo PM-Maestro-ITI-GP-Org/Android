@@ -1,5 +1,5 @@
 diff --git a/MotorGuardApp/app/src/main/java/com/motorguard/ivi/ui/diagnostics/VehicleData.kt b/MotorGuardApp/app/src/main/java/com/motorguard/ivi/ui/diagnostics/VehicleData.kt
-index 27caf48..e99afdf 100644
+index 0b1e173..858e44e 100644
 --- a/MotorGuardApp/app/src/main/java/com/motorguard/ivi/ui/diagnostics/VehicleData.kt
 +++ b/MotorGuardApp/app/src/main/java/com/motorguard/ivi/ui/diagnostics/VehicleData.kt
 @@ -9,6 +9,7 @@ import com.motorguard.ivi.data.vehicle.api.VehicleDataSource
@@ -10,54 +10,38 @@ index 27caf48..e99afdf 100644
  import kotlinx.coroutines.CoroutineScope
  import kotlinx.coroutines.Dispatchers
  import kotlinx.coroutines.SupervisorJob
-@@ -66,22 +67,39 @@ object VehicleData {
-     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-     private val fake = FakeVehicleDataSource(scope)
- 
--    /** Everything else in the UI sees only this type. */
--    val source: VehicleDataSource = fake
--
--    /** The debug panel's only window into [fake]. */
--    val debugControls: VehicleDebugControls = FakeDebugControls(fake, scope)
--
-     /**
--     * Capture requests. Synthesis runs on [Dispatchers.Default] rather than the main-thread scope
--     * above: 200,000 samples across twelve channels is real arithmetic, and the popup is animating
--     * while it happens. The fault type is read from the live motor signal at request time so the
--     * captured waveform shows the defect the card is reporting rather than a healthy motor.
-+     * Capture requests against the fake. Synthesis runs on [Dispatchers.Default] rather than the
-+     * main-thread scope above: 200,000 samples across twelve channels is real arithmetic, and the
-+     * popup is animating while it happens. The fault type is read from the live motor signal at
-+     * request time so the captured waveform shows the defect the card is reporting rather than a
-+     * healthy motor.
-      */
--    val captureSource: MotorCaptureSource = FakeMotorCaptureSource(
-+    private val fakeCapture: MotorCaptureSource = FakeMotorCaptureSource(
-         computeContext = Dispatchers.Default,
-         faultTypeProvider = { fake.motor.value.latestValueOrNull?.faultType ?: MotorFaultType.NORMAL },
+@@ -80,22 +81,26 @@ object VehicleData {
      )
-+
-+    /**
+ 
+     /**
+-     * Everything else in the UI sees only this type.
 +     * The real motor signal, over SOME/IP to the diagnostics unit — see
 +     * `vendor/motorguard/MotorGuard/MotorGuard_Application/motorservice/README.md`.
-+     *
+      *
+-     * The fake, on this branch, always. The SOME/IP link is added by the AOSP drop-in — its
+-     * `motorservice/vehicledata-someip.patch` rewrites exactly these two properties at deploy
+-     * time, which is the only place the Kotlin for it and `libmotorguardsomeip.so` both exist.
+-     * Writing that wiring here instead means Gradle compiling a reference to a package that is
+-     * not in this tree, which is what it did.
 +     * Null on any build without `libmotorguardsomeip.so`, which is every Gradle build: this whole
 +     * branch of the wiring is added by the AOSP drop-in and does not exist on the app branch. It
 +     * is also null if the link could not open its sockets at all. Either way the fake stays, which
 +     * is why the emulator and the image behave identically apart from where the motor's numbers
 +     * come from.
-+     */
+      */
+-    val source: VehicleDataSource = fake
 +    private val someip = SomeIpVehicleData.create(scope, fake)
 +
 +    /** Everything else in the UI sees only this type. */
 +    val source: VehicleDataSource = someip?.first ?: fake
-+
-+    /** The debug panel's only window into [fake]. Still the fake even when the link is up: it
-+     *  drives the five signals the diagnostics unit does not publish, and forcing the motor from
-+     *  here would be overriding a real reading with a made-up one. */
-+    val debugControls: VehicleDebugControls = FakeDebugControls(fake, scope)
-+
-+    val captureSource: MotorCaptureSource = someip?.second ?: fakeCapture
- }
  
- private class FakeDebugControls(
+     /** The debug panel's only window into [fake]. Still the fake even when the link is up: it
+      *  drives the five signals the diagnostics unit does not publish, and forcing the motor from
+      *  here would be overriding a real reading with a made-up one. */
+     val debugControls: VehicleDebugControls = FakeDebugControls(fake, scope)
+ 
+-    val captureSource: MotorCaptureSource = fakeCapture
++    val captureSource: MotorCaptureSource = someip?.second ?: fakeCapture
+ 
+     /**
+      * "Open Diagnostics and focus the battery" from outside the fragment — [MainActivity]'s
