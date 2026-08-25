@@ -38,13 +38,25 @@ object WhisperStt {
     const val MODEL_FILE = "whisper.bin"
 
     /**
-     * Biases the decoder. Real codes, not placeholders: Whisper conditions on
-     * this text as if it preceded the audio, so concrete examples of the format
-     * you expect are worth far more than a description of it.
+     * Biases the decoder. Real codes, not placeholders: Whisper conditions on this text as if it
+     * preceded the audio, so concrete examples of the format you expect are worth far more than
+     * a description of it.
+     *
+     * Which cuts both ways, and did. This used to prime with P0217, P0300, B1000 and friends,
+     * plus coolant temperature, oil pressure and the catalytic converter — a vocabulary this
+     * vehicle does not have and, since the catalogue was cut back to the E codes, one the
+     * assistant cannot answer about either. Whisper was being told to expect "P0217" from a
+     * driver saying "E-31", and a decoder primed for the wrong two letters will find them.
+     *
+     * So it now primes with what is actually said to this car: the three cluster codes, and one
+     * example of each shape of command. Keep it that way — every phrase in here is a thumb on
+     * the scale, and a phrase the assistant no longer understands is a thumb on the wrong side.
      */
     private const val PROMPT =
-        "Vehicle diagnostics. Codes like P0217, P0300, P0420, B1000, C1201, U0100. " +
-            "Coolant temperature sensor, oil pressure, mass air flow, catalytic converter."
+        "Vehicle assistant. Fault codes on the cluster: E-01, E-21, E-31. " +
+            "Is the motor fault electrical or mechanical. How long has the motor got left. " +
+            "Where is the nearest petrol station, car centre, charging station. " +
+            "What's playing, skip this song, turn it up, night mode, cancel the route."
 
     /** Whisper is CPU-bound; the Pi 5 has four cores and the UI needs one. */
     private const val THREADS = 4

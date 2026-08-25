@@ -96,6 +96,17 @@ class NavVoiceTest {
             .forEach { assertNotNull(it, nearest(it)) }
     }
 
+    /**
+     * Measured on the board: tiny.en hears "nearest" as "newest", and the request then fell
+     * through to the C++ core's fake service-station list. Accepting the misrecognition is
+     * cheaper than fighting it — nobody asks a car for the newest petrol station.
+     */
+    @Test
+    fun `newest is accepted as nearest`() {
+        assertEquals(listOf("amenity:fuel"), nearest("where is the newest petrol station")?.osmTags)
+        assertNotNull(nearest("newest car centre"))
+    }
+
     /** Something has to mark it as a proximity question, or every mention becomes a trip. */
     @Test
     fun `a petrol station merely mentioned is not a nearest request`() {

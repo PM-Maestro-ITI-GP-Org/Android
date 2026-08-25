@@ -82,8 +82,23 @@ object NavVoice {
         return null
     }
 
-    /** Something has to mark it as a proximity question; "a petrol station" alone does not. */
-    private val NEARBY = listOf("nearest", "closest", "near me", "nearby", "around here", "where is a", "wheres a", "where can i")
+    /**
+     * Something has to mark it as a proximity question; "a petrol station" alone does not.
+     *
+     * "Newest" is in here because the recogniser hears it that way. Measured on the board with
+     * tiny.en: "where is the nearest petrol station" came back as "Where is the newest petrol
+     * station" twice out of two, and the request then fell through to the C++ core, which
+     * answered "I couldn't find a service station nearby right now" — a wrong answer arrived at
+     * confidently, which is the worst shape of failure available here.
+     *
+     * Accepting a consistent misrecognition is cheaper than fighting it, and costs nothing real:
+     * nobody asks a car for the newest petrol station. A better acoustic model should make the
+     * alias redundant rather than wrong, so it can stay either way.
+     */
+    private val NEARBY = listOf(
+        "nearest", "newest", "closest", "near me", "nearby", "around here",
+        "where is a", "wheres a", "where can i",
+    )
 
     private val CHARGER = listOf("charger", "charging", "charge point", "ev point")
     private val FUEL = listOf("petrol", "gas station", "gas ", "fuel", "filling station", "benzine")
