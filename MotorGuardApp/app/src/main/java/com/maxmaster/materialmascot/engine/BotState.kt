@@ -664,7 +664,13 @@ public sealed class BotState(
         morphSeconds = 0.6f,
         posePeriodMs = 3400L,
         blinkIn = false,
-        poseFn = { t ->
+        // Wrapped modulo its own declared posePeriodMs, unlike the upstream one-shot ("the
+        // triangle lets go... then a long settle back into the resting ball", per this state's
+        // own KDoc): a persistent fault indicator needs the tumble-and-rings motion to keep
+        // going for as long as it's shown, not play once and go quiet after ~3.6s. Every other
+        // field of this state (silhouette, gaze, ring math) is exactly the library's own.
+        poseFn = { rawT ->
+            val t = rawT % 3.4f
             val rot = -TAU * 1.25f * t * Easings.easeInOutCubic(clamp(t / 0.35f))
             val back = Easings.easeInOutCubic(clamp((t - 1.6f) / 0.9f))
             val tri = Silhouette(

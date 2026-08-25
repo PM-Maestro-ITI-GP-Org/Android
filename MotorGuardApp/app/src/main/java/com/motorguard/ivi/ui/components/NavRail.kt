@@ -175,18 +175,18 @@ private fun RailButton(
  * eye already knows to check reads as "look here" in a way relocating to the middle of the
  * screen would undercut.
  *
- * Two independent signals, not one: [BotState.Hexagon] — a static hexagonal silhouette, distinct
- * from Idle's circle by shape rather than a face someone has to look closely at to read (this
- * composable's own state-selection comment has the history of what was tried and rejected before
- * it) — tracks the fault itself, and holds for as long as it's live, voice or not.
- * [BotState.Swirl]'s two rings, diverging outward and fading over ~1s, play once for the moment
- * VEGA is actually *speaking* about it ([VoiceOverlayState.voiceState] `== SPEAKING`, not merely
- * the overlay being open, which also covers listening/thinking where nothing has been said yet).
- * Size pops up for that same window and springs back down the instant it ends — a punchy
- * `Spring.DampingRatioMediumBouncy`, not the smoother curve elsewhere, is what makes it read as a
- * "pop" rather than a resize. Hexagon resumes once speaking stops; it never stops signalling the
- * fault until the motor genuinely is normal again — only the swirl and the pop are tied to
- * speech.
+ * One signal, one state: [BotState.Orbit] — patched in `BotState.kt` to wrap its own declared
+ * `posePeriodMs` (3.4s) instead of playing once and settling still, per the upstream KDoc ("the
+ * triangle lets go... then a long settle back into the resting ball") — plays continuously for as
+ * long as the fault is live, tumbling triangle and rings on a permanent loop rather than a
+ * one-shot flourish (this composable's own git history has what was tried and rejected before
+ * it: Alert, Confused, Exclaim, Comet, a Hexagon/Swirl split). Size is the only thing that still
+ * tracks speech specifically: it pops up while VEGA is actually *speaking* about the fault
+ * ([VoiceOverlayState.voiceState] `== SPEAKING`, not merely the overlay being open, which also
+ * covers listening/thinking where nothing has been said yet) and springs back down the instant it
+ * ends — a punchy `Spring.DampingRatioMediumBouncy`, not the smoother curve elsewhere, is what
+ * makes it read as a "pop" rather than a resize — but the orbiting itself never stops, big or
+ * small, until the motor genuinely is normal again.
  */
 @Composable
 private fun BrandMark() {
@@ -252,12 +252,10 @@ private fun BrandMark() {
                     // "diverge while the message is being said". BotEngine.setState() is a no-op
                     // when asked to re-enter the state it is already in, so this only replays
                     // once per LISTENING/THINKING -> SPEAKING transition, same as the dockSize
-                    // pop below is only one motion per speaking turn, not a loop for its
-                    // duration. Falls back to plain Idle geometry (Swirl's own default) once the
-                    // rings finish fading if a reply runs longer than that.
+                    // pop below is what carries the speaking/not-speaking distinction; Orbit
+                    // itself is identical, still-looping motion in both cases.
                     state = when {
-                        hasFault && isSpeaking -> BotState.Swirl
-                        hasFault -> BotState.Hexagon
+                        hasFault -> BotState.Orbit
                         isDozing -> BotState.Sleepy
                         else -> BotState.Idle
                     },
