@@ -171,10 +171,11 @@ private fun RailButton(
  * the driver's attention is already on the overlay they just opened — but a fault is the one
  * time VEGA has bad news to deliver *from its own corner*: staying anchored where the driver's
  * eye already knows to check reads as "look here" in a way relocating to the middle of the
- * screen would undercut. [BotState.Comet] gives it the reaction for this — a shrunken, wobbling,
- * trailing-off silhouette, distinct enough from calm Idle to read as "something is wrong" at a
- * glance — and it holds that state (small, in its usual spot) for as long as the fault is live,
- * voice or not: a fault is not something to stop pointing out just because the driver isn't
+ * screen would undercut. [BotState.Confused] gives it the reaction for this — a genuinely
+ * uneasy-looking face, always full size and visible (unlike [BotState.Comet], tried and rejected:
+ * see this composable's own state-selection comment) — and it holds that state (small, in its
+ * usual spot) for as long as the fault is live, voice or not: a fault is not something to stop
+ * pointing out just because the driver isn't
  * currently talking to VEGA. Opening the overlay
  * on top of that fault grows it, the
  * one deliberate size change here, for exactly the window VEGA has the driver's attention on the
@@ -229,16 +230,17 @@ private fun BrandMark() {
                     // A fault always wins over dozing off — that is the one time the car most
                     // needs the driver's attention, not less of it.
                     //
-                    // Comet, picked over the rest of the vocabulary: Alert and Confused are both
-                    // still a face, close enough to Idle's that a glance doesn't catch the
-                    // difference; Exclaim reads unmistakably but as a status icon, not a
-                    // reaction. Comet shrinks the body to a small wobbling dot trailing a fading
-                    // tail, looping forever (posePeriodMs, not a one-shot like Orbit/Swirl, which
-                    // play once and settle back to looking like Idle) -- diminished and
-                    // struggling reads as "something is wrong" the way none of the face-only
-                    // states did.
+                    // Confused: Comet was tried and rejected live -- it spends most of its 2.4 s
+                    // loop collapsed to COMET_DOT (13% size), which at the rail's 46 dp is under
+                    // 6 dp and reads as the mascot vanishing, not alerting, confirmed by
+                    // screenshots that caught it essentially invisible three times running.
+                    // Alert was rejected too (its eye-shape change is too subtle at this size to
+                    // register as different from Idle at a glance) and Exclaim (reads as a
+                    // status icon, not a reaction). Confused keeps a full-size face at all times
+                    // -- mismatched tilted eyes, a tilted head -- so it's both always visible and
+                    // reads as VEGA looking uneasy rather than displaying a symbol.
                     state = when {
-                        hasFault -> BotState.Comet
+                        hasFault -> BotState.Confused
                         isDozing -> BotState.Sleepy
                         else -> BotState.Idle
                     },
