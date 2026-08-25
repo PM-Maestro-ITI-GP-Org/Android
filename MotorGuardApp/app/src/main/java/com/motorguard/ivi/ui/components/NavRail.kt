@@ -169,10 +169,10 @@ private fun RailButton(
  * the driver's attention is already on the overlay they just opened — but a fault is the one
  * time VEGA has bad news to deliver *from its own corner*: staying anchored where the driver's
  * eye already knows to check reads as "look here" in a way relocating to the middle of the
- * screen would undercut. [BotState.Alert] (the same state a fault sets even with the overlay
- * closed) already gives it the shape/reaction for this — a tilted "!" — so only the fly-away is
- * what changes here; size stays the same as always, so this isn't read as "got bigger because a
- * voice command happened" on top of "there's a fault".
+ * screen would undercut. [BotState.Exclaim] (the same state a fault sets even with the overlay
+ * closed) already gives it the shape/reaction for this — a literal "!", not just a face pose — so
+ * only the fly-away is what changes here; size stays the same as always, so this isn't read as
+ * "got bigger because a voice command happened" on top of "there's a fault".
  */
 @Composable
 private fun BrandMark() {
@@ -216,8 +216,15 @@ private fun BrandMark() {
                 config = MascotConfig(
                     // A fault always wins over dozing off — that is the one time the car most
                     // needs the driver's attention, not less of it.
+                    //
+                    // Exclaim, not Alert: Alert keeps the same face and only makes the eyes a
+                    // little rounder plus a barely-visible 2.5 Hz jitter -- at the rail's 46 dp
+                    // size that reads as "no change" at a glance, which is exactly what was
+                    // reported. Exclaim swaps the whole silhouette for a literal "!" (no face at
+                    // all), so a fault is unmistakable rather than a subtle difference in eye
+                    // roundness someone has to be looking for.
                     state = when {
-                        hasFault -> BotState.Alert
+                        hasFault -> BotState.Exclaim
                         isDozing -> BotState.Sleepy
                         else -> BotState.Idle
                     },
