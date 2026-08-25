@@ -175,15 +175,17 @@ private fun RailButton(
  * eye already knows to check reads as "look here" in a way relocating to the middle of the
  * screen would undercut.
  *
- * Two independent signals, not one: [BotState.Confused] — a genuinely uneasy-looking face, always
- * full size and visible (unlike [BotState.Comet], tried and rejected: see this composable's own
- * state-selection comment) — tracks the fault itself, and holds for as long as it's live, voice
- * or not. Size pops up only for the moment VEGA is actually *speaking* about it
- * ([VoiceOverlayState.voiceState] `== SPEAKING`, not merely the overlay being open, which also
- * covers listening/thinking where nothing has been said yet) and springs back down the instant
- * that ends — a punchy `Spring.DampingRatioMediumBouncy`, not the smoother curve elsewhere, is
- * what makes it read as a "pop" rather than a resize. The face itself never stops being uneasy
- * until the motor genuinely is normal again — only the pop is tied to speech.
+ * Two independent signals, not one: [BotState.Hexagon] — a static hexagonal silhouette, distinct
+ * from Idle's circle by shape rather than a face someone has to look closely at to read (this
+ * composable's own state-selection comment has the history of what was tried and rejected before
+ * it) — tracks the fault itself, and holds for as long as it's live, voice or not. Size pops up
+ * only for the moment VEGA is actually *speaking* about it ([VoiceOverlayState.voiceState] `==
+ * SPEAKING`, not merely the overlay being open, which also covers listening/thinking where
+ * nothing has been said yet) and springs back down the instant that ends — a punchy
+ * `Spring.DampingRatioMediumBouncy`, not the smoother curve elsewhere, is what makes it read as a
+ * "pop" rather than a resize, and is the only motion Hexagon (which has none of its own) gets.
+ * The shape itself never stops signalling the fault until the motor genuinely is normal again —
+ * only the pop is tied to speech.
  */
 @Composable
 private fun BrandMark() {
@@ -238,17 +240,14 @@ private fun BrandMark() {
                     // A fault always wins over dozing off — that is the one time the car most
                     // needs the driver's attention, not less of it.
                     //
-                    // Confused: Comet was tried and rejected live -- it spends most of its 2.4 s
-                    // loop collapsed to COMET_DOT (13% size), which at the rail's 46 dp is under
-                    // 6 dp and reads as the mascot vanishing, not alerting, confirmed by
-                    // screenshots that caught it essentially invisible three times running.
-                    // Alert was rejected too (its eye-shape change is too subtle at this size to
-                    // register as different from Idle at a glance) and Exclaim (reads as a
-                    // status icon, not a reaction). Confused keeps a full-size face at all times
-                    // -- mismatched tilted eyes, a tilted head -- so it's both always visible and
-                    // reads as VEGA looking uneasy rather than displaying a symbol.
+                    // Hexagon: a static hexagonal silhouette, geometrically unmistakable from
+                    // Idle's circle rather than a face variant someone has to be looking closely
+                    // at to catch (Alert, Confused and Exclaim were all tried and rejected on
+                    // exactly that ground, or on Comet's near-invisible collapse -- see git log
+                    // on this file for that history). Hexagon has no animation of its own; the
+                    // "moves when talking" motion is the dockSize pop below, not a change here.
                     state = when {
-                        hasFault -> BotState.Confused
+                        hasFault -> BotState.Hexagon
                         isDozing -> BotState.Sleepy
                         else -> BotState.Idle
                     },
