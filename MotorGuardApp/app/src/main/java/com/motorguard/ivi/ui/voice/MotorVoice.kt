@@ -39,7 +39,44 @@ object MotorVoice {
      */
     fun handle(utterance: String): String? {
         clusterQueryOf(utterance)?.let { return explainCluster(it, VehicleData.source.motor.value) }
-        return if (claims(utterance)) answerNow(utterance) else null
+        if (claims(utterance)) return answerNow(utterance)
+        if (asksForAnyFault(utterance)) return anyFault(VehicleData.source.motor.value)
+        return null
+    }
+
+    /**
+     * "Any faults?" — the question with no subject in it.
+     *
+     * It has to be answered here because the alternative answers it wrongly. Left to fall
+     * through, it reaches the C++ core's ListFaults intent, which replies "I'm not seeing any
+     * faults at the moment, everything looks fine" out of a vector that only
+     * [VoiceEngine.pushFault] can fill — and nothing has ever called it. The core is therefore
+     * incapable of reporting a fault, and says so with total confidence, while the diagnostics
+     * screen two feet away shows the fault it is denying.
+     *
+     * A wrong "everything looks fine" is the worst answer this assistant can give, so the
+     * question is taken before it can be asked of something that cannot know.
+     */
+    internal fun asksForAnyFault(utterance: String): Boolean {
+        val text = normalise(utterance)
+        if (text.isEmpty()) return false
+        return ANY_FAULT.any { text.contains(it) }
+    }
+
+    private val ANY_FAULT = listOf(
+        "any faults", "any fault", "any errors", "any error", "any problems", "any problem",
+        "any issues", "what faults", "what errors", "anything wrong", "something wrong",
+        "is everything ok", "is everything okay", "everything alright", "all good",
+    )
+
+    /**
+     * The same reading the card shows, plus the code the cluster prints for it — because someone
+     * asking whether anything is wrong is often looking at a dashboard while they ask.
+     */
+    internal fun anyFault(state: SignalState<MotorTelemetry>): String {
+        val body = compose("is there a fault in the motor", state, System.currentTimeMillis())
+        val code = (state as? SignalState.Live)?.data?.faultType?.let { clusterCode(it) }
+        return if (code == null) body else "$body The cluster shows that as $code."
     }
 
     // --- the cluster's codes -------------------------------------------------

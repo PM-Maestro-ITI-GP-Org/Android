@@ -215,6 +215,49 @@ class MotorVoiceTest {
         assertTrue(none, none.contains("not seeing a fault on my side"))
     }
 
+    // --- "any faults?" -------------------------------------------------------
+
+    /**
+     * The bug this exists for: left to fall through, this question reached the C++ core's
+     * ListFaults intent and got "I'm not seeing any faults at the moment, everything looks fine"
+     * out of a list nothing has ever filled — while the diagnostics screen showed the fault.
+     */
+    @Test
+    fun `general fault questions are claimed before the core can deny them`() {
+        listOf(
+            "any faults", "are there any errors", "any problems", "is anything wrong",
+            "is everything ok", "what faults do i have",
+        ).forEach { assertTrue(it, MotorVoice.asksForAnyFault(it)) }
+    }
+
+    @Test
+    fun `unrelated questions are not general fault questions`() {
+        listOf("play some music", "take me to the airport", "what is playing", "")
+            .forEach { assertFalse(it, MotorVoice.asksForAnyFault(it)) }
+    }
+
+    @Test
+    fun `any faults reports the live fault and names its cluster code`() {
+        val reply = MotorVoice.anyFault(live(motor(MotorFaultType.MECHANICAL, Severity.CRITICAL)))
+        assertTrue(reply, reply.contains("mechanical fault"))
+        assertTrue(reply, reply.contains("E-31"))
+    }
+
+    /** "Everything looks fine" must never be said on behalf of a signal that is not arriving. */
+    @Test
+    fun `any faults does not claim everything is fine when the link is down`() {
+        val reply = MotorVoice.anyFault(SignalState.Offline)
+        assertTrue(reply, reply.contains("can't reach"))
+        assertFalse(reply, reply.contains("E-"))
+    }
+
+    @Test
+    fun `any faults with no fault says so without inventing a code`() {
+        val reply = MotorVoice.anyFault(live(motor()))
+        assertTrue(reply, reply.contains("no fault"))
+        assertFalse(reply, reply.contains("E-"))
+    }
+
     // --- the answer ---------------------------------------------------------
 
     @Test

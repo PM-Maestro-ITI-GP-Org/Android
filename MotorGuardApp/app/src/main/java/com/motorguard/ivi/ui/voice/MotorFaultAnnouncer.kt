@@ -129,10 +129,45 @@ object MotorFaultAnnouncer {
     private var appContext: Context? = null
     private var focusRequest: AudioFocusRequest? = null
 
+    /** The cluster code last handed to the C++ core, so the same one is not pushed every second. */
+    private var pushedCode: String? = null
+
+    /**
+     * Keep the reasoning core's fault list in step with the motor signal.
+     *
+     * The core answers "any faults?" out of a vector that only [VoiceEngine.pushFault] fills, and
+     * for the life of this project nothing called it — so the core replied "I'm not seeing any
+     * faults, everything looks fine" with total confidence while the diagnostics screen showed a
+     * fault. [MotorVoice] now takes that question before the core can get it wrong, and this
+     * closes the hole underneath: whatever else reaches the core, its idea of what is broken is
+     * the motor's.
+     *
+     * Only on a [SignalState.Live] reading, and only on change. A stale or absent signal leaves
+     * the last pushed state alone rather than clearing it, because "I cannot see the motor" is
+     * not the same claim as "the motor is fine" — which is the whole mistake being fixed.
+     *
+     * Takes effect once libmotorguardvoice.so is rebuilt; the prebuilt has neither the E codes
+     * nor this call's counterpart in its catalogue.
+     */
+    private fun syncCore(state: SignalState<MotorTelemetry>) {
+        val data = (state as? SignalState.Live)?.data ?: return
+        val code = MotorVoice.clusterCode(data.faultType)
+        if (code == pushedCode) return
+        pushedCode = code
+        if (code == null) {
+            VoiceEngine.clearFaults()
+            Log.i(TAG, "core fault list cleared")
+        } else {
+            VoiceEngine.pushFault(code)
+            Log.i(TAG, "core fault list now holds $code")
+        }
+    }
+
     /**
      * Feed one reading. Speaks only if this is genuinely new — see [MotorAnnouncementPolicy].
      */
     fun onState(context: Context, state: SignalState<MotorTelemetry>, nowMs: Long = System.currentTimeMillis()) {
+        syncCore(state)
         val data = policy.onState(state, nowMs) ?: return
 
         // Not over an open session. The driver is mid-conversation with the assistant, and the
@@ -150,6 +185,7 @@ object MotorFaultAnnouncer {
 
     /** Release the engine. The process normally keeps it for its lifetime; this is for teardown. */
     fun shutdown() {
+        pushedCode = null
         abandonFocus()
         runCatching { tts?.shutdown() }
         tts = null
