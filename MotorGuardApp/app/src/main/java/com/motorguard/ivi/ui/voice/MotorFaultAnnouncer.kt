@@ -12,6 +12,7 @@ import com.motorguard.ivi.data.vehicle.api.MotorTelemetry
 import com.motorguard.ivi.data.vehicle.api.Severity
 import com.motorguard.ivi.data.vehicle.api.SignalState
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Deciding whether a motor fault is worth interrupting the driver for, and saying it once.
@@ -129,6 +130,14 @@ object MotorFaultAnnouncer {
     private var appContext: Context? = null
     private var focusRequest: AudioFocusRequest? = null
 
+    /** True for exactly the span of this object's own utterance being spoken -- the proactive
+     *  "a fault just showed up" sentence, and nothing else. A driver-initiated question that
+     *  happens to be about the motor is answered through [VoiceOverlaySession]'s own TTS, which
+     *  never touches this flag, so [com.motorguard.ivi.ui.components.NavRail]'s docked mascot can
+     *  key its "big while VEGA is actively volunteering the fault" pop off this alone rather than
+     *  off speech in general. */
+    val isSpeaking = MutableStateFlow(false)
+
     /** The cluster code last handed to the C++ core, so the same one is not pushed every second. */
     private var pushedCode: String? = null
 
@@ -186,6 +195,7 @@ object MotorFaultAnnouncer {
     /** Release the engine. The process normally keeps it for its lifetime; this is for teardown. */
     fun shutdown() {
         pushedCode = null
+        isSpeaking.value = false
         abandonFocus()
         runCatching { tts?.shutdown() }
         tts = null
@@ -212,9 +222,17 @@ object MotorFaultAnnouncer {
             tts?.apply {
                 language = Locale.US
                 setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onDone(utteranceId: String?) = abandonFocus()
-                    override fun onError(utteranceId: String?) = abandonFocus()
-                    override fun onStart(utteranceId: String?) {}
+                    override fun onStart(utteranceId: String?) {
+                        isSpeaking.value = true
+                    }
+                    override fun onDone(utteranceId: String?) {
+                        isSpeaking.value = false
+                        abandonFocus()
+                    }
+                    override fun onError(utteranceId: String?) {
+                        isSpeaking.value = false
+                        abandonFocus()
+                    }
                 })
                 requestFocus(context)
                 speak(text, TextToSpeech.QUEUE_ADD, null, UTTERANCE_ID)

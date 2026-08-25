@@ -18,12 +18,6 @@ object VoiceOverlayState {
     /** True for the lifetime of the overlay window, set from [VoiceOverlaySession.onShow]/[VoiceOverlaySession.onHide]. */
     val isOpen = MutableStateFlow(false)
 
-    /** Mirrors [VoiceOverlaySession]'s own `model.state` — set from a `LaunchedEffect` at its
-     *  `VoiceOverlay(...)` call site, the one place already recomposing on every change. Lets the
-     *  rail react to VEGA actually *speaking* specifically (not just the overlay being open,
-     *  which also covers listening/thinking) without the two windows sharing anything heavier. */
-    val voiceState = MutableStateFlow(VoiceState.IDLE)
-
     /** The docked mascot's last known position in absolute screen coordinates, updated on every
      *  layout pass. Null until the rail has composed at least once. */
     var dockedScreenPosition by mutableStateOf<Offset?>(null)

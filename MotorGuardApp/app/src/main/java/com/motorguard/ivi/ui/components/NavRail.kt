@@ -66,8 +66,8 @@ import com.motorguard.ivi.data.vehicle.api.VehicleSeverityFlow
 import com.motorguard.ivi.ui.diagnostics.VehicleData
 import com.motorguard.ivi.ui.theme.MotorGuard
 import com.motorguard.ivi.ui.theme.Tokens
+import com.motorguard.ivi.ui.voice.MotorFaultAnnouncer
 import com.motorguard.ivi.ui.voice.VoiceOverlayState
-import com.motorguard.ivi.ui.voice.VoiceState
 
 // The rail reads dark even in light mode, like the reference. Its background now comes from the
 // theme so it picks up the album hue with the rest of the app; the dim foreground stays pinned.
@@ -180,13 +180,16 @@ private fun RailButton(
  * triangle lets go... then a long settle back into the resting ball") — plays continuously for as
  * long as the fault is live, tumbling triangle and rings on a permanent loop rather than a
  * one-shot flourish (this composable's own git history has what was tried and rejected before
- * it: Alert, Confused, Exclaim, Comet, a Hexagon/Swirl split). Size is the only thing that still
- * tracks speech specifically: it pops up while VEGA is actually *speaking* about the fault
- * ([VoiceOverlayState.voiceState] `== SPEAKING`, not merely the overlay being open, which also
- * covers listening/thinking where nothing has been said yet) and springs back down the instant it
- * ends — a punchy `Spring.DampingRatioMediumBouncy`, not the smoother curve elsewhere, is what
- * makes it read as a "pop" rather than a resize — but the orbiting itself never stops, big or
- * small, until the motor genuinely is normal again.
+ * it: Alert, Confused, Exclaim, Comet, a Hexagon/Swirl split). Size tracks
+ * [MotorFaultAnnouncer.isSpeaking] specifically, not any voice reply: that flow is only ever true
+ * for the span of the proactive "a fault just showed up" sentence
+ * ([com.motorguard.ivi.MainActivity.announceMotorFault]'s own TTS instance, entirely separate from
+ * [VoiceOverlaySession][com.motorguard.ivi.ui.voice.VoiceOverlaySession]), so asking VEGA something
+ * unrelated — "play music" — while a fault happens to be live no longer pops the dock the way an
+ * earlier version of this file did. It pops for the one sentence that is actually about the fault,
+ * and springs back down the instant that sentence ends — a punchy `Spring.DampingRatioMediumBouncy`,
+ * not the smoother curve elsewhere, is what makes it read as a "pop" rather than a resize — but the
+ * orbiting itself never stops, big or small, until the motor genuinely is normal again.
  */
 @Composable
 private fun BrandMark() {
@@ -197,14 +200,13 @@ private fun BrandMark() {
         val hasFault = severities.values.any { it == Severity.CAUTION || it == Severity.CRITICAL }
 
         val overlayOpen by VoiceOverlayState.isOpen.collectAsStateWithLifecycle()
-        val voiceState by VoiceOverlayState.voiceState.collectAsStateWithLifecycle()
-        val isSpeaking = overlayOpen && voiceState == VoiceState.SPEAKING
+        val announcingFault by MotorFaultAnnouncer.isSpeaking.collectAsStateWithLifecycle()
         val dockAlpha by animateFloatAsState(
             targetValue = if (overlayOpen && !hasFault) 0f else 1f,
             label = "mascot-dock-fade",
         )
         val dockSize by animateDpAsState(
-            targetValue = if (isSpeaking && hasFault) DOCKED_MASCOT_ALERT_SIZE else DOCKED_MASCOT_SIZE,
+            targetValue = if (announcingFault && hasFault) DOCKED_MASCOT_ALERT_SIZE else DOCKED_MASCOT_SIZE,
             animationSpec = spring(
                 dampingRatio = Spring.DampingRatioMediumBouncy,
                 stiffness = Spring.StiffnessMedium,
