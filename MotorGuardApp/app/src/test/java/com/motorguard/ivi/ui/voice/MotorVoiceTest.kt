@@ -107,6 +107,35 @@ class MotorVoiceTest {
      * "code" next to "cluster", matched nothing, and fell through to a general status report that
      * said there was no fault while a code was on screen.
      */
+    /**
+     * The wording that failed on the target. People read a code out a digit at a time — "E three
+     * one" — and what the recogniser writes down varies. Only the run-together transcription used
+     * to match, which made the working phrasing something a driver had to discover.
+     */
+    @Test
+    fun `a code read out digit by digit is understood`() {
+        listOf(
+            "what does e three one mean",   // words
+            "what does e 3 1 mean",         // separated figures
+            "what does e three 1 mean",     // mixed
+            "what does e31 mean",           // run together
+            "what does e 31 mean",          // the one that already worked
+            "what does e thirty one mean",  // as a number
+        ).forEach {
+            assertEquals(it, MotorVoice.ClusterQuery.Explicit("E-31"), cluster(it))
+        }
+
+        listOf("what is e two one", "what is e 2 1", "what is e twenty one", "what is e21")
+            .forEach { assertEquals(it, MotorVoice.ClusterQuery.Explicit("E-21"), cluster(it)) }
+    }
+
+    /** "E one" can only be E-01, and if it could not, the unknown-code reply lists the real ones. */
+    @Test
+    fun `a single spoken digit is zero padded`() {
+        assertEquals(MotorVoice.ClusterQuery.Explicit("E-01"), cluster("what does e one mean"))
+        assertEquals(MotorVoice.ClusterQuery.Explicit("E-01"), cluster("what does e oh one mean"))
+    }
+
     @Test
     fun `asking about an error on the cluster is a cluster question`() {
         listOf(

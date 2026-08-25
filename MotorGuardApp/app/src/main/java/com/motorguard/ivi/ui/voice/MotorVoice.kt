@@ -122,7 +122,7 @@ object MotorVoice {
         // worth protecting from the handlers that run after this one.
         if (NOT_A_CODE.any { text.contains(it) }) return null
 
-        CODE.find(text)?.let { return ClusterQuery.Explicit("E-" + it.groupValues[1]) }
+        parseCode(text)?.let { return ClusterQuery.Explicit(it) }
         if (CURRENT_CODE.any { text.contains(it) }) return ClusterQuery.Current
         return null
     }
@@ -141,8 +141,65 @@ object MotorVoice {
             "If the cluster is showing a code, read it out and I'll tell you what it means: " +
             "E-21 is electrical, E-31 mechanical, E-01 a fault it couldn't place."
 
-    /** "e 31" once punctuation is stripped, or "e31" said as one word. */
-    private val CODE = Regex("""\be-?\s?(\d{2})\b""")
+    /**
+     * A spoken code, however the recogniser wrote it down.
+     *
+     * This was a regex wanting two adjacent digits, which is only one of the several things
+     * "E-31" comes back as. People read codes out a digit at a time — "E three one" — and the
+     * transcription then depends on the recogniser's mood: "e 3 1", "e three one", "e three 1".
+     * All of those missed, and the code only worked when the whole number happened to be
+     * transcribed as one token. A driver who has to discover the one wording that works has been
+     * given a password, not an assistant.
+     *
+     * So the digits are collected token by token from whatever follows the "e", accepting figures
+     * and words interchangeably. A single digit is zero-padded, because "E one" can only be
+     * E-01 — and if it were not, the unknown-code reply names the three that exist anyway.
+     */
+    internal fun parseCode(text: String): String? {
+        val tokens = text.split(' ').filter { it.isNotEmpty() }
+        for (i in tokens.indices) {
+            // "e31" or "e-31" — the hyphen is already a space by the time this runs, but some
+            // recognisers emit it closed up.
+            JOINED.matchEntire(tokens[i])?.let { return format(it.groupValues[1]) }
+            if (tokens[i] != "e") continue
+
+            val digits = StringBuilder()
+            var j = i + 1
+            while (j < tokens.size && digits.length < 2) {
+                digits.append(digitsOf(tokens[j]) ?: break)
+                j++
+            }
+            if (digits.isNotEmpty()) return format(digits.toString())
+        }
+        return null
+    }
+
+    private val JOINED = Regex("e(\\d{1,2})")
+
+    /** One spoken token as the digits it stands for, or null if it is not a number at all. */
+    private fun digitsOf(token: String): String? = when {
+        token.all { it.isDigit() } -> token
+        else -> NUMBER_WORDS[token]
+    }
+
+    /**
+     * "Thirty" is 3 rather than 30 on purpose: it is only ever seen here as the first half of
+     * "thirty one", and the digits are being collected one place at a time.
+     */
+    private val NUMBER_WORDS = mapOf(
+        "zero" to "0", "oh" to "0", "o" to "0", "nought" to "0",
+        "one" to "1", "two" to "2", "three" to "3", "four" to "4", "five" to "5",
+        "six" to "6", "seven" to "7", "eight" to "8", "nine" to "9",
+        "ten" to "10", "eleven" to "11", "twelve" to "12", "thirteen" to "13",
+        "fourteen" to "14", "fifteen" to "15", "sixteen" to "16", "seventeen" to "17",
+        "eighteen" to "18", "nineteen" to "19",
+        "twenty" to "2", "thirty" to "3", "forty" to "4", "fifty" to "5",
+        // Whole numbers, for a recogniser that writes the words out rather than the figures.
+        "twentyone" to "21", "thirtyone" to "31",
+    )
+
+    private fun format(digits: String): String =
+        if (digits.length == 1) "E-0$digits" else "E-" + digits.take(2)
 
     /**
      * Asking about what is on the dashboard, without naming a code.
