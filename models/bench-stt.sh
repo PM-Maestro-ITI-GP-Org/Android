@@ -20,6 +20,17 @@
 # That makes the swap reversible without touching the image: --restore deletes
 # the override and the shipped model is live again on the next utterance.
 #
+# MEASURED ON THE TARGET (rpi5, 4x Cortex-A76, q5_1 models, 1-3 s utterances):
+#
+#   tiny.en   ~520-820 ms decode   1.9-4.4x realtime   (shipped)
+#   base.en  ~1840-2630 ms decode  0.6-1.2x realtime
+#   small.en                       unusable, abandoned
+#
+# base.en is 3-4x tiny, not the ~2x its parameter count suggests, and decode
+# lands as silence between the driver finishing and the assistant answering.
+# Note also that base.en did not fix either misrecognition tiny.en made on the
+# same phrases, which is the evidence that model size was not the bottleneck.
+#
 #     ./models/bench-stt.sh ~/Downloads/ggml-base.en.bin     # try a candidate
 #     ./models/bench-stt.sh --restore                        # back to shipped
 #     ./models/bench-stt.sh --measure                        # time what is live
@@ -45,6 +56,12 @@ TAG=MotorGuardVoice
 
 ADB=(adb)
 [ -n "${ANDROID_SERIAL:-}" ] && ADB=(adb -s "$ANDROID_SERIAL")
+"${ADB[@]}" wait-for-device
+
+# Root is required, not a convenience. The app is platform-signed and not
+# debuggable, so run-as is refused and the shell user cannot even list the data
+# directory ("Invalid argument"). Confirmed on the rpi5 target.
+"${ADB[@]}" root >/dev/null 2>&1 || true
 "${ADB[@]}" wait-for-device
 
 # Same reasoning as install-to-board.sh: the driver profile, not user 0.
@@ -99,7 +116,10 @@ echo "== push $(basename "$MODEL") ($(du -h "$MODEL" | cut -f1)) as the whisper.
 OWNER="$("${ADB[@]}" shell stat -c '%U:%G' "$DEST" | tr -d '\r')"
 "${ADB[@]}" push "$MODEL" /data/local/tmp/whisper.bin >/dev/null
 "${ADB[@]}" shell "cp /data/local/tmp/whisper.bin $OVERRIDE && rm /data/local/tmp/whisper.bin"
-"${ADB[@]}" shell "chown $OWNER $OVERRIDE && chmod 644 $OVERRIDE"
+# Owner AND SELinux label: a file root drops into the app's data directory keeps
+# root's context, and the app cannot open it -- which fails exactly like the file
+# being absent, with the same log line. restorecon is what makes it readable.
+"${ADB[@]}" shell "chown $OWNER $OVERRIDE && chmod 600 $OVERRIDE && restorecon $OVERRIDE" >/dev/null 2>&1
 
 # WhisperStt loads the model once and holds it, so the running process is still
 # using the old weights -- the override only takes effect on a fresh load.
